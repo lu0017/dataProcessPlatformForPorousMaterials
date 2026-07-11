@@ -1,0 +1,399 @@
+from common import *
+import constantsAndName as const
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# 默认列名映射（推荐写成最终想要在 Excel 看到的格式）
+# -----------------------
+# 默认列名映射（最终在 Excel 中显示的格式）
+# -----------------------
+DEFAULT_LABELS = {
+    # Gibbs / Helmholtz
+    "DeltaG_Jmol": "ΔG (J/mol)",
+    "DeltaG_kJmol": "ΔG (kJ/mol)",
+    "DeltaG_Jmol_byHS": "ΔG_byHS (J/mol)",
+    "DeltaG_kJmol_byHS": "ΔG_byHS (kJ/mol)",
+
+    # 热力学
+    "dH_Jmol": "ΔH (J/mol)",
+    "dH_kJmol": "ΔH (kJ/mol)",
+    "dS_Jmol_K": "ΔS (J/mol·K)",
+
+    # DSL 参数
+    "q1": "qA (mmol/g)",
+    "q2": "qB (mmol/g)",
+    "b1": "bA (1/Pa)",
+    "b2": "bB (1/Pa)",
+
+    # D-A 参数
+    "rho_mmol_cm3": "ρ (mmol/cm3)",
+    "W0_cm3_g": "W0 (cm3/g)",
+    "W_cm3_g": "W (cm3/g)",
+    "E_J_mol": "E (J/mol)",
+    "A_J_mol": "A (J/mol)",
+    "P0_kPa": "P0 (kPa)",
+    "n": "-",
+
+    # 吸附量
+    "q_mmol_g": "q (mmol/g)",
+    "q_exp_mmol_g": "q_exp (mmol/g)",
+    "q_fit_mmol_g": "q_fit (mmol/g)",
+
+    # 压力 / 温度
+    "P_Pa": "P (Pa)",
+    "P_kPa": "P (kPa)",
+    "T_K": "T (K)",
+    "T_C": "T (°C)",
+
+    # 选择性 /拟合相关
+    "R2": "R²",
+    "slope": "slope",
+    "intercept": "intercept",
+    "n": "n",
+    "theta": "θ",
+
+    # site 标识
+    "site": "site",
+
+    # Qst
+    "Qst_J_mol": "Qst (J/mol)",
+    "Qst_kJ_mol": "Qst (kJ/mol)",
+
+    # 额外压力列表
+    "P_list": "P_list (Pa)",
+    "P_map": "P_map (Pa)",
+    "P_list_str": "P_list_str (Pa)"
+}
+
+# -----------------------
+# 默认单位字典（可用于拼接列名，如果 DEFAULT_LABELS 未指定显示名）
+# -----------------------
+DEFAULT_UNITS = {
+    "b1": "1/Pa",
+    "b2": "1/Pa",
+    "DeltaG_Jmol": "J/mol",
+    "DeltaG_kJmol": "kJ/mol",
+    "DeltaG_Jmol_byHS": "J/mol",
+    "DeltaG_kJmol_byHS": "kJ/mol",
+    "dH_Jmol": "J/mol",
+    "dH_kJmol": "kJ/mol",
+    "dS_Jmol_K": "J/mol*K",
+    "q1": "mmol/g",
+    "q2": "mmol/g",
+    "q_mmol_g": "mmol/g",
+    "q_exp_mmol_g": "mmol/g",
+    "q_fit_mmol_g": "mmol/g",
+    "Qst_J_mol": "J/mol",
+    "Qst_kJ_mol": "kJ/mol",
+    "P_Pa": "Pa",
+    "P_kPa": "kPa",
+    "P_list": "Pa",
+    "P_list_str": "Pa",
+    "P_map": "Pa",
+    "T_K": "K",
+    "T_C": "°C",
+    "R2": "-",
+    "slope": "-",
+    "intercept": "-",
+    "n": "-",
+    "theta": "-",
+    "site": "-",
+    "rho_mmol_cm3": "mmol/cm3",
+    "W0_cm3_g": "cm3/g",
+    "W_cm3_g": "cm3/g",
+    "E_J_mol": "J/mol",
+    "A_J_mol": "J/mol",
+    "P0_kPa": "kPa",
+}
+
+
+
+# ==========================================
+# 工具函数
+# ==========================================
+
+SkipSheets = [
+    "总表",
+    "说明",
+    "参考数据",
+    "SSA",
+    "CC-BiCa-800-2-0.5",
+    "CC-HyFe-800-2-1",
+    "0C",
+    "15C",
+    "25C",
+    "uio-66 Zn 40",
+    "uio-66 Co 40"
+
+]
+
+splitSheet = [
+    "0C",
+    "15C",
+    "25C",
+    "N2-25C"
+]
+
+def validSheetforSplitFile(sheet_name: str) -> bool:
+    return sheet_name in splitSheet
+
+def should_skip(sheet_name: str) -> bool:
+    return sheet_name in SkipSheets
+
+def getFile(file_path, newName=True, sheet_name="Sheet1"):
+    if not file_path:
+        import tkinter as tk
+    from tkinter import filedialog
+    root=tk.Tk()
+    root.withdraw()
+    file_path=filedialog.askopenfilename(title="请选择数据文件",filetypes=[("Excel or CSV","*.xlsx *.xls *.csv")])
+    if not file_path: return            
+    print(f"已选择文件: {file_path}")
+    # 读取
+    ext=os.path.splitext(file_path)[1].lower()
+    if ext in [".xlsx",".xls"]:
+        df=pd.read_excel(file_path, sheet_name=sheet_name)
+    elif ext==".csv": 
+        df=pd.read_csv(file_path)
+    else: 
+        raise ValueError("只支持 Excel/CSV")
+    
+    output_dir = os.path.dirname(file_path)
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    if newName:
+        out_path = os.path.join(output_dir, f"DSL_fit_{filename}.xlsx")
+    else:
+        out_path = file_path
+
+    return df, out_path
+
+def getFile(file_path=None, default_type="excel"):
+    """
+    打开文件选择窗口，支持 Excel / CSV / TXT 文件。
+    
+    参数:
+        file_path (str): 已有文件路径（可选）。如果提供，则直接读取该路径。
+        default_type (str): 默认文件类型，可选值:
+                            "excel" -> *.xlsx, *.xls
+                            "csv"   -> *.csv
+                            "txt"   -> *.txt
+    
+    返回:
+        xls_or_df, file_path
+        - ExcelFile 或 DataFrame 对象
+        - 文件路径字符串
+    """
+    
+    # 若未传入路径，则弹出对话框
+    if not file_path:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)  # ✅ 让窗口置顶
+        
+        # 设置文件过滤类型
+        if default_type.lower() == "excel":
+            filetypes = [("Excel 文件", "*.xlsx *.xls"), ("所有文件", "*.*")]
+        elif default_type.lower() == "csv":
+            filetypes = [("CSV 文件", "*.csv"), ("所有文件", "*.*")]
+        elif default_type.lower() == "txt":
+            filetypes = [("文本文件", "*.txt"), ("所有文件", "*.*")]
+        else:
+            filetypes = [("所有文件", "*.*")]
+        
+        file_path = filedialog.askopenfilename(
+            title=f"请选择{default_type.upper()}文件",
+            filetypes=filetypes
+        )
+        
+        if not file_path:
+            print("未选择文件。")
+            return None, None
+    
+    # 打印选择结果
+    print(f"已选择文件: {file_path}")  
+    return file_path
+
+def getPathOnly(file_path):
+    if os.path.isdir(file_path):
+        path = file_path  # 本身就是文件夹
+    else:
+        path = os.path.dirname(file_path)  # 文件 → 返回父目录
+    return path
+
+def check_or_create_folder(path, sub_folder_name=""):
+    folder_path0 = getPathOnly(path)
+    folder_path = os.path.join(folder_path0, sub_folder_name)
+
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    #     print(f"✅ 创建新文件夹: {folder_path}")
+    # else:
+    #     print(f"📁 文件夹已存在: {folder_path}")
+
+    return folder_path
+
+def get_expanded_name(file_path, fileName, expand="", expandPos=True, type="xlsx"):
+    """用于拓展文件名"""
+
+    output_dir = getPathOnly(file_path)
+
+    if expand == "":
+        out_path = os.path.join(output_dir, f"{fileName}.{type}")
+    else:
+        if expandPos:
+            out_path = os.path.join(output_dir, f"{expand}_{fileName}.{type}")
+        else:
+            out_path = os.path.join(output_dir, f"{fileName}_{expand}.{type}")
+    return  out_path
+
+
+def readFileBySheet(file_path, sheet_name, expand="", type="xlsx", header=0):
+    """用sheet名，只允许excel, 返回dic格式"""
+    df = []
+    out_path = []
+    validFile = True
+    cols = {}
+
+    xls = pd.ExcelFile(file_path)
+    if sheet_name not in xls.sheet_names:
+        print(f"Sheet '{sheet_name}' 不存在")
+        validFile = False
+    else:
+        df = pd.read_excel(file_path, sheet_name=sheet_name, header= header)
+        df.dropna(how="all", inplace=True)
+
+        for c in df.columns:
+            valid_vals = df[c].dropna().tolist()
+            cols[c] = valid_vals
+
+        output_dir = os.path.dirname(file_path) #without file name
+        out_path = get_expanded_name(output_dir, sheet_name, expand=expand, type=type)
+    return cols, out_path, validFile
+
+def readFileByName(file_path, expand):
+    """用文件名,读取多种类型"""
+
+    if file_path.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(file_path)
+    elif file_path.endswith(".csv"):
+        df = pd.read_csv(file_path)
+    elif file_path.endswith(".txt"):
+        try:
+            # 优先尝试制表符分隔
+            df = pd.read_csv(file_path, sep="\t")
+        except:
+            # 如果失败，用空格分隔
+            df = pd.read_csv(file_path, delim_whitespace=True)
+    else:
+        raise ValueError("不支持的文件格式: " + file_path)
+
+    df.dropna(inplace=True)
+    
+    output_dir = os.path.dirname(file_path) #without file name
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    out_path = get_expanded_name(output_dir, filename, expand=expand)
+    
+    return df, out_path
+
+def _excel_exists_and_valid(filename):
+    """
+    判断 Excel 文件是否存在且为合法 xlsx。
+    """
+    if not os.path.exists(filename):
+        return False
+
+    try:
+        load_workbook(filename, read_only=True)
+        return True
+    except (BadZipFile, OSError, ValueError):
+        return False
+    
+def export_to_excel_auto(df, filename="results.xlsx", sheet_name=None):
+    """
+    自动导出 DataFrame 到 Excel
+    - 优先使用 DEFAULT_LABELS（含别名+单位）
+    - 其次用 DEFAULT_UNITS 拼接
+    - 否则保持原名
+    - sheet_name None 时自动生成 Sheet1, Sheet2 ...
+    - 若 sheet 已存在则覆盖
+    """
+    # 自动生成 sheet 名
+    if sheet_name is None:
+        base_name = "Sheet"
+        idx = 1
+
+        # 先判断Excel是否存在且可正常打开
+        workbook = None
+        if os.path.exists(filename):
+            try:
+                workbook = load_workbook(filename, read_only=True)
+            except (FileNotFoundError, BadZipFile, OSError, ValueError):
+                # 文件存在但不是合法Excel，后面会重新创建
+                workbook = None
+
+        while True:
+            candidate = f"{base_name}{idx}"
+
+            if workbook is None:
+                sheet_name = candidate
+                break
+
+            if candidate not in workbook.sheetnames:
+                sheet_name = candidate
+                break
+
+            idx += 1
+
+    # 列名替换逻辑
+    new_columns = {}
+    for col in df.columns:
+        if col in DEFAULT_LABELS:
+            new_columns[col] = DEFAULT_LABELS[col]
+        elif col in DEFAULT_UNITS:
+            new_columns[col] = f"{col} ({DEFAULT_UNITS[col]})"
+        else:
+            new_columns[col] = col
+
+    df_export = df.rename(columns=new_columns)
+
+    # 写入 Excel
+    excel_ok = _excel_exists_and_valid(filename)
+
+    # 如果存在但损坏，直接删除重新创建
+    if os.path.exists(filename) and not excel_ok:
+        print(f"检测到损坏的 Excel，重新创建：{filename}")
+        os.remove(filename)
+
+    if excel_ok:
+        with pd.ExcelWriter( filename, engine="openpyxl", mode="a", if_sheet_exists="replace", ) as writer:
+            df_export.to_excel(writer, sheet_name=sheet_name, index=False)
+    else:
+        with pd.ExcelWriter( filename, engine="openpyxl", mode="w", ) as writer:
+            df_export.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    print(f"已导出 sheet: {sheet_name} -> {filename}")
+
+def saveToExcel(df, out_path, sheet_name=None):
+    """
+    保存 DataFrame 到 Excel
+    - sheet_name=None -> 覆盖整个文件
+    - sheet_name=str -> 保存到指定 sheet（存在则覆盖，不存在则创建）
+    """
+    if sheet_name is None:
+        # 不指定 sheet -> 覆盖整个 Excel
+        df.to_excel(out_path, index=False)
+        print(f"文件已保存: {out_path}")
+        return
+
+    if df.empty:
+        print(f"跳过空 sheet: {sheet_name}")
+        return
+
+    # 写入 Excel
+    if os.path.exists(out_path):
+        with pd.ExcelWriter(out_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    else:
+        df.to_excel(out_path, sheet_name=sheet_name, index=False)
+    # # 导出 DSL 拟合结果
+    # export_to_excel_auto(fits_data, "results.xlsx", sheet_name="DSL_fits")

@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test cache
+.pytest_cache/
+.mypy_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output
+output/
+results/
+temp/
+logs/
+
+# Generated figures
+*.png
+*.jpg
+
+# Generated Excel
+*.xlsx
+
+# Compiled files
+build/
+dist/
+*.egg-info/
+#test
+T0test/
