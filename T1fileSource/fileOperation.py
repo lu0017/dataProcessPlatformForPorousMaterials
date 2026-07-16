@@ -222,7 +222,7 @@ def get_expanded_name(file_path, fileName, expand="", expandPos=True, type="xlsx
         else:
             out_path = os.path.join(output_dir, f"{fileName}_{expand}.{type}")
     return  out_path
-def readData( file, sheet_name=0, keyFlag=True, keyName=None, ncols=None, sep=None, ):
+def readData( file, sheet_name=0, keyFlag=True, keyName=None, ncols=None, sep=None, skiprows=0 ):
     """
     通用表格读取函数
     Parameters
@@ -253,31 +253,15 @@ def readData( file, sheet_name=0, keyFlag=True, keyName=None, ncols=None, sep=No
     usecols = None if ncols is None else range(ncols)
     # ---------------- Excel ----------------
     if suffix in [".xlsx", ".xls"]:
-        df = pd.read_excel(
-            file,
-            sheet_name=sheet_name,
-            header=header,
-            usecols=usecols,
-        )
+        df = pd.read_excel( file, sheet_name=sheet_name, header=header, usecols=usecols, skiprows=skiprows, )
     # ---------------- CSV ----------------
     elif suffix == ".csv":
-        df = pd.read_csv(
-            file,
-            header=header,
-            usecols=usecols,
-            sep="," if sep is None else sep,
-        )
+        df = pd.read_csv( file, header=header, usecols=usecols, sep="," if sep is None else sep, skiprows=skiprows, )
     # ---------------- TXT ----------------
     elif suffix == ".txt":
         if sep is None:
             sep = r"\s+"
-        df = pd.read_csv(
-            file,
-            header=header,
-            usecols=usecols,
-            sep=sep,
-            engine="python",
-        )
+        df = pd.read_csv( file, header=header, usecols=usecols, sep=sep, engine="python", skiprows=skiprows, )
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
     # 自动列名
@@ -532,6 +516,204 @@ def readFileByName(file_path, expand):
     filename = os.path.splitext(os.path.basename(file_path))[0]
     out_path = get_expanded_name(output_dir, filename, expand=expand)
     return df, out_path
+def readMetadata( file, rows, sheet_name=0, sep=None, ):
+    if isinstance(rows, int):
+        rows = [rows]
+    suffix = os.path.splitext(file)[1].lower()
+    metadata = {}
+    # =====================
+    # txt / csv
+    # =====================
+    if suffix in [".txt", ".csv"]:
+        with open( file, "r", encoding="utf-8", errors="ignore" ) as f:
+            lines = f.readlines()
+        for r in rows:
+            if r >= len(lines):
+                raise IndexError( f"Metadata row {r} exceeds file length" )
+            line = lines[r].strip()
+            # csv分割
+            values = [ x.strip() for x in line.split(",") ]
+            # 去掉空元素
+            values = [ x for x in values if x != "" ]
+            if len(values) == 1:
+                metadata[f"row{r}"] = values[0]
+            else:
+                metadata[f"row{r}"] = values
+    # =====================
+    # Excel
+    # =====================
+    elif suffix in [".xlsx", ".xls"]:
+        raw = pd.read_excel( file, sheet_name=sheet_name, header=None, )
+        for r in rows:
+            values = ( raw.iloc[r] .dropna() .tolist() )
+            if len(values)==1:
+                metadata[f"row{r}"] = values[0]
+            else:
+                metadata[f"row{r}"] = values
+    else:
+        raise ValueError( f"Unsupported file type: {suffix}" )
+    return metadata
+def normalizeKeys(keys):
+    """
+    Normalize duplicated metadata names.
+    Examples
+    --------
+    ["6", "6,,6"] -> ["6", "6"]
+    ["A,A"] -> ["A"]
+    """
+    if isinstance(keys, str):
+        keys = [keys]
+    result = []
+    for k in keys:
+        if k is None:
+            result.append(k)
+            continue
+        k = str(k).strip()
+        # 分割重复名称
+        parts = [ x.strip() for x in k.split(",") if x.strip() ]
+        # 全部相同
+        if len(parts) > 0 and len(set(parts)) == 1:
+            k = parts[0]
+        result.append(k)
+    return result
+def parseGroupedTable(
+    file=None,
+    data=None,
+    sheet_name=0,
+    metadata_rows=None,
+    metadata_names=None,
+    data_start_row=0,
+    keyFlag=True,
+    keyName=None,
+    ncols=None,
+    sep=None,
+    group_size=2,
+    data_names=None,
+    drop_blank_rows=True,
+    drop_blank_columns=True,
+):
+    """
+    Parse grouped table with metadata and data separation.
+    Returns
+    -------
+    dict
+    {
+        "metadata": metadata,
+        "data":{
+            sample:{
+                region: DataFrame
+            }
+        }
+    }
+    """
+    # =========================
+    # 1. Read metadata
+    # =========================
+    metadata = {}
+    if metadata_rows is not None:
+        metadata = readMetadata( file, rows=metadata_rows, sheet_name=sheet_name, sep=sep, )
+        if metadata_names is not None:
+            metadata = {
+                name: metadata[f"row{row}"]
+                for name, row in zip( metadata_names, metadata_rows )
+            }
+    # =========================
+    # 2. Read data
+    # =========================
+    if data is None:
+        df = readData( file=file, sheet_name=sheet_name, keyFlag=False, ncols=ncols, sep=sep, skiprows=data_start_row, )
+    else:
+        df = data.copy()
+    # =========================
+    # 3. Remove blank rows
+    # =========================
+    if drop_blank_rows:
+        df = df.dropna( axis=0, how="all" )
+    # =========================
+    # 4. Remove blank columns
+    # =========================
+    if drop_blank_columns:
+        valid = ~df.isna().all(axis=0)
+        df = df.loc[:, valid]
+    # =========================
+    # 5. Number of groups
+    # =========================
+    if df.shape[1] % group_size != 0:
+        raise ValueError(
+            f"Data columns ({df.shape[1]}) "
+            f"cannot be divided by group_size ({group_size})"
+        )
+    n_group = df.shape[1] // group_size
+    # =========================
+    # 6. Prepare metadata levels
+    # =========================
+    # Sample
+    sample_keys = metadata.get( "Sample", None )
+    # Region
+    # XPS通常使用Original
+    region_keys = metadata.get( "Original", None )
+    # -------------------------
+    # Sample处理
+    # -------------------------
+    if sample_keys is None:
+        sample_keys = [ "Sample" for _ in range(n_group) ]
+    elif isinstance(sample_keys, str):
+        sample_keys = [ sample_keys for _ in range(n_group) ]
+    else:
+        sample_keys = list(sample_keys)
+    # -------------------------
+    # Region处理
+    # -------------------------
+    if region_keys is None:
+        region_keys = [ f"Group{i+1}" for i in range(n_group) ]
+    elif isinstance(region_keys, str):
+        region_keys = [ region_keys for _ in range(n_group) ]
+    else:
+        region_keys = list(region_keys)
+    # =========================
+    # 7. Normalize sample names
+    # =========================
+    sample_keys = normalizeKeys( sample_keys )
+    # =========================
+    # 8. Length correction
+    # =========================
+    if len(sample_keys) != n_group:
+        if len(sample_keys) == 1:
+            sample_keys = ( sample_keys * n_group )
+        else:
+            raise ValueError( "Sample metadata number does not match data groups" )
+    if len(region_keys) != n_group:
+        if len(region_keys) == 1:
+            region_keys = ( region_keys * n_group )
+        else:
+            raise ValueError( "Region metadata number does not match data groups" )
+    # =========================
+    # 9. Build hierarchical dict
+    # =========================
+    grouped = {}
+    for i in range(n_group):
+        start = i * group_size
+        end = start + group_size
+        temp = df.iloc[:, start:end].copy()
+        # =========================
+        # Clean each spectrum
+        # =========================
+        # 删除全空行
+        temp = temp.dropna( axis=0, how="all" )
+        # 删除包含NaN的不完整点
+        temp = temp.dropna( axis=0, how="any" )
+        if data_names is not None:
+            temp.columns = data_names
+        temp = temp.reset_index( drop=True )
+        sample = str( sample_keys[i] ).strip()
+        region = str( region_keys[i] ).strip()
+        if sample not in grouped:
+            grouped[sample] = {}
+        grouped[sample][region] = temp
+    # =========================
+    # 10. Return
+    # =========================
+    return { "metadata": metadata, "data": grouped, }
 def _excel_exists_and_valid(filename):
     """
     判断 Excel 文件是否存在且为合法 xlsx。

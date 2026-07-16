@@ -130,17 +130,8 @@ def fitRaman( data, x="Raman shift (cm-1)", y="Intensity (a.u.)", ):
     fitResults = {}
     results = []
     data = dop.cropX(data, xmin=1020, xmax=1710)
-    myPlt.plotSpectrum(
-        data,
-        figsize=(8, 4),
-        x=x,
-        y=y,
-        reverse_x=False,
-        offset=50,
-        legend=True,
-        colors="PAPER1",
-        linewidth=0.5,
-    )
+    myPlt.plotSpectrum( data, figsize=(8, 4), x=x, y=y, reverse_x=False, 
+                       offset=50, colors="PAPER1", linewidth=0.5, )
     plt.show(block=False)
     for sample, df in data.items():
         X = df[x].to_numpy()
@@ -151,9 +142,9 @@ def fitRaman( data, x="Raman shift (cm-1)", y="Intensity (a.u.)", ):
             row = calculateRamanProperties( fitResult, peaks, )
             row["Sample"] = sample
             results.append(row)
-            print(fitResult.params.keys())
-            print(sample)
-            print(row)
+            # print(fitResult.params.keys())
+            # print(sample)
+            # print(row)
         except Exception as e:
             print(f"{sample} fitting failed: {e}")
     resultDF = pd.DataFrame(results)
@@ -162,7 +153,7 @@ def fitRaman( data, x="Raman shift (cm-1)", y="Intensity (a.u.)", ):
 # 主函数
 # ==========================================
 def main(file_path=None):
-    spectrum = "Raman"
+    spectrum = "FTIR"
     saveFile = False
     singleFile = False
     charaData = {}
@@ -171,7 +162,7 @@ def main(file_path=None):
         extension = ".csv"
         fileName = "FTIR"
         keyFlag = False
-        keyName = ["Wavenumber", "Absorbance"]
+        keyName = ["Wavenumber", "Transmittance (%)"]
         ncols = 2
         sampleMap = {
         "S1": ["CC-Hy-600-.5-1(2)"],
@@ -208,7 +199,7 @@ def main(file_path=None):
         # 选择一个文件
         file = fl.getFile()
         sample = os.path.splitext(os.path.basename(file))[0]
-        df = fl.readTable( file=file, keyFlag=keyFlag, keyName=keyName, ncols=ncols, )
+        df = fl.readData( file=file, keyFlag=keyFlag, keyName=keyName, ncols=ncols, )
         if not df.empty:
             charaData[sample] = df
     else:
@@ -223,48 +214,34 @@ def main(file_path=None):
     charaData1 = dop.copySamples(charaData,sampleMap)
     charaData1 = dop.renameSamples(charaData,sampleMap)
     if spectrum == "FTIR":
-        charaData1 = dop.cropX(charaData1, xmin=200, xmax=3990)
-        charaData2 = dop.baselineCorrection( charaData1, x=keyName[0], y=keyName[1], method="asls", )
+        charaData1 = dop.cropX(charaData1, xmin=700, xmax=3500)
+        charaData2 = dop.baselineCorrection( charaData1, x=keyName[0], y=keyName[1], method="airpls", )
+        charaData20 = dop.smoothSpectrum( charaData2, y=keyName[1], method="savgol", window_length=11, polyorder=3,)
         charaData3 = dop.normalizeSpectrum( charaData2, y=keyName[1], method="vector", )
+
+        figureName = fl.get_expanded_name(out_path, fileName = "FTIR2", type="png")
+        myPlt.plotSpectrum( charaData1, figsize=(8, 4), x=keyName[0], y=keyName[1], show_yticks = False,
+                       reverse_x=True, offset=0, colors="PAPER1", linewidth=0.5, )
+        myPlt.plotSpectrum( charaData2, figsize=(8, 4), x=keyName[0], y=keyName[1], show_yticks = False,
+                       reverse_x=False, offset=-5, colors="PAPER1", linewidth=1.5, xbreak=(2100, 2700))
+        myPlt.plotSpectrum( charaData20, figsize=(8, 4), x=keyName[0], y=keyName[1], show_yticks = False,
+                       reverse_x=False, offset=-5, colors="PAPER1", linewidth=1.5, xbreak=(2100, 2700), savepath=figureName)
+        
     elif spectrum == "Raman": 
+        charaData1 = dop.cropX(charaData1, xmin=500, xmax=2200)
         charaData2 = dop.smoothSpectrum( charaData1, y=keyName[1], method="gaussian", sigma=1.2, )
-        charaData3 = dop.baselineCorrection( charaData2, x=keyName[0], y=keyName[1], method="asls", )
+        charaData3 = dop.baselineCorrection( charaData2, x=keyName[0], y=keyName[1], method="rubberband", )
         resultDF, fitResults = fitRaman(charaData3)
         exportRaman( resultDF=resultDF, filename=out_path)
-    myPlt.plotSpectrum(
-        charaData1,
-        figsize=(8, 4),
-        x=keyName[0],
-        y=keyName[1],
-        reverse_x=True,
-        offset=0,
-        legend=True,
-        colors="PAPER1",
-        linewidth=0.5,
-    )
-    myPlt.plotSpectrum(
-        charaData2,
-        figsize=(8, 4),
-        x=keyName[0],
-        y=keyName[1],
-        reverse_x=True,
-        offset=20,
-        legend=True,
-        colors="PAPER1",
-        linewidth=0.5,
-    )
-    myPlt.plotSpectrum(
-        charaData3,
-        figsize=(8, 4),
-        x=keyName[0],
-        y=keyName[1],
-        reverse_x=True,
-        offset=50,
-        legend=True,
-        colors="PAPER1",
-        linewidth=0.5,
-    )
-    plt.show(block=False)
+        figureName = fl.get_expanded_name(out_path, fileName = "Raman", type="png")
+        myPlt.plotSpectrum( charaData1, figsize=(8, 4), x=keyName[0], y=keyName[1], 
+                       reverse_x=True, offset=0, colors="PAPER1", linewidth=0.5, )
+        myPlt.plotSpectrum( charaData2, figsize=(8, 4), x=keyName[0], y=keyName[1], 
+                       offset=80, colors="PAPER1", linewidth=0.5, )
+        myPlt.plotSpectrum( charaData3, figsize=(8, 4), x=keyName[0], y=keyName[1], 
+                       offset=50, colors="PAPER1", linewidth=0.5, savepath=figureName)
+
+    plt.show(block=True)
     
     y =0
 if __name__ == "__main__":

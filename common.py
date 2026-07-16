@@ -18,6 +18,7 @@ import pathlib
 import re
 import tkinter as tk
 from tkinter import filedialog
+from pathlib import Path
 import pyiast 
 from copy import deepcopy
 
@@ -43,6 +44,7 @@ from matplotlib.colors import Normalize
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
+from matplotlib.ticker import MultipleLocator
 from matplotlib.colors import (
     ListedColormap,
     to_hex,

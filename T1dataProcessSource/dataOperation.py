@@ -389,11 +389,74 @@ def renameSamples(data, sampleMap):
             if oldName in data:
                 result[newName] = data[oldName].copy()
     return result
-def smooth(
-    y,
-    method="savgol",
-    **kwargs,
-):
+def swapDictLevels(data, keep_keys=None):
+    """
+    Swap the first and second levels of a nested dictionary.
+
+    Parameters
+    ----------
+    data : dict
+        Nested dictionary with two levels.
+    keep_keys : list or tuple or set, optional
+        Keys that should remain at the first level without swapping.
+
+    Returns
+    -------
+    dict
+        Dictionary with swapped first and second levels.
+
+    Example
+    -------
+    Before
+    {
+        "S1": {
+            "A": 1,
+            "B": 2,
+            "metadata": {...}
+        },
+        "S2": {
+            "A": 3,
+            "B": 4,
+            "metadata": {...}
+        }
+    }
+
+    After
+    {
+        "A": {
+            "S1": 1,
+            "S2": 3
+        },
+        "B": {
+            "S1": 2,
+            "S2": 4
+        },
+        "metadata": {
+            "S1": {...},
+            "S2": {...}
+        }
+    }
+    """
+
+    if keep_keys is None:
+        keep_keys = []
+
+    result = {}
+
+    for outer_key, inner_dict in data.items():
+
+        for inner_key, value in inner_dict.items():
+
+            if inner_key in keep_keys:
+                result.setdefault(inner_key, {})
+                result[inner_key][outer_key] = deepcopy(value)
+                continue
+
+            result.setdefault(inner_key, {})
+            result[inner_key][outer_key] = deepcopy(value)
+
+    return result
+def smooth( y, method="savgol", **kwargs, ):
     """
     Smooth one spectrum.
     Parameters

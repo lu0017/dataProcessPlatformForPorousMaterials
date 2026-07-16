@@ -1,5 +1,30 @@
 from common import *
 from T1dataProcessSource import dataOperation as dop
+LABEL_MAP = {
+    # -------- Spectrum --------
+    "Wavenumber": r"Wavenumber (cm$^{-1}$)",
+    "Raman shift (cm-1)": r"Raman shift (cm$^{-1}$)",
+    "Intensity (a.u.)": "Intensity (a.u.)",
+    "Absorbance": "Absorbance",
+    "Transmittance": "Transmittance (%)",
+    # -------- Adsorption --------
+    "Pressure": "Pressure (kPa)",
+    "Relative Pressure": r"Relative pressure ($P/P_0$)",
+    "Uptake": r"CO$_2$ uptake (mmol g$^{-1}$)",
+    # -------- Pore --------
+    "Pore Size": "Pore size (nm)",
+    "Pore Volume": r"Pore volume (cm$^3$ g$^{-1}$)",
+    "SSA": r"Surface area (m$^2$ g$^{-1}$)",
+    # -------- Thermodynamics --------
+    "Qst": r"$Q_{st}$ (kJ mol$^{-1}$)",
+    "E": r"$E$ (kJ mol$^{-1}$)",
+    "DeltaG_Jmol": r"$\Delta G$ (J mol$^{-1}$)",
+}
+def formatLabel(label):
+    """
+    Convert common labels to publication format.
+    """
+    return LABEL_MAP.get(label, label)
 class ColorPalette:
     # -------- predefined palettes --------
     PAPER1 = [
@@ -65,22 +90,302 @@ class ColorPalette:
             name,
             colors
         )
-USING_COLOR = ColorPalette.PAPER1  
+USING_COLOR = ColorPalette.PAPER1 
+def sampleColors(colors, n):
+    """
+    Sample n colors uniformly from a color list.
 
+    Parameters
+    ----------
+    colors : list
+        Color palette.
+    n : int
+        Number of required colors.
+
+    Returns
+    -------
+    list
+    """
+    if len(colors) <= n:
+        return colors
+
+    idx = np.linspace(
+        0,
+        len(colors) - 1,
+        n
+    ).round().astype(int)
+
+    return [colors[i] for i in idx]
+def splitXLim( xmin, xmax, xbreak, reverse_x=False, ):
+    """
+    Split x-axis limits for broken axis.
+    Returns
+    -------
+    list
+        [(xmin1, xmax1), (xmin2, xmax2)]
+    """
+    if xbreak is None:
+        if reverse_x:
+            return [(xmax, xmin)]
+        else:
+            return [(xmin, xmax)]
+    b1, b2 = sorted(xbreak)
+    if reverse_x:
+        # 左图：高波数
+        return [ (xmax, b2), (b1, xmin), ]
+    else:
+        # 左图：低波数
+        return [ (xmin, b1), (b2, xmax), ]
+def splitXLim( xmin, xmax, xbreak=None, reverse_x=False, ):
+    """
+    X limits corresponding to splitSpectrum().
+    Returns
+    -------
+    list
+        [(xmin1, xmax1), (xmin2, xmax2)]
+    """
+    if xbreak is None:
+        if reverse_x:
+            return [(xmax, xmin)]
+        else:
+            return [(xmin, xmax)]
+    b1, b2 = sorted(xbreak)
+    if reverse_x:
+        # 左图：高波数
+        return [ (xmax, b2), (b1, xmin), ]
+    else:
+        # 左图：低波数
+        return [ (xmin, b1), (b2, xmax), ] 
+def splitSpectrum( X, Y, xbreak=None, reverse_x=False, ):
+    """
+    Split spectrum for broken x-axis.
+    Returns
+    -------
+    list
+        [(X1, Y1), (X2, Y2)]
+    """
+    if xbreak is None:
+        return [(X, Y)]
+    b1, b2 = sorted(xbreak)
+    low = X <= b1
+    high = X >= b2
+    if reverse_x:
+        # 左图：高波数
+        return [ (X[high], Y[high]), (X[low], Y[low]), ]
+    else:
+        # 左图：低波数
+        return [ (X[low], Y[low]), (X[high], Y[high]), ]
+def drawBreakMark(ax, side="right", size=4.5, linewidth=0.8):
+    """
+    Draw diagonal break mark with fixed visual size.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    side : {"left", "right"}
+        Which side of axis to draw.
+    size : float
+        Length of diagonal mark in points.
+    """
+    # axes 坐标中心
+    if side == "right":
+        x = 1
+    else:
+        x = 0
+    # 转换 points 到 axes fraction
+    fig = ax.figure
+    # axes 实际尺寸(pixel)
+    bbox = ax.get_window_extent()
+    # y方向比例修正
+    dx = size / bbox.width
+    dy = size / bbox.height
+    kwargs = dict( color="black", clip_on=False, linewidth=linewidth, transform=ax.transAxes, )
+    if side == "right":
+        ax.plot( [x-dx, x+dx], [-dy, +dy], **kwargs, )
+        ax.plot( [x-dx, x+dx], [1-dy, 1+dy], **kwargs, )
+    else:
+        ax.plot( [x-dx, x+dx], [-dy, +dy], **kwargs, )
+        ax.plot( [x-dx, x+dx], [1-dy, 1+dy], **kwargs, )
+def createAxes( ax=None, figsize=(5, 4), xbreak=None, xrange=None, reverse_x=False, ):
+    """
+    Create figure and axes.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes or None
+    figsize : tuple
+    xbreak : tuple or None
+        (xmin, xmax)
+    Returns
+    -------
+    fig
+    axes
+    """
+    # ------------------------------
+    # Existing Axes
+    # ------------------------------
+    if ax is not None:
+        return ax.figure, [ax]
+    # ------------------------------
+    # Normal
+    # ------------------------------
+    if xbreak is None:
+        fig, ax = plt.subplots(figsize=figsize)
+        return fig, [ax]
+    # ------------------------------
+    # Broken X axis
+    # ------------------------------
+    if xrange is None:
+        width_ratios = [1, 1]
+    else:
+        # 两段实际数据范围
+        if reverse_x:
+            width_ratios = [
+                abs(xrange[1] - xbreak[1]),
+                abs(xbreak[0] - xrange[0]),
+            ]
+        else:
+            width_ratios = [
+                abs(xbreak[0] - xrange[0]),
+                abs(xrange[1] - xbreak[1]),
+            ]
+    fig, (ax1, ax2) = plt.subplots(
+        1,
+        2,
+        figsize=figsize,
+        sharey=True,
+        gridspec_kw={
+            "width_ratios": width_ratios,
+            "wspace": 0.04,
+        },
+    )
+    # 去掉中间边框
+    ax1.spines["right"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    # 右边不要Y轴
+    ax2.yaxis.set_visible(False)
+    # 去掉中间tick
+    ax1.tick_params(right=False)
+    ax2.tick_params(left=False)
+    # ------------------------------
+    # Draw //
+    # ------------------------------
+    drawBreakMark( ax1, side="right", )
+    drawBreakMark( ax2, side="left", )
+    return fig, [ax1, ax2]
+def applyLegend( fig, axes, show=True, position="outside right", frameon=False, ncol=1, fontsize=None, ):
+    """
+    Apply legend automatically.
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    axes : list[Axes]
+        Axes list. Support normal and broken axis.
+    show : bool
+    position : str
+        Legend position:
+        - "upper left"
+        - "upper right"
+        - "center left"
+        - "center right"
+        - "lower left"
+        - "lower right"
+        - "outside right"
+        - "outside left"
+    """
+    if not show:
+        return
+    # ==================================================
+    # Collect handles
+    # ==================================================
+    handles = []
+    labels = []
+    for ax in axes:
+        h, l = ax.get_legend_handles_labels()
+        for hh, ll in zip(h, l):
+            if ll not in labels:
+                handles.append(hh)
+                labels.append(ll)
+    if not handles:
+        return
+    # ==================================================
+    # Position configuration
+    # ==================================================
+    config = {
+        # inside
+        "upper left": {
+            "loc": "upper left",
+            "anchor": None,
+            "side": "left",
+        },
+        "upper right": {
+            "loc": "upper right",
+            "anchor": None,
+            "side": "right",
+        },
+        "lower left": {
+            "loc": "lower left",
+            "anchor": None,
+            "side": "left",
+        },
+        "lower right": {
+            "loc": "lower right",
+            "anchor": None,
+            "side": "right",
+        },
+        # outside
+        "outside right": {
+            "loc": "upper left",
+            "anchor": (1, 1.03),
+            "side": "right",
+        },
+        "outside left": {
+            "loc": "center right",
+            "anchor": (-0.02, 0.5),
+            "side": "left",
+        },
+    }
+    if position not in config:
+        raise ValueError( f"Unknown legend position: {position}" )
+    cfg = config[position]
+    # ==================================================
+    # Choose host axis
+    # ==================================================
+    if cfg["side"] == "left":
+        host = axes[0]
+    else:
+        host = axes[-1]
+    # ==================================================
+    # Draw
+    # ==================================================
+    kwargs = dict( frameon=frameon, ncol=ncol, fontsize=fontsize, )
+    if cfg["anchor"] is not None:
+        kwargs["bbox_to_anchor"] = cfg["anchor"]
+    host.legend( handles, labels, loc=cfg["loc"], **kwargs, )
+def saveFigure( fig, savepath=None, dpi=600, transparent=False, ):
+    """
+    Save figure.
+    """
+    if savepath is None:
+        return
+    fig.savefig( savepath, dpi=dpi, bbox_inches="tight", transparent=transparent, )
 def plotSpectrum(
     data,
     ax=None,
     figsize=(5, 4),
     x="Wavenumber",
-    y="Absorbance",
+    y="Transmittance (%)",
     xlabel=None,
     ylabel=None,
+    show_yticks=True,
     reverse_x=True,
     offset=0,
     legend=True,
     colors="PAPER1",
     linewidth=1.5,
     linestyle="-",
+    xbreak=None,
+    savepath=None,
+    dpi=600,
+    transparent=False,
 ):
     """
     Plot spectra (FTIR, Raman, XRD, UV-Vis, etc.).
@@ -88,22 +393,23 @@ def plotSpectrum(
     ----------
     data : dict
         {sample_name: DataFrame}
-    baseline : str
-        None
-        "rubberband"
-        "asls"
-        "airpls"
-    normalize : str
-        None
-        "minmax"
-        "max"
-        "vector"
+    xbreak : tuple, optional
+        (xmin, xmax), remove the middle region.
+    savepath : str or Path, optional
     """
+    # ==================================================
+    # X range
+    # ==================================================
+    xmin = np.inf
+    xmax = -np.inf
+    for sample, df in data.items():
+        X = df[x].to_numpy()
+        xmin = min(xmin, X.min())
+        xmax = max(xmax, X.max())
     # ==================================================
     # Figure
     # ==================================================
-    if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
+    fig, axes = createAxes( ax=ax, figsize=figsize, xbreak=xbreak, xrange=(xmin, xmax),reverse_x=reverse_x)
     # ==================================================
     # Color
     # ==================================================
@@ -111,70 +417,119 @@ def plotSpectrum(
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     elif isinstance(colors, str):
         if hasattr(ColorPalette, colors):
-            colors = getattr(ColorPalette, colors)
+            colors = sampleColors( getattr(ColorPalette, colors), len(data) )
         else:
             cmap = plt.get_cmap(colors)
-            colors = [
-                cmap(i)
-                for i in np.linspace(0, 1, len(data))
-            ]
+            colors = [ cmap(i) for i in np.linspace(0, 1, len(data)) ]
     # ==================================================
     # Plot
     # ==================================================
     for i, (sample, df) in enumerate(data.items()):
         X = df[x].to_numpy()
         Y = df[y].to_numpy()
-        # # -----------------------------
-        # # Baseline correction
-        # # -----------------------------
-        # if baseline is not None:
-        #     Y = baselineCorrection(
-        #         X,
-        #         Y,
-        #         method=baseline,
-        #     )
-        # # -----------------------------
-        # # Normalize
-        # # -----------------------------
-        # if normalize is not None:
-        #     Y = normalizeSpectrum(
-        #         Y,
-        #         method=normalize,
-        #     )
-        # -----------------------------
-        # Offset
-        # -----------------------------
         if offset != 0:
             Y = Y + i * offset
-        # -----------------------------
-        # Plot
-        # -----------------------------
-        ax.plot(
-            X,
-            Y,
-            color=colors[i % len(colors)],
-            linewidth=linewidth,
-            linestyle=linestyle,
-            label=sample,
-        )
+        segments = splitSpectrum( X, Y, xbreak=xbreak, reverse_x=reverse_x, )
+        for ax_i, (Xs, Ys) in zip(axes, segments):
+            ax_i.plot(
+                Xs,
+                Ys,
+                color=colors[i % len(colors)],
+                linewidth=linewidth,
+                linestyle=linestyle,
+                label=sample,
+            )
     # ==================================================
-    # Axis
+    # Axis Style
     # ==================================================
-    if reverse_x:
-        ax.invert_xaxis()
-    ax.set_xlabel(x if xlabel is None else xlabel)
-    ax.set_ylabel(y if ylabel is None else ylabel)
-    applyAxisStyle(ax)
+    for ax_i in axes:
+        applyAxisStyle(ax_i)
+        setMajorTicks(ax_i,axis="x", major_step=200,)
+        setMinorTicks(ax_i,axis="x", minor_step=100,)
+        if not show_yticks:
+            ax_i.set_yticks([])
+    # --------------------------------------------------
+    # Axis Label
+    # --------------------------------------------------
+    if len(axes) == 1:
+        axes[0].set_xlabel( formatLabel(x if xlabel is None else xlabel) )
+        axes[0].set_ylabel( formatLabel(y if ylabel is None else ylabel) )
+    else:
+        fig.supxlabel( formatLabel(x if xlabel is None else xlabel) )
+        axes[0].set_ylabel( formatLabel(y if ylabel is None else ylabel) )
+    # --------------------------------------------------
+    # X Limit
+    # --------------------------------------------------
+    xlims = splitXLim( xmin, xmax, xbreak=xbreak, reverse_x=reverse_x, )
+    for ax_i, xlim in zip(axes, xlims):
+        ax_i.set_xlim(*xlim)
     # ==================================================
     # Legend
     # ==================================================
-    if legend:
-        ax.legend(
-            loc="upper left",
-            bbox_to_anchor=(1.0, 1),
-            frameon=False,
-        )
-    return ax
+    applyLegend( fig, axes, show=legend, )
+    # ==================================================
+    # Save
+    # ==================================================
+    if savepath is not None:
+        saveFigure( fig, savepath=savepath, dpi=600)
+    return axes
+def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
+    """
+    Set fixed major tick interval and style.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axis.
+    axis : str
+        "x", "y", or "both"
+    major_step : float or None
+        Major tick interval.
+    direction : str
+        Tick direction: "in", "out", "inout"
+    length : float
+        Major tick length.
+    width : float
+        Major tick width.
+    """
+    if major_step is None:
+        return
+    locator = MultipleLocator(major_step)
+    if axis in ("x", "both"):
+        ax.xaxis.set_major_locator(locator)
+    if axis in ("y", "both"):
+        ax.yaxis.set_major_locator(locator)
+    ax.tick_params( which="major", direction=direction, length=length, width=width, )
+def setMinorTicks( ax, axis="x", minor_step=None, direction="in", length=3, width=0.8, ):
+    """
+    Set minor ticks with fixed interval.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axis.
+    axis : str
+        Which axis to apply.
+        Options:
+        - "x"
+        - "y"
+        - "both"
+    minor_step : float or None
+        Fixed interval of minor ticks.
+        If None, minor ticks are not modified.
+    direction : str
+        Tick direction.
+    length : float
+        Minor tick length.
+    width : float
+        Minor tick width.
+    """
+    if minor_step is None:
+        return
+    locator = MultipleLocator(minor_step)
+    if axis in ("x", "both"):
+        ax.xaxis.set_minor_locator(locator)
+    if axis in ("y", "both"):
+        ax.yaxis.set_minor_locator(locator)
+    ax.tick_params( which="minor", direction=direction, length=length, width=width, )
 def applyAxisStyle(ax):
     """Apply default axis style."""
     ax.tick_params(
@@ -225,42 +580,20 @@ def scatterSphere(
         # 根据数据范围自动计算偏移量
         dx = (x.max() - x.min()) * 0.008
         dy = (y.max() - y.min()) * 0.008
-        ax.scatter(
-            x - dx,
-            y + dy,
-            s=s * highlight_size,
-            c="white",
-            alpha=highlight_alpha,
-            linewidths=0,
-            zorder=3,
-        )
-def drawGradientBars(
-    ax,
-    bars,
-    colors,
-    bottom_color="#d9d9d9",
-    steps=100,
-):
+        ax.scatter( x - dx, y + dy, s=s * highlight_size, c="white", 
+                   alpha=highlight_alpha, linewidths=0, zorder=3, )
+def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
     for bar, top_color in zip(bars, colors):
         height = bar.get_height()
         if height == 0:
             continue
         x = bar.get_x()
         width = bar.get_width()
-        cmap = LinearSegmentedColormap.from_list(
-            "bar_gradient",
-            [
-                bottom_color,
-                top_color,
-            ]
-        )
+        cmap = LinearSegmentedColormap.from_list( "bar_gradient", [ bottom_color, top_color, ] )
         y_start = 0 if height > 0 else height
         for i in range(steps):
             rect = Rectangle(
-                (
-                    x,
-                    y_start + abs(height)*i/steps
-                ),
+                ( x, y_start + abs(height)*i/steps ),
                 width,
                 abs(height)/steps,
                 facecolor=cmap(i/steps),

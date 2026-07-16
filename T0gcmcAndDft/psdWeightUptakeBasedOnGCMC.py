@@ -8,8 +8,8 @@ from common import *
 
 import constantsAndName as const
 
-import fileSource.fileOperation as fl
-import dataProcessSource.dataOperation as dop
+import T1fileSource.fileOperation as fl
+import T1dataProcessSource.dataOperation as dop
 
 def select_folder():
     root = tk.Tk()
@@ -410,7 +410,7 @@ def main(file_path=None):
     sampleAll = readPSD(file_path)
     expData =readExpUptake(file_path)
     for sample in sampleAll:
-        sample = "CC-Ca-800-2-1"
+        sample = "SU-MAC-800"
         print(sample)
         psdPore,psdDV = mergePSD(sampleAll[sample])
         ignoredFraction = calculateIgnoredFraction(psdPore.copy(),simPore)
@@ -426,13 +426,13 @@ def main(file_path=None):
             uptake_density = calculateUptakeByDensity(volume, simData_density)
             
         # print("ModelVolumeAcc= ", ModelVolumeAcc)
-        print("sum(volume)= ", np.sum(volume))
-        print("volume= ", volume)
+        # print("sum(volume)= ", np.sum(volume))
+        # print("volume= ", volume)
         # print("volumeWweight= ", volume/ModelVolumeAcc)
-        print("weight= ", weight)
-        print("simPore= ",simPore)
-        print("HeliumFraction= ",HeliumFraction)
-        print("simData= ",np.max(simData,axis=1))
+        # print("weight= ", weight)
+        # print("simPore= ",simPore)
+        # print("HeliumFraction= ",HeliumFraction)
+        # print("simData= ",np.max(simData,axis=1))
         findThreshold(simPore,uptake["cumulative"],uptake["percent"])
         # plotContribution(simPore,uptake["percent"])
         # plotCumulative(simPore,uptake["cumulative"])
@@ -448,6 +448,6 @@ def main(file_path=None):
         break
     plt.show(block=True)
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     f = sys.argv[1] if len(sys.argv) > 1 else None
     main(f)
