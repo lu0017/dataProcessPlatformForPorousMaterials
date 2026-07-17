@@ -18,6 +18,7 @@ LABEL_MAP = {
     # -------- Thermodynamics --------
     "Qst": r"$Q_{st}$ (kJ mol$^{-1}$)",
     "E": r"$E$ (kJ mol$^{-1}$)",
+    "bA": r"Affinity of site $A$ (kPa$^{-1}$)",
     "DeltaG_Jmol": r"$\Delta G$ (J mol$^{-1}$)",
 }
 def formatLabel(label):
@@ -67,14 +68,16 @@ class ColorPalette:
     @staticmethod
     def get(colors, n, name="palette"):
         """
-        Generate n colors from a custom palette.
+        Generate n colors.
         Parameters
         ----------
-        colors : list
-            List of color hex strings.
-        n : int
-            Number of colors.
+        colors : list or str
+            Either
+            - ColorPalette.PAPER1
+            - "PAPER1"
         """
+        if isinstance(colors, str):
+            colors = getattr(ColorPalette, colors)
         cmap = LinearSegmentedColormap.from_list(name, colors)
         return cmap(np.linspace(0, 1, n))
     @staticmethod
@@ -94,27 +97,23 @@ USING_COLOR = ColorPalette.PAPER1
 def sampleColors(colors, n):
     """
     Sample n colors uniformly from a color list.
-
     Parameters
     ----------
     colors : list
         Color palette.
     n : int
         Number of required colors.
-
     Returns
     -------
     list
     """
     if len(colors) <= n:
         return colors
-
     idx = np.linspace(
         0,
         len(colors) - 1,
         n
     ).round().astype(int)
-
     return [colors[i] for i in idx]
 def splitXLim( xmin, xmax, xbreak, reverse_x=False, ):
     """
@@ -271,7 +270,105 @@ def createAxes( ax=None, figsize=(5, 4), xbreak=None, xrange=None, reverse_x=Fal
     drawBreakMark( ax1, side="right", )
     drawBreakMark( ax2, side="left", )
     return fig, [ax1, ax2]
-def applyLegend( fig, axes, show=True, position="outside right", frameon=False, ncol=1, fontsize=None, ):
+def buildCurveLegend(
+    sample_names,
+    color_list,
+    marker=True,
+    line=True,
+    fit=False,
+    fit_label="Fit",
+    linewidth=2,
+    linestyle="-",
+    fit_linewidth=2,
+    fit_linestyle="--",
+    markersize=70,
+    markeredgecolor="black",
+):
+    """
+    Build legend handles for curve plots.
+    Parameters
+    ----------
+    sample_names : list[str]
+    color_list : list
+        Colors returned by ColorPalette.get()
+    marker : bool
+        Whether experimental markers are shown.
+    line : bool
+        Whether experimental lines are shown.
+    fit : bool
+        Whether fitted curves are shown.
+    fit_label : str
+    Returns
+    -------
+    list
+        Legend handles.
+    """
+    handles = []
+    # scatter() 的 s 是面积，Line2D 的 markersize 是直径（pt）
+    ms = np.sqrt(markersize)
+    for name, color in zip(sample_names, color_list):
+        # --------------------------
+        # Experimental data
+        # --------------------------
+        handles.append(
+            Line2D(
+                [],
+                [],
+                color=color if line else "none",
+                linestyle=linestyle if line else "None",
+                linewidth=linewidth,
+                marker="o" if marker else None,
+                markersize=ms if marker else 0,
+                markerfacecolor=color,
+                markeredgecolor=markeredgecolor,
+                label=name,
+            )
+        )
+        # --------------------------
+        # Fitted curve
+        # --------------------------
+        if fit:
+            handles.append(
+                Line2D(
+                    [],
+                    [],
+                    color=color,
+                    linestyle=fit_linestyle,
+                    linewidth=fit_linewidth,
+                    label=f"{name} {fit_label}",
+                )
+            )
+    return handles
+def removeDuplicateLegend(handles):
+    """
+    Remove duplicated legend handles according to labels.
+    Parameters
+    ----------
+    handles : list
+        Legend handles.
+    Returns
+    -------
+    unique_handles : list
+    labels : list[str]
+    """
+    unique_handles = []
+    labels = []
+    for h in handles:
+        label = h.get_label()
+        if label not in labels:
+            labels.append(label)
+            unique_handles.append(h)
+    return unique_handles, labels
+def applyLegend(
+    fig,
+    axes,
+    show=True,
+    handles=None,
+    position="outside right",
+    frameon=False,
+    ncol=1,
+    fontsize=None,
+):
     """
     Apply legend automatically.
     Parameters
@@ -280,12 +377,13 @@ def applyLegend( fig, axes, show=True, position="outside right", frameon=False, 
     axes : list[Axes]
         Axes list. Support normal and broken axis.
     show : bool
+    handles : list, optional
+        Custom legend handles. If None, legend handles will be collected
+        automatically from axes.
     position : str
         Legend position:
         - "upper left"
         - "upper right"
-        - "center left"
-        - "center right"
         - "lower left"
         - "lower right"
         - "outside right"
@@ -296,14 +394,12 @@ def applyLegend( fig, axes, show=True, position="outside right", frameon=False, 
     # ==================================================
     # Collect handles
     # ==================================================
-    handles = []
-    labels = []
-    for ax in axes:
-        h, l = ax.get_legend_handles_labels()
-        for hh, ll in zip(h, l):
-            if ll not in labels:
-                handles.append(hh)
-                labels.append(ll)
+    if handles is None:
+        handles = []
+        for ax in axes:
+            h, _ = ax.get_legend_handles_labels()
+            handles.extend(h)
+    handles, labels = removeDuplicateLegend(handles)
     if not handles:
         return
     # ==================================================
@@ -344,23 +440,29 @@ def applyLegend( fig, axes, show=True, position="outside right", frameon=False, 
         },
     }
     if position not in config:
-        raise ValueError( f"Unknown legend position: {position}" )
+        raise ValueError(f"Unknown legend position: {position}")
     cfg = config[position]
     # ==================================================
     # Choose host axis
     # ==================================================
-    if cfg["side"] == "left":
-        host = axes[0]
-    else:
-        host = axes[-1]
+    host = axes[0] if cfg["side"] == "left" else axes[-1]
     # ==================================================
     # Draw
     # ==================================================
-    kwargs = dict( frameon=frameon, ncol=ncol, fontsize=fontsize, )
+    kwargs = dict(
+        frameon=frameon,
+        ncol=ncol,
+        fontsize=fontsize,
+    )
     if cfg["anchor"] is not None:
         kwargs["bbox_to_anchor"] = cfg["anchor"]
-    host.legend( handles, labels, loc=cfg["loc"], **kwargs, )
-def saveFigure( fig, savepath=None, dpi=600, transparent=False, ):
+    host.legend(
+        handles,
+        labels,
+        loc=cfg["loc"],
+        **kwargs,
+    )
+def saveFigure( fig, savepath=None, dpi=300, transparent=False, ):
     """
     Save figure.
     """
@@ -471,7 +573,7 @@ def plotSpectrum(
     # Save
     # ==================================================
     if savepath is not None:
-        saveFigure( fig, savepath=savepath, dpi=600)
+        saveFigure( fig, savepath=savepath, dpi=300)
     return axes
 def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
     """
@@ -547,6 +649,9 @@ def scatterSphere(
     edgecolor="black",
     s=60,
     linewidth=0.6,
+    marker="o",
+    label=None,
+    zorder=2,
     highlight=True,
     highlight_size=0.28,
     highlight_alpha=0.55,
@@ -557,31 +662,63 @@ def scatterSphere(
     ----------
     ax : matplotlib.axes.Axes
     x, y : array-like
-    color : str
-        Marker color.
-    edgecolor : str
+        Coordinates.
+    color : color-like
+        Marker face color.
+    edgecolor : color-like
         Marker edge color.
     s : float
         Marker size.
     linewidth : float
-        Edge line width.
+        Marker edge width.
+    marker : str
+        Marker style, e.g. "o", "s", "^", "D".
+    label : str, optional
+        Legend label.
+    zorder : int
+        Drawing order.
     highlight : bool
-        Whether to draw highlight.
+        Whether to draw the specular highlight.
     highlight_size : float
-        Fraction of marker size used for highlight.
+        Relative size of the highlight.
     highlight_alpha : float
-        Transparency of highlight.
+        Highlight transparency.
     """
-    # Base marker
-    ax.scatter( x, y, s=s, c=color, edgecolors=edgecolor, linewidths=linewidth, zorder=2, )
-    if highlight:
-        x = np.asarray(x)
-        y = np.asarray(y)
-        # 根据数据范围自动计算偏移量
-        dx = (x.max() - x.min()) * 0.008
-        dy = (y.max() - y.min()) * 0.008
-        ax.scatter( x - dx, y + dy, s=s * highlight_size, c="white", 
-                   alpha=highlight_alpha, linewidths=0, zorder=3, )
+    x = np.asarray(x)
+    y = np.asarray(y)
+    # ---------- Base marker ----------
+    ax.scatter(
+        x,
+        y,
+        s=s,
+        c=color,
+        edgecolors=edgecolor,
+        linewidths=linewidth,
+        marker=marker,
+        label=label,
+        zorder=zorder,
+    )
+    if not highlight:
+        return
+    # ---------- Highlight ----------
+    if len(x) > 1:
+        dx = (x.max() - x.min()) * 0.0035
+    else:
+        dx = 0
+    if len(y) > 1:
+        dy = (y.max() - y.min()) * 0.0035
+    else:
+        dy = 0
+    ax.scatter(
+        x - dx,
+        y + dy,
+        s=s * highlight_size,
+        c="white",
+        alpha=highlight_alpha,
+        linewidths=0,
+        marker=marker,
+        zorder=zorder + 1,
+    )
 def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
     for bar, top_color in zip(bars, colors):
         height = bar.get_height()
@@ -607,6 +744,132 @@ def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
         bar.set_zorder(2)
     ax.relim()
     ax.autoscale_view()
+def plotCurve(
+    data,
+    ax=None,
+    figsize=(5, 4),
+    x="Pressure",
+    y="Uptake",
+    xlabel=None,
+    ylabel=None,
+    marker=True,
+    line=True,
+    fit=None,
+    fit_label="Fit",
+    colors="PAPER1",
+    linewidth=2,
+    linestyle="-",
+    fit_linewidth=2,
+    fit_linestyle="--",
+    markersize=70,
+    legend=True,
+    savepath=None,
+):
+    """
+    General XY curve plotting.
+    Parameters
+    ----------
+    data : dict
+        Experimental data.
+        Supported formats:
+        {
+            "Sample1": DataFrame,
+            "Sample2": DataFrame,
+        }
+        or
+        {
+            "Sample1": (x_array, y_array),
+            "Sample2": (x_array, y_array),
+        }
+    fit : dict, optional
+        Same format as data.
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+    applyAxisStyle(ax)
+    sample_names = list(data.keys())
+    color_list = ColorPalette.get(colors, len(sample_names))
+    def _extract_xy(curve):
+        """Extract x and y from DataFrame or tuple/list."""
+        if isinstance(curve, pd.DataFrame):
+            xx = np.asarray(curve[x])
+            yy = np.asarray(curve[y])
+        elif isinstance(curve, (tuple, list)) and len(curve) == 2:
+            xx = np.asarray(curve[0])
+            yy = np.asarray(curve[1])
+        else:
+            raise TypeError(
+                "Each dataset must be a pandas DataFrame or (x, y)."
+            )
+        idx = np.argsort(xx)
+        return xx[idx], yy[idx]
+    for color, name in zip(color_list, sample_names):
+        xx, yy = _extract_xy(data[name])
+        # Experimental line
+        if line:
+            ax.plot(
+                xx,
+                yy,
+                color=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
+                label=name if fit is None else None,
+                zorder=2,
+            )
+        # Experimental markers
+        if marker:
+            scatterSphere(
+                ax,
+                xx,
+                yy,
+                color=color,
+                s=markersize,
+                label=name if not line else None,
+                zorder=3,
+            )
+        # Fit
+        if fit is not None and name in fit:
+            fx, fy = _extract_xy(fit[name])
+            ax.plot(
+                fx,
+                fy,
+                color=color,
+                linewidth=fit_linewidth,
+                linestyle=fit_linestyle,
+                label=f"{name} {fit_label}",
+                zorder=1,
+            )
+    ax.set_xlabel(xlabel or x)
+    ax.set_ylabel(ylabel or y)
+
+    if legend:
+
+        handles = buildCurveLegend(
+            sample_names=sample_names,
+            color_list=color_list,
+            marker=marker,
+            line=line,
+            fit=(fit is not None),
+            fit_label=fit_label,
+            linewidth=linewidth,
+            linestyle=linestyle,
+            fit_linewidth=fit_linewidth,
+            fit_linestyle=fit_linestyle,
+            markersize=markersize,
+        )
+
+        applyLegend(
+            fig=ax.figure,
+            axes=[ax],
+            handles=handles,
+        )
+    if savepath is not None:
+        saveFigure( fig=ax.figure, savepath=savepath, dpi=300)
+
+    return ax
 def _plotCorrelation(ax, result):
     x = np.asarray(result["X"])
     y = np.asarray(result["Y"])
@@ -686,7 +949,7 @@ def plotBatchCorrelation(results, topN=5, sort_by="R2"):
         fig.delaxes(ax)
     plt.tight_layout()
     plt.show(block=False)
-def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gradientFlag=True):
+def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gradientFlag=True, savepath=None):
     """
     Plot a single bar chart.
     Parameters
@@ -717,17 +980,16 @@ def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gr
     else:
         ax.bar(x, y, color=colors)
     if xlabel is not None:
-        ax.set_xlabel(xlabel)
+        ax.set_xlabel( formatLabel(x if xlabel is None else xlabel) )
     if ylabel is not None:
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel( formatLabel(y if ylabel is None else ylabel) )
     if title is not None:
         ax.set_title(title)
     ax.tick_params(axis="x", rotation=rotation)
     # 论文风格：刻度朝内，仅左、下有刻度
     applyAxisStyle(ax)
-    # print("axis:", id(ax))
-    # print("colors:", colors.shape)
-    # print(colors[0])
+    if savepath is not None:
+        saveFigure( fig, savepath=savepath, dpi=300)
     return ax
 def plotBarByMetrics(metrics, columns=None, ylabel=None, title=None, ncols=1):
     """

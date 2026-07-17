@@ -224,7 +224,7 @@ def calculatePSDMetrics(psdData, regions):
 
 def main(file_path=None):
     # # 选择文件
-    psd_sheet = "PSD-GCMC-CO2"
+    psd_sheet = "PSD-DFT-CO2"
     kinetic_sheet = "thermalkinetic"
 
     regions = {
@@ -250,10 +250,16 @@ def main(file_path=None):
     metrics = calculatePSDMetrics(psdData, regions)
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
-    fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
-    fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
-    fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
-    myPlt.plotBarByMetrics(metrics, columns=xColumns)
+    # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
+    # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
+    # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
+    # myPlt.plotBarByMetrics(metrics, columns=xColumns)
+    # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio (-)", gradientFlag=True,savepath="HighLowRatio")
+    # myPlt.plotBar(metrics.index, metrics["CompetitionIndex"], xlabel="Sample",ylabel="CompetitionIndex (-)", gradientFlag=True,savepath="CompetitionIndex")
+    # myPlt.plotBar(metrics.index, metrics["Skewness"], xlabel="Sample",ylabel="Skewness (-)", gradientFlag=True,savepath="Skewness")
+    myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", gradientFlag=True,savepath="E")
+    myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", gradientFlag=True,savepath="bA")
+    myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
     myPlt.plotBatchCorrelation(results, topN=9)
     exclude = [
         "Variance",

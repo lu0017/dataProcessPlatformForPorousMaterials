@@ -12,6 +12,7 @@ import constantsAndName as const
 
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
+import T1plotSource.plotOperation as myPlt
 
 def runInterpolateDsl(df, pressureUnit="kPa", plotFlag=True):
     """默认单位 kPa"""
@@ -64,22 +65,29 @@ def runInterpolateDsl(df, pressureUnit="kPa", plotFlag=True):
     df_interp = pd.DataFrame(data_dict)
 
     if plotFlag:
-        plt.figure(figsize=(6, 4))
 
-        # 绘制实验数据点
-        for T in T_list:
-            plt.scatter(cleaned_p[T], cleaned_q[T], label=f"T={T}°C exp")
+        expData = {
+            f"{T}°C": (cleaned_p[T], cleaned_q[T])
+            for T in T_list
+        }
 
-        # 绘制插值曲线
-        for T in T_list:
-            plt.plot(p_common, f_funcs[T](p_common), label=f"T={T}°C Interp")
+        interpData = {
+            f"{T}°C": (p_common, f_funcs[T](p_common))
+            for T in T_list
+        }
 
-        plt.xlabel("P (kPa)")
-        plt.ylabel("q (mmol/g)")
-        plt.title("Interpolated and experiment")
-        plt.legend()
-        plt.grid(True)
-        plt.show(block=True)
+        myPlt.plotCurve(
+            data=expData,
+            # fit=interpData,
+            xlabel="P (kPa)",
+            ylabel="q (mmol/g)",
+            marker= False,
+            line=True,
+            fit_label="Interp",
+            savepath="tes2.png",
+        )
+
+        plt.show()
 
     return df_interp
 
@@ -114,7 +122,8 @@ def main(file_path=None):
                 continue
 
             df_interp = runInterpolateDsl(listData, plotFlag=False)
-            fl.export_to_excel_auto(df_interp, filename=out_path, sheet_name=sheet)
+            # fl.export_to_excel_auto(df_interp, filename=out_path, sheet_name=sheet)
+    y=0
 
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

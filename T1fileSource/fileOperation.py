@@ -118,7 +118,10 @@ SkipSheets = [
     "15C",
     "25C",
     "uio-66 Zn 40",
-    "uio-66 Co 40"
+    "uio-66 Co 40",
+    "report",
+    "N2-PSD",
+    "GCMC-PSD 0-0.03_0.1"
 ]
 splitSheet = [
     "0C",
