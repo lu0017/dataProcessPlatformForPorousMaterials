@@ -1253,7 +1253,7 @@ def crossCorrelationAnalysis(dataX, dataY, xColumns=None, yColumns=None):
     # -----------------------------
     summary, results = batchCorrelationAnalysis(X, Y)
     return X, Y, summary, results
-def matrixCorrelationAnalysis(dataX, dataY, columns=None):
+def matrixCorrelationAnalysis(dataX, dataY=None, columns=None):
     """
     Prepare data for correlation matrix analysis.
     Parameters
@@ -1280,11 +1280,12 @@ def matrixCorrelationAnalysis(dataX, dataY, columns=None):
     # Natural sort samples
     # -----------------------------
     dataX = naturalSortData(dataX)
-    dataY = naturalSortData(dataY)
-    # -----------------------------
-    # Merge datasets
-    # -----------------------------
-    data = pd.concat([dataX, dataY], axis=1)
+
+    if dataY is None:
+        data = dataX
+    else:
+        dataY = naturalSortData(dataY)
+        data = pd.concat([dataX, dataY], axis=1)
     # -----------------------------
     # Select variables
     # -----------------------------

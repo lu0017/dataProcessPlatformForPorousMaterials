@@ -70,7 +70,7 @@ def calculateRegionVolume(width, psd, lower, upper):
         return np.nan
     return np.trapezoid(psd[mask], width[mask])
 
-def calculateRegionVolume0(width, psd, regions):
+def calculateRegionVolume0(width, psd, regions, cumulative=False):
     """
     Calculate integrated PSD volume for multiple pore-size regions.
     Parameters
@@ -91,9 +91,16 @@ def calculateRegionVolume0(width, psd, regions):
     width = width[valid]
     psd = psd[valid]
     result = {}
+    cumulativeVolume = 0.0
     for name, (lower, upper) in regions.items():
-        result[name] = calculateRegionVolume( width, psd, lower, upper )
+        volume  = calculateRegionVolume( width, psd, lower, upper )
+        result[name] = volume
+        if cumulative:
+            cumulativeVolume += volume
+            result[f"Cumulative_{name}"] = cumulativeVolume
+
     result["Total"] = calculateRegionVolume( width, psd, width.min(), width.max() )
+
     return result
 
 def calculateHighLowRatio(regionVolumes):
@@ -202,7 +209,8 @@ def calculatePSDMetrics(psdData, regions):
         regionVolumes = calculateRegionVolume0(
             width,
             psd,
-            regions
+            regions,
+            cumulative=True
         )
         highLow = calculateHighLowRatio(regionVolumes)
         competition = calculateCompetitionIndex(regionVolumes)
@@ -211,6 +219,7 @@ def calculatePSDMetrics(psdData, regions):
             psd
         )
         metrics[sample] = {}
+        metrics[sample].update(regionVolumes)
         metrics[sample].update(highLow)
         metrics[sample].update(competition)
         metrics[sample].update(moments)
@@ -221,16 +230,23 @@ def calculatePSDMetrics(psdData, regions):
     metrics = dop.naturalSortData(metrics)
     return metrics
 
-
+##########################################################################
 def main(file_path=None):
     # # 选择文件
-    psd_sheet = "PSD-DFT-CO2"
+    psd_sheet = "PSD-GCMC-CO2"
     kinetic_sheet = "thermalkinetic"
 
-    regions = {
-    "High": (0.33,0.50),
-    "Middle": (0.50,0.6),
-    "Low": (0.6,0.80)}
+    regions_DFT = {
+        "High": (0.33,0.650),
+        "Middle": (0.65,0.9),
+        "Low": (0.9,1)}
+    regions_GCMC = {
+        "High": (0.33,0.50),
+        "Middle": (0.5,0.65),
+        "Low": (0.65,0.8)}
+    
+    regions = regions_GCMC
+
     xColumns=[
         "HighLowRatio",
         "CompetitionIndex",
@@ -243,30 +259,78 @@ def main(file_path=None):
     ]
 
     file = fl.getFile()
-    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation")
+    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
-    psdData = dop.naturalSortData(psdData)
+    psdData = dop.naturalSortData(psdData,axis=1)
+    
+    plotData = {}
+    samples = psdData.columns.get_level_values(0).unique()
+    plotData = { sample: psdData[sample].copy() for sample in samples }
+    myPlt.plotCurve(
+        data=plotData,
+        x="Pore size(nm)",
+        y="dV/dW (cm3/g·nm)",
+        xlabel="Pore size(nm)",
+        ylabel="dV/dW (cm3/g·nm)",
+        marker= False,
+        line=True,
+        fit_label="PSD",
+        # savepath="psd-DFT.png",
+    )
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
-    X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns )
+    X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
+
+    X_metrix_po, Y_metrix_po, summary_metrix_po, results_metrix_po = dop.matrixCorrelationAnalysis( kineticdata)
+    # figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix-porosity2 r2", expand="", expandPos=True, type="png")
+    # out_path1= fl.get_expanded_name(out_path, fileName = "correlationMetrix-porosity2", expand="", expandPos=True,)
+    # fl.exportCorrelationExcel( out_path1,X_metrix_po, Y_metrix_po, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix_po,summary_matrix_SHHET="prosity2" )
+    # exclude = ["Vmic(2)/Vt", "Vultra (1)/Vt"]
+    # myPlt.plotCorrelogram(results = results_metrix_po,textValue="R2", exclude=exclude, cmap="RdBu_r",decimals=2, dpi=900, 
+    #                       savePath = figureName
+    #                       )
+
     # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
     # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
-    # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio (-)", gradientFlag=True,savepath="HighLowRatio")
-    # myPlt.plotBar(metrics.index, metrics["CompetitionIndex"], xlabel="Sample",ylabel="CompetitionIndex (-)", gradientFlag=True,savepath="CompetitionIndex")
-    # myPlt.plotBar(metrics.index, metrics["Skewness"], xlabel="Sample",ylabel="Skewness (-)", gradientFlag=True,savepath="Skewness")
-    myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", gradientFlag=True,savepath="E")
-    myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", gradientFlag=True,savepath="bA")
-    myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    myPlt.plotBatchCorrelation(results, topN=9)
+    # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio (-)", gradientFlag=True,savepath="HighLowRatio-DFT")
+    # myPlt.plotBar(metrics.index, metrics["CompetitionIndex"], xlabel="Sample",ylabel="CompetitionIndex (-)", gradientFlag=True,savepath="CompetitionIndex-DFT")
+    # myPlt.plotBar(metrics.index, metrics["Skewness"], xlabel="Sample",ylabel="Skewness (-)", gradientFlag=True,savepath="Skewness-DFT")
+    # myPlt.plotBar(metrics.index, metrics["Centroid"], xlabel="Sample",ylabel="Centroid (-)", gradientFlag=True,savepath="Centroid-GCMC")
+    # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
+    # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
+    # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
+    # myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="E-sele")
+    # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["SELE pyIAST"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele")
+    # myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="E-CI")
+    # myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),savepath="E-Centroid")
+    # myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="E-Skewness")
+    # myPlt.plotBatchCorrelation(results, topN=9)
     exclude = [
         "Variance",
         "Std"
     ]
-    figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="", expandPos=True, type="png")
-    myPlt.plotCorrelogram(results = results_metrix, exclude=exclude,cmap="RdBu_r",decimals=2,savePath = figureName)
+    include = [
+        "O-EDS",
+        "ID/IG",
+        "High",
+        "HighLowRatio",
+        "Centroid",
+        "CompetitionIndex",
+        "Skewness",
+        "bA-T25",
+        "E (J/mol)",
+        "SELE pyIAST",
+        "sel_henry",
+        "sel_henry_numer",
+    ]
+    order = include
+    figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix-GCMC", expand="", expandPos=True, type="png")
+    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
+                        #   savePath = figureName
+                          )
     plt.show(block=True)
 
 if __name__ == "__main__":

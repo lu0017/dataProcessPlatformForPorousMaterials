@@ -879,11 +879,12 @@ def saveDataframe2Excel( df, sample_name, out_path, sheet_name="Data", start_col
             ws.cell( row=i, column=col_idx + j, value=value, )
     wb.save(out_path)
     print(f"✅ 保存完成：{sample_name}")
-def exportCorrelationExcel( filename, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=None ):
-    export_to_excel_auto(pd.DataFrame(summary), filename, "summary")
+def exportCorrelationExcel( filename, X, Y, summary=None, X_matrix=None, Y_matrix=None, summary_matrix=None, summary_matrix_SHHET= "summary_matrix"):
+    if summary is not None:
+        export_to_excel_auto(pd.DataFrame(summary), filename, "summary")
     if X_matrix is not None:
         export_to_excel_auto( pd.DataFrame(X_matrix, index=X, columns=X), filename, "X_matrix" )
     if Y_matrix is not None:
         export_to_excel_auto( pd.DataFrame(Y_matrix, index=Y, columns=Y), filename, "Y_matrix" )
     if summary_matrix is not None:
-        export_to_excel_auto( pd.DataFrame(summary_matrix), filename, "summary_matrix" )
+        export_to_excel_auto( pd.DataFrame(summary_matrix), filename, summary_matrix_SHHET )

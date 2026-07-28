@@ -153,7 +153,7 @@ def fitRaman( data, x="Raman shift (cm-1)", y="Intensity (a.u.)", ):
 # 主函数
 # ==========================================
 def main(file_path=None):
-    spectrum = "FTIR"
+    spectrum = "Raman"
     saveFile = False
     singleFile = False
     charaData = {}
@@ -214,7 +214,7 @@ def main(file_path=None):
     charaData1 = dop.copySamples(charaData,sampleMap)
     charaData1 = dop.renameSamples(charaData,sampleMap)
     if spectrum == "FTIR":
-        charaData1 = dop.cropX(charaData1, xmin=700, xmax=3500)
+        charaData1 = dop.cropX(charaData1, xmin=1000, xmax=3500)
         charaData2 = dop.baselineCorrection( charaData1, x=keyName[0], y=keyName[1], method="airpls", )
         charaData20 = dop.smoothSpectrum( charaData2, y=keyName[1], method="savgol", window_length=11, polyorder=3,)
         charaData3 = dop.normalizeSpectrum( charaData2, y=keyName[1], method="vector", )
@@ -225,7 +225,7 @@ def main(file_path=None):
         myPlt.plotSpectrum( charaData2, figsize=(8, 4), x=keyName[0], y=keyName[1], show_yticks = False,
                        reverse_x=False, offset=-5, colors="PAPER1", linewidth=1.5, xbreak=(2100, 2700))
         myPlt.plotSpectrum( charaData20, figsize=(8, 4), x=keyName[0], y=keyName[1], show_yticks = False,
-                       reverse_x=False, offset=-5, colors="PAPER1", linewidth=1.5, xbreak=(2100, 2700), savepath=figureName)
+                       reverse_x=False, offset=-5, colors="PAPER1", linewidth=1.5, xbreak=(1990, 2800), textSize = 14,savepath=figureName)
         
     elif spectrum == "Raman": 
         charaData1 = dop.cropX(charaData1, xmin=500, xmax=2200)
@@ -239,7 +239,7 @@ def main(file_path=None):
         myPlt.plotSpectrum( charaData2, figsize=(8, 4), x=keyName[0], y=keyName[1], 
                        offset=80, colors="PAPER1", linewidth=0.5, )
         myPlt.plotSpectrum( charaData3, figsize=(8, 4), x=keyName[0], y=keyName[1], 
-                       offset=50, colors="PAPER1", linewidth=0.5, savepath=figureName)
+                       offset=50, colors="PAPER1", linewidth=0.5, textSize = 14, savepath=figureName)
 
     plt.show(block=True)
     

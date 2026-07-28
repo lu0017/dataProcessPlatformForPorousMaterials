@@ -17,15 +17,89 @@ LABEL_MAP = {
     "SSA": r"Surface area (m$^2$ g$^{-1}$)",
     # -------- Thermodynamics --------
     "Qst": r"$Q_{st}$ (kJ mol$^{-1}$)",
-    "E": r"$E$ (kJ mol$^{-1}$)",
+    "E": r"$E$ (J mol$^{-1}$)",
     "bA": r"Affinity of site $A$ (kPa$^{-1}$)",
     "DeltaG_Jmol": r"$\Delta G$ (J mol$^{-1}$)",
+    "sele": r"Selectivity (-)",
+    "SELE pyIAST": r"IAST (-)",
+    "sel_henry": r"Henry (-)",
+    "Sample": r"Sample",
+    "Vultra (0.7)":   r"$V_{<0.7\,nm}$",
+    "Vultra (1)":     r"$V_{<1\,nm}$",
+    "Vmic(2)":        r"$V_{<2\,nm}$",
+    "Vt":             r"$V_t$",
+    "Vme":            r"$V_{meso}$",
+    "Vmic(2)/Vt":     r"$V_{<2\,nm}/V_t$",
+    "Vultra (1)/Vt":  r"$V_{<1\,nm}/V_t$",
+    "BET":            r"$S_{BET}$",
+    # "Vultra (0.7)": r"$V_{\mathrm{<0.7nm}}$",
+    # "Vultra (1)": r"$V_{\mathrm{<1nm}}$",
+    # "Vmic(2)": r"$V_{\mathrm{<2nm}}$",
+    # "Vt": r"$V_{\mathrm{t}}$",
+    # "Vme": r"$V_{\mathrm{meso}}$",
+    # "Vmic(2)/Vt": r"$V_{\mathrm{<2}}/V_{\mathrm{t}}$",
+    # "Vultra (1)/Vt": r"$V_{\mathrm{<1}}/V_{\mathrm{t}}$",
+    # "BET": r"$S_{\mathrm{BET}}$",
 }
-def formatLabel(label):
+LABEL_MAP_MATRIX = {
+    # -------- Spectrum --------
+    "High": r"$V_{<0.5\,nm}$",
+    "bA-T25": r"$bA$",
+    "E (J/mol)": "$E$",
+    "ID/IG": "ID/IG",
+    "O-EDS": "O (Wt%)",
+    "SELE pyIAST": "IAST",
+    "sel_henry": "Henry",
+}
+def unicodeUnit(text):
+    """
+    Convert common LaTeX unit exponents to Unicode.
+    """
+    return (
+        text.replace("$^{-1}$", "⁻¹")
+            .replace("$^{-2}$", "⁻²")
+            .replace("$^{-3}$", "⁻³")
+            .replace("$^{2}$", "²")
+            .replace("$^{3}$", "³")
+    )
+def formatLabel(label,Unicode=False):
     """
     Convert common labels to publication format.
     """
-    return LABEL_MAP.get(label, label)
+    if label is None:
+        return ""
+
+    label = str(label)
+    label = LABEL_MAP_MATRIX.get(label, label)
+    # import matplotlib as mpl
+    # print(mpl.rcParams["font.family"])
+    # print(mpl.rcParams["font.sans-serif"])
+    if Unicode:
+        return (
+            label.replace("$^{-1}$", "⁻¹")
+                .replace("$^{-2}$", "⁻²")
+                .replace("$^{-3}$", "⁻³")
+                .replace("$^{2}$", "²")
+                .replace("$^{3}$", "³")
+        )
+    else: 
+        return label
+def applyLabel(default, custom=None):
+    """
+    Return formatted label.
+
+    Parameters
+    ----------
+    default : str
+        Default variable name.
+    custom : str or None
+        User-defined label.
+
+    Returns
+    -------
+    str
+    """
+    return formatLabel(default if custom is None else custom)
 class ColorPalette:
     # -------- predefined palettes --------
     PAPER1 = [
@@ -270,6 +344,109 @@ def createAxes( ax=None, figsize=(5, 4), xbreak=None, xrange=None, reverse_x=Fal
     drawBreakMark( ax1, side="right", )
     drawBreakMark( ax2, side="left", )
     return fig, [ax1, ax2]
+def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
+    for bar, top_color in zip(bars, colors):
+        height = bar.get_height()
+        if height == 0:
+            continue
+        x = bar.get_x()
+        width = bar.get_width()
+        cmap = LinearSegmentedColormap.from_list( "bar_gradient", [ bottom_color, top_color, ] )
+        y_start = 0 if height > 0 else height
+        for i in range(steps):
+            rect = Rectangle(
+                ( x, y_start + abs(height)*i/steps ),
+                width,
+                abs(height)/steps,
+                facecolor=cmap(i/steps),
+                edgecolor="none",
+                zorder=1,
+            )
+            ax.add_patch(rect)
+        bar.set_facecolor("none")
+        bar.set_edgecolor("black")
+        bar.set_linewidth(0.8)
+        bar.set_zorder(2)
+    ax.relim()
+    ax.autoscale_view()
+def scatterSphere(
+    ax,
+    x,
+    y,
+    color="#d62728",
+    edgecolor="black",
+    s=60,
+    linewidth=0.6,
+    marker="o",
+    label=None,
+    zorder=2,
+    highlight=True,
+    highlight_size=0.28,
+    highlight_alpha=0.55,
+):
+    """
+    Draw sphere-like scatter markers.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    x, y : array-like
+        Coordinates.
+    color : color-like
+        Marker face color.
+    edgecolor : color-like
+        Marker edge color.
+    s : float
+        Marker size.
+    linewidth : float
+        Marker edge width.
+    marker : str
+        Marker style, e.g. "o", "s", "^", "D".
+    label : str, optional
+        Legend label.
+    zorder : int
+        Drawing order.
+    highlight : bool
+        Whether to draw the specular highlight.
+    highlight_size : float
+        Relative size of the highlight.
+    highlight_alpha : float
+        Highlight transparency.
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    # ---------- Base marker ----------
+    ax.scatter(
+        x,
+        y,
+        s=s,
+        c=color,
+        edgecolors=edgecolor,
+        linewidths=linewidth,
+        marker=marker,
+        label=label,
+        zorder=zorder,
+    )
+    if not highlight:
+        return
+    # ---------- Highlight ----------
+    if len(x) > 1:
+        dx = (x.max() - x.min()) * 0.0035
+    else:
+        dx = 0
+    if len(y) > 1:
+        dy = (y.max() - y.min()) * 0.0035
+    else:
+        dy = 0
+    ax.scatter(
+        x - dx,
+        y + dy,
+        s=s * highlight_size,
+        c="white",
+        alpha=highlight_alpha,
+        linewidths=0,
+        marker=marker,
+        zorder=zorder + 1,
+    )
 def buildCurveLegend(
     sample_names,
     color_list,
@@ -359,6 +536,21 @@ def removeDuplicateLegend(handles):
             labels.append(label)
             unique_handles.append(h)
     return unique_handles, labels
+def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, ):
+    if ax is not None:
+        ax.xaxis.label.set_size(labelsize)
+        ax.yaxis.label.set_size(labelsize)
+        ax.tick_params(axis="both", labelsize=ticksize)
+
+        for text in ax.texts:
+            text.set_fontsize(annotationsize)
+
+    if fig is not None:
+        if getattr(fig, "_supxlabel", None) is not None:
+            fig._supxlabel.set_fontsize(labelsize)
+
+        if getattr(fig, "_supylabel", None) is not None:
+            fig._supylabel.set_fontsize(labelsize)
 def applyLegend(
     fig,
     axes,
@@ -462,119 +654,7 @@ def applyLegend(
         loc=cfg["loc"],
         **kwargs,
     )
-def saveFigure( fig, savepath=None, dpi=300, transparent=False, ):
-    """
-    Save figure.
-    """
-    if savepath is None:
-        return
-    fig.savefig( savepath, dpi=dpi, bbox_inches="tight", transparent=transparent, )
-def plotSpectrum(
-    data,
-    ax=None,
-    figsize=(5, 4),
-    x="Wavenumber",
-    y="Transmittance (%)",
-    xlabel=None,
-    ylabel=None,
-    show_yticks=True,
-    reverse_x=True,
-    offset=0,
-    legend=True,
-    colors="PAPER1",
-    linewidth=1.5,
-    linestyle="-",
-    xbreak=None,
-    savepath=None,
-    dpi=600,
-    transparent=False,
-):
-    """
-    Plot spectra (FTIR, Raman, XRD, UV-Vis, etc.).
-    Parameters
-    ----------
-    data : dict
-        {sample_name: DataFrame}
-    xbreak : tuple, optional
-        (xmin, xmax), remove the middle region.
-    savepath : str or Path, optional
-    """
-    # ==================================================
-    # X range
-    # ==================================================
-    xmin = np.inf
-    xmax = -np.inf
-    for sample, df in data.items():
-        X = df[x].to_numpy()
-        xmin = min(xmin, X.min())
-        xmax = max(xmax, X.max())
-    # ==================================================
-    # Figure
-    # ==================================================
-    fig, axes = createAxes( ax=ax, figsize=figsize, xbreak=xbreak, xrange=(xmin, xmax),reverse_x=reverse_x)
-    # ==================================================
-    # Color
-    # ==================================================
-    if colors is None:
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    elif isinstance(colors, str):
-        if hasattr(ColorPalette, colors):
-            colors = sampleColors( getattr(ColorPalette, colors), len(data) )
-        else:
-            cmap = plt.get_cmap(colors)
-            colors = [ cmap(i) for i in np.linspace(0, 1, len(data)) ]
-    # ==================================================
-    # Plot
-    # ==================================================
-    for i, (sample, df) in enumerate(data.items()):
-        X = df[x].to_numpy()
-        Y = df[y].to_numpy()
-        if offset != 0:
-            Y = Y + i * offset
-        segments = splitSpectrum( X, Y, xbreak=xbreak, reverse_x=reverse_x, )
-        for ax_i, (Xs, Ys) in zip(axes, segments):
-            ax_i.plot(
-                Xs,
-                Ys,
-                color=colors[i % len(colors)],
-                linewidth=linewidth,
-                linestyle=linestyle,
-                label=sample,
-            )
-    # ==================================================
-    # Axis Style
-    # ==================================================
-    for ax_i in axes:
-        applyAxisStyle(ax_i)
-        setMajorTicks(ax_i,axis="x", major_step=200,)
-        setMinorTicks(ax_i,axis="x", minor_step=100,)
-        if not show_yticks:
-            ax_i.set_yticks([])
-    # --------------------------------------------------
-    # Axis Label
-    # --------------------------------------------------
-    if len(axes) == 1:
-        axes[0].set_xlabel( formatLabel(x if xlabel is None else xlabel) )
-        axes[0].set_ylabel( formatLabel(y if ylabel is None else ylabel) )
-    else:
-        fig.supxlabel( formatLabel(x if xlabel is None else xlabel) )
-        axes[0].set_ylabel( formatLabel(y if ylabel is None else ylabel) )
-    # --------------------------------------------------
-    # X Limit
-    # --------------------------------------------------
-    xlims = splitXLim( xmin, xmax, xbreak=xbreak, reverse_x=reverse_x, )
-    for ax_i, xlim in zip(axes, xlims):
-        ax_i.set_xlim(*xlim)
-    # ==================================================
-    # Legend
-    # ==================================================
-    applyLegend( fig, axes, show=legend, )
-    # ==================================================
-    # Save
-    # ==================================================
-    if savepath is not None:
-        saveFigure( fig, savepath=savepath, dpi=300)
-    return axes
+
 def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
     """
     Set fixed major tick interval and style.
@@ -641,109 +721,128 @@ def applyAxisStyle(ax):
         top=False,
         right=False
     )
-def scatterSphere(
-    ax,
-    x,
-    y,
-    color="#d62728",
-    edgecolor="black",
-    s=60,
-    linewidth=0.6,
-    marker="o",
-    label=None,
-    zorder=2,
-    highlight=True,
-    highlight_size=0.28,
-    highlight_alpha=0.55,
+def saveFigure( fig, savepath=None, dpi=300, transparent=False, ):
+    """
+    Save figure.
+    """
+    if savepath is None:
+        return
+    fig.savefig( savepath, dpi=dpi, bbox_inches="tight", transparent=transparent, )
+def plotSpectrum(
+    data,
+    ax=None,
+    figsize=(5, 4),
+    x="Wavenumber",
+    y="Transmittance (%)",
+    xlabel=None,
+    ylabel=None,
+    show_yticks=True,
+    reverse_x=True,
+    offset=0,
+    legend=True,
+    colors="PAPER1",
+    linewidth=1.5,
+    linestyle="-",
+    xbreak=None,
+    textSize = 12,
+    savepath=None,
+    dpi=600,
+    transparent=False,
 ):
     """
-    Draw sphere-like scatter markers.
+    Plot spectra (FTIR, Raman, XRD, UV-Vis, etc.).
     Parameters
     ----------
-    ax : matplotlib.axes.Axes
-    x, y : array-like
-        Coordinates.
-    color : color-like
-        Marker face color.
-    edgecolor : color-like
-        Marker edge color.
-    s : float
-        Marker size.
-    linewidth : float
-        Marker edge width.
-    marker : str
-        Marker style, e.g. "o", "s", "^", "D".
-    label : str, optional
-        Legend label.
-    zorder : int
-        Drawing order.
-    highlight : bool
-        Whether to draw the specular highlight.
-    highlight_size : float
-        Relative size of the highlight.
-    highlight_alpha : float
-        Highlight transparency.
+    data : dict
+        {sample_name: DataFrame}
+    xbreak : tuple, optional
+        (xmin, xmax), remove the middle region.
+    savepath : str or Path, optional
     """
-    x = np.asarray(x)
-    y = np.asarray(y)
-    # ---------- Base marker ----------
-    ax.scatter(
-        x,
-        y,
-        s=s,
-        c=color,
-        edgecolors=edgecolor,
-        linewidths=linewidth,
-        marker=marker,
-        label=label,
-        zorder=zorder,
-    )
-    if not highlight:
-        return
-    # ---------- Highlight ----------
-    if len(x) > 1:
-        dx = (x.max() - x.min()) * 0.0035
-    else:
-        dx = 0
-    if len(y) > 1:
-        dy = (y.max() - y.min()) * 0.0035
-    else:
-        dy = 0
-    ax.scatter(
-        x - dx,
-        y + dy,
-        s=s * highlight_size,
-        c="white",
-        alpha=highlight_alpha,
-        linewidths=0,
-        marker=marker,
-        zorder=zorder + 1,
-    )
-def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
-    for bar, top_color in zip(bars, colors):
-        height = bar.get_height()
-        if height == 0:
-            continue
-        x = bar.get_x()
-        width = bar.get_width()
-        cmap = LinearSegmentedColormap.from_list( "bar_gradient", [ bottom_color, top_color, ] )
-        y_start = 0 if height > 0 else height
-        for i in range(steps):
-            rect = Rectangle(
-                ( x, y_start + abs(height)*i/steps ),
-                width,
-                abs(height)/steps,
-                facecolor=cmap(i/steps),
-                edgecolor="none",
-                zorder=1,
+    # ==================================================
+    # X range
+    # ==================================================
+    xmin = np.inf
+    xmax = -np.inf
+    for sample, df in data.items():
+        X = df[x].to_numpy()
+        xmin = min(xmin, X.min())
+        xmax = max(xmax, X.max())
+    # ==================================================
+    # Figure
+    # ==================================================
+    fig, axes = createAxes( ax=ax, figsize=figsize, xbreak=xbreak, xrange=(xmin, xmax),reverse_x=reverse_x)
+    # ==================================================
+    # Color
+    # ==================================================
+    if colors is None:
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    elif isinstance(colors, str):
+        if hasattr(ColorPalette, colors):
+            colors = sampleColors( getattr(ColorPalette, colors), len(data) )
+        else:
+            cmap = plt.get_cmap(colors)
+            colors = [ cmap(i) for i in np.linspace(0, 1, len(data)) ]
+    # ==================================================
+    # Plot
+    # ==================================================
+    for i, (sample, df) in enumerate(data.items()):
+        X = df[x].to_numpy()
+        Y = df[y].to_numpy()
+        if offset != 0:
+            Y = Y + i * offset
+        segments = splitSpectrum( X, Y, xbreak=xbreak, reverse_x=reverse_x, )
+        for ax_i, (Xs, Ys) in zip(axes, segments):
+            ax_i.plot(
+                Xs,
+                Ys,
+                color=colors[i % len(colors)],
+                linewidth=linewidth,
+                linestyle=linestyle,
+                label=sample,
             )
-            ax.add_patch(rect)
-        bar.set_facecolor("none")
-        bar.set_edgecolor("black")
-        bar.set_linewidth(0.8)
-        bar.set_zorder(2)
-    ax.relim()
-    ax.autoscale_view()
+    # ==================================================
+    # Axis Style
+    # ==================================================
+    for ax_i in axes:
+        applyAxisStyle(ax_i)
+        # applyTextStyle( ax_i,labelsize=textSize, ticksize=textSize, annotationsize=textSize,)
+        setMajorTicks(ax_i,axis="x", major_step=200,)
+        setMinorTicks(ax_i,axis="x", minor_step=100,)
+        if not show_yticks:
+            ax_i.set_yticks([])
+    # --------------------------------------------------
+    # Axis Label
+    # --------------------------------------------------
+    if len(axes) == 1:
+        axes[0].set_xlabel( applyLabel(x, xlabel), )
+        axes[0].set_ylabel( applyLabel(y, ylabel) )
+    else:
+        fig.supxlabel( applyLabel(x, xlabel) , y=-0.015)
+        axes[0].set_ylabel( applyLabel(y, ylabel) )
+    for ax_i in axes:
+        applyTextStyle( ax_i,labelsize=textSize, ticksize=textSize, annotationsize=textSize,)
+    applyTextStyle(fig=fig, labelsize=textSize)
+    # --------------------------------------------------
+    # X Limit
+    # --------------------------------------------------
+    xlims = splitXLim( xmin, xmax, xbreak=xbreak, reverse_x=reverse_x, )
+    for ax_i, xlim in zip(axes, xlims):
+        ax_i.set_xlim(*xlim)
+    # ==================================================
+    # Legend
+    # ==================================================
+    applyLegend( fig, axes, show=legend, fontsize=textSize)
+    
+    # ==================================================
+    # Save
+    # ==================================================
+    if savepath is not None:
+        saveFigure( fig, savepath=savepath, dpi=dpi)
+    return axes
+
+
+
 def plotCurve(
     data,
     ax=None,
@@ -870,30 +969,39 @@ def plotCurve(
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300)
 
     return ax
-def _plotCorrelation(ax, result):
+def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), pos="top"):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
     x = np.asarray(result["X"])
     y = np.asarray(result["Y"])
     y_fit = np.asarray(result["Y_fit"])
     idx = np.argsort(x)
     applyAxisStyle(ax)
     ax.text(
-        0.05, 0.95,
+        text_position[0],
+        text_position[1],
         f"R² = {result['R2']:.3f}\n"
         f"r = {result['Pearson_r']:.3f}",
         transform=ax.transAxes,
-        va="top"
+        va=pos
     )
     ax.plot( x[idx], y_fit[idx], color="red", linewidth=2 )
     colors = ColorPalette.get(USING_COLOR, len(x))
-    # ax.scatter(x, y,c=colors)
     scatterSphere( ax, x, y, color=colors, s=70 )
-    ax.set_xlabel(result["x_name"])
-    ax.set_ylabel(result["y_name"])
-def plotSingleCorrelation(result):
-    fig, ax = plt.subplots()
-    _plotCorrelation(ax, result)
+    ax.set_xlabel( applyLabel(result["x_name"], xlabel) )
+    ax.set_ylabel( applyLabel(result["y_name"], ylabel) )
+    applyTextStyle(ax,labelsize=16, ticksize=14, annotationsize=16)
+
+def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4), pos="top", savepath=None):
+    fig, ax = plt.subplots(figsize=figsize)
+    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos)
     plt.tight_layout()
-    plt.show()
+    if savepath is not None:
+        saveFigure( fig, savepath=savepath, dpi=600)
+    plt.show(block=False)
+    
 def plotBatchCorrelation(results, topN=5, sort_by="R2"):
     """
     Batch plot top-N correlations.
@@ -949,7 +1057,7 @@ def plotBatchCorrelation(results, topN=5, sort_by="R2"):
         fig.delaxes(ax)
     plt.tight_layout()
     plt.show(block=False)
-def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gradientFlag=True, savepath=None):
+def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, figsize=(6, 4),gradientFlag=True, savepath=None):
     """
     Plot a single bar chart.
     Parameters
@@ -970,7 +1078,7 @@ def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gr
     ax : matplotlib.axes.Axes
     """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 4))
+        fig, ax = plt.subplots(figsize=figsize)
     colors = ColorPalette.get(USING_COLOR, len(x))
     # gradientFlag = True
     if gradientFlag:
@@ -980,16 +1088,17 @@ def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, gr
     else:
         ax.bar(x, y, color=colors)
     if xlabel is not None:
-        ax.set_xlabel( formatLabel(x if xlabel is None else xlabel) )
+        ax.set_xlabel( applyLabel(x, xlabel) )
     if ylabel is not None:
-        ax.set_ylabel( formatLabel(y if ylabel is None else ylabel) )
+        ax.set_ylabel( applyLabel(y, ylabel) )
     if title is not None:
         ax.set_title(title)
     ax.tick_params(axis="x", rotation=rotation)
     # 论文风格：刻度朝内，仅左、下有刻度
     applyAxisStyle(ax)
+    applyTextStyle( ax=ax, labelsize=14, ticksize=12, annotationsize=14 )
     if savepath is not None:
-        saveFigure( fig, savepath=savepath, dpi=300)
+        saveFigure( fig, savepath=savepath, dpi=900)
     return ax
 def plotBarByMetrics(metrics, columns=None, ylabel=None, title=None, ncols=1):
     """
@@ -1025,185 +1134,245 @@ def plotBarByMetrics(metrics, columns=None, ylabel=None, title=None, ncols=1):
         fig.suptitle(title, fontsize=14)
     fig.tight_layout()
     plt.show(block=False)
-def _buildCorrelationMatrices( results, order=None, value="R2", pKey="P_value", include=None, exclude=None ):
+def _buildCorrelationMatrices(
+    results,
+    order=None,
+    circleSize="R2",
+    circleColor="Pearson_r",
+    textValue="R2",
+    pKey="P_value",
+    include=None,
+    exclude=None,
+):
     """
     Strict correlation matrix builder.
-    Key principle:
-    ----------------
-    order defines matrix structure (NOT results).
-    results is only used as a lookup table.
+
+    Parameters
+    ----------
+    circleSize : str
+        Variable controlling circle area.
+
+    circleColor : str
+        Variable controlling circle and text color.
+
+    textValue : str
+        Variable displayed in the upper triangle.
     """
+
     # =====================================================
-    # 1. Define order (ONLY source of truth)
+    # Define order
     # =====================================================
     if order is None:
         order = list(results.keys())
+
     order = list(order)
+
     if include is not None:
         include_set = set(include)
         order = [v for v in order if v in include_set]
+
     if exclude is not None:
         exclude_set = set(exclude)
         order = [v for v in order if v not in exclude_set]
+
     n = len(order)
-    index = {name: i for i, name in enumerate(order)}
+
     # =====================================================
-    # 2. Initialize full matrix (strict grid)
+    # Initialize matrices
     # =====================================================
     R = np.full((n, n), np.nan)
-    VALUE = np.full((n, n), np.nan)
+    SIZE = np.full((n, n), np.nan)
+    COLOR = np.full((n, n), np.nan)
+    TEXT = np.full((n, n), np.nan)
     P = np.full((n, n), np.nan)
+
     np.fill_diagonal(R, 1.0)
-    np.fill_diagonal(VALUE, 1.0)
+    np.fill_diagonal(SIZE, 1.0)
+    np.fill_diagonal(COLOR, 1.0)
+    np.fill_diagonal(TEXT, 1.0)
     np.fill_diagonal(P, 0.0)
+
     # =====================================================
-    # 3. Fill matrix (order × order ONLY)
+    # Fill matrices
     # =====================================================
     for i, x in enumerate(order):
+
         row = results.get(x)
         if row is None:
             continue
+
         for j, y in enumerate(order):
+
             item = row.get(y)
             if item is None:
                 continue
+
             R[i, j] = item.get("Pearson_r", np.nan)
-            VALUE[i, j] = item.get(value, np.nan)
+            SIZE[i, j] = item.get(circleSize, np.nan)
+            COLOR[i, j] = item.get(circleColor, np.nan)
+            TEXT[i, j] = item.get(textValue, np.nan)
             P[i, j] = item.get(pKey, np.nan)
-    return order, R, VALUE, P
-def _drawLowerTriangle(ax, R, cmap="RdBu_r", norm=None, circleScale=1200, edgeColor="black", edgeWidth=0.5, alpha=1.0):
+
+    return order, R, SIZE, COLOR, TEXT, P
+def _drawLowerTriangle(
+    ax,
+    SIZE,
+    COLOR,
+    cmap="RdBu_r",
+    norm=None,
+    circleScale=1200,
+    sizeTransform="none",
+    edgeColor="black",
+    edgeWidth=0.5,
+    alpha=1.0,
+):
     """
     Draw the lower triangle of a correlogram.
+
     Circle
     ------
-    Color :
-        Pearson correlation coefficient.
     Area :
-        |Pearson_r|^2
+        Controlled by SIZE and sizeTransform.
+
+    Color :
+        Controlled by COLOR.
+
     Parameters
     ----------
     ax : matplotlib.axes.Axes
         Target axes.
-    R : ndarray
-        Pearson correlation matrix.
+
+    SIZE : ndarray
+        Matrix controlling circle area.
+
+    COLOR : ndarray
+        Matrix controlling circle color.
+
     cmap : str or Colormap
-        Colormap.
+
     norm : matplotlib.colors.Normalize, optional
-        Color normalization.
-        If None, Normalize(-1, 1) is used.
+
     circleScale : float
-        Scale factor of circle area.
-    edgeColor : str
-        Circle edge color.
-    edgeWidth : float
-        Circle edge width.
-    alpha : float
-        Circle transparency.
+
+    sizeTransform : {"square", "abs", "none"}
+        square : area = |SIZE|²
+        abs    : area = |SIZE|
+        none   : area = SIZE
+
     Returns
     -------
     scatter : PathCollection
-        Scatter object for colorbar.
     """
-    # ---------------------------------------
-    # Default normalization
-    # ---------------------------------------
     if norm is None:
         norm = Normalize(vmin=-1, vmax=1)
+
     scatter = None
-    n = R.shape[0]
-    # ---------------------------------------
-    # Draw circles
-    # ---------------------------------------
+    n = SIZE.shape[0]
+
     for i in range(n):
         for j in range(i):
-            r = R[i, j]
-            if np.isnan(r):
+
+            size = SIZE[i, j]
+            color = COLOR[i, j]
+
+            if np.isnan(size) or np.isnan(color):
                 continue
+
+            if sizeTransform == "square":
+                area = circleScale * (abs(size) ** 2)
+
+            elif sizeTransform == "abs":
+                area = circleScale * abs(size)
+
+            elif sizeTransform == "none":
+                area = circleScale * size
+
+            else:
+                raise ValueError(
+                    f"Unknown sizeTransform: {sizeTransform}"
+                )
+
             scatter = ax.scatter(
                 j,
                 i,
-                s=circleScale * (abs(r) ** 2),   # area
-                c=[r],
+                s=area,
+                c=[color],
                 cmap=cmap,
                 norm=norm,
                 edgecolors=edgeColor,
                 linewidths=edgeWidth,
                 alpha=alpha,
-                zorder=3
+                zorder=3,
             )
+
     return scatter
-def _drawUpperTriangle(ax, R, VALUE, P=None, decimals=3, cmap="RdBu_r", 
-                       norm=None, showSignificance=True, significanceLevels=None, fontSize=10, fontWeight="normal"):
+def _drawUpperTriangle(
+    ax,
+    COLOR,
+    VALUE,
+    P=None,
+    decimals=3,
+    cmap="RdBu_r",
+    norm=None,
+    showSignificance=True,
+    significanceLevels=None,
+    fontSize=10,
+    fontWeight="normal",
+):
     """
     Draw the upper triangle of a correlogram.
+
     Upper triangle
     --------------
-    Display numerical statistics (e.g. R²).
-    Text color
-    ----------
-    Pearson correlation coefficient.
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Target axes.
-    R : ndarray
-        Pearson correlation matrix.
-    VALUE : ndarray
-        Matrix displayed in the upper triangle.
-    P : ndarray, optional
-        P-value matrix.
-    decimals : int
-        Decimal places.
-    cmap : str or Colormap
-        Colormap.
-    norm : Normalize, optional
-        Color normalization.
-    showSignificance : bool
-        Whether to display significance stars.
-    significanceLevels : dict, optional
-        Example:
-        {
-            0.001: "***",
-            0.01: "**",
-            0.05: "*"
-        }
-    fontSize : int
-    fontWeight : str
+    Text:
+        Controlled by VALUE.
+
+    Text color:
+        Controlled by COLOR.
+
+    Significance:
+        Controlled by P.
     """
-    # ---------------------------------------
-    # Default settings
-    # ---------------------------------------
+
     if norm is None:
         norm = Normalize(vmin=-1, vmax=1)
+
     if significanceLevels is None:
         significanceLevels = {
             0.001: "***",
             0.01: "**",
-            0.05: "*"
+            0.05: "*",
         }
+
     cmapObj = plt.get_cmap(cmap)
+
     n = VALUE.shape[0]
-    # ---------------------------------------
-    # Draw values
-    # ---------------------------------------
+
     for i in range(n):
         for j in range(i + 1, n):
-            if np.isnan(VALUE[i, j]):
-                continue
+
             value = VALUE[i, j]
-            r = R[i, j]
-            color = cmapObj(norm(r))
+            colorValue = COLOR[i, j]
+
+            if np.isnan(value):
+                continue
+
+            color = cmapObj(norm(colorValue))
+
             text = f"{value:.{decimals}f}"
-            # -----------------------------
-            # Significance stars
-            # -----------------------------
+
             if showSignificance and P is not None:
+
                 p = P[i, j]
+
                 if not np.isnan(p):
+
                     for level, stars in significanceLevels.items():
+
                         if p <= level:
                             text += stars
                             break
+
             ax.text(
                 j,
                 i,
@@ -1213,7 +1382,7 @@ def _drawUpperTriangle(ax, R, VALUE, P=None, decimals=3, cmap="RdBu_r",
                 fontsize=fontSize,
                 fontweight=fontWeight,
                 color=color,
-                zorder=4
+                zorder=4,
             )
 def _drawDiagonal(ax, labels, mode="label", fontSize=11, fontWeight="bold"):
     """
@@ -1257,7 +1426,7 @@ def _drawGrid(ax, n, color="lightgray", linewidth=0.8):
     for k in range(n + 1):
         ax.axhline( k - 0.5, color=color, linewidth=linewidth, zorder=1 )
         ax.axvline( k - 0.5, color=color, linewidth=linewidth, zorder=1 )
-def _drawColorbar( fig, ax, scatter, label="Pearson correlation", shrink=0.85, aspect=30, pad=0.02, n=None ):
+def _drawColorbar( fig, ax, scatter, label="Pearson correlation", shrink=0.85, aspect=30, pad=0.02, n=None, labelSize=12, tickSize=12,):
     """
     Draw colorbar.
     Parameters
@@ -1281,7 +1450,11 @@ def _drawColorbar( fig, ax, scatter, label="Pearson correlation", shrink=0.85, a
         # n 越大 → colorbar 越“细长”
         aspect = max(15, min(50, 35 - 0.3 * n))
     cbar = fig.colorbar( scatter, ax=ax, shrink=shrink, aspect=aspect, pad=pad )
-    cbar.set_label(label)
+    # Label
+    cbar.set_label(label, fontsize=labelSize)
+
+    # Tick labels
+    cbar.ax.tick_params(labelsize=tickSize)
     return cbar
 def _beautifyAxes(ax, labels, fontSize=10):
     """
@@ -1292,6 +1465,7 @@ def _beautifyAxes(ax, labels, fontSize=10):
     labels : list[str]
     fontSize : int
     """
+    labels = [applyLabel(label) for label in labels]
     n = len(labels)
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
@@ -1345,7 +1519,10 @@ def plotCorrelogram(
         order=None, # ---------- 指定变量顺序 ----------
         include= None, # ---------- 排除或只留下指定变量 ----------
         exclude= None,
-        value="R2",
+        # ---------- Visual Mapping ----------
+        circleSize="R2",
+        circleColor="Pearson_r",
+        textValue="Pearson_r",
         ax=None,
         figsize=None,
         # ---------- Color ----------
@@ -1384,7 +1561,8 @@ def plotCorrelogram(
     # =====================================================
     # Build matrices
     # =====================================================
-    order, R, VALUE, P = _buildCorrelationMatrices( results=results, order=order, value=value,include=include, exclude=exclude)
+    order, R, SIZE, COLOR, TEXT, P = _buildCorrelationMatrices( results=results, order=order, circleSize=circleSize, 
+                                                   circleColor=circleColor, textValue=textValue, include=include, exclude=exclude)
     n = len(order)
     # =====================================================
     # Automatic parameters
@@ -1415,18 +1593,23 @@ def plotCorrelogram(
     # =====================================================
     # Draw
     # =====================================================
-    scatter = _drawLowerTriangle( ax=ax, R=R, cmap=cmap, norm=norm, circleScale=circleScale )
-    _drawUpperTriangle( ax=ax, R=R, VALUE=VALUE, P=P, decimals=decimals, cmap=cmap, 
-                       norm=norm, showSignificance=showSignificance, significanceLevels=significanceLevels, 
-                       fontSize=fontSize )
+    if circleSize in {"R2", "Adjusted_R2"}:
+        sizeTransform = "none"
+    else:
+        sizeTransform = "square"
+    scatter = _drawLowerTriangle( ax=ax, SIZE=SIZE, COLOR=COLOR, cmap=cmap, norm=norm, circleScale=circleScale, 
+                                 sizeTransform=sizeTransform, )
+
+    _drawUpperTriangle( ax=ax, COLOR=COLOR, VALUE=TEXT, P=P, decimals=decimals, cmap=cmap, norm=norm, 
+                       showSignificance=showSignificance, significanceLevels=significanceLevels, fontSize=fontSize, )
     # _drawDiagonal( ax=ax, labels=order, mode=diagonalMode, fontSize=fontSize + 1 )
     if showGrid:
         _drawGrid( ax=ax, n=n )
-    _beautifyAxes( ax=ax, labels=order, fontSize=fontSize )
+    _beautifyAxes( ax=ax, labels=order, fontSize=fontSize + 2 )
     if showColorbar:
         kwargs = dict( label=colorbarLabel )
         kwargs.update(colorbarKwargs)
-        _drawColorbar( fig=fig, ax=ax, scatter=scatter, n=n*1.02, **kwargs )
+        _drawColorbar( fig=fig, ax=ax, scatter=scatter, n=n*1.02, labelSize=fontSize + 4, tickSize=fontSize + 2, **kwargs )
     # =====================================================
     # Save
     # =====================================================
@@ -1439,6 +1622,4 @@ def plotCorrelogram(
         plt.tight_layout()
         plt.show(block=False)
     return fig, ax
-###########################
-# 往下是标准化绘图
-###########################
+
