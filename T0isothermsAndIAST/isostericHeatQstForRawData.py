@@ -34,7 +34,7 @@ def plotQstByRawData(Qst):
 def runCalculateQstByRawData(df):
     P_data, uptake_data, T_list = dop.build_P_and_uptake_data(df)
 
-    q_step = 0.1   # 吸附量步长 (mmol/g)
+    q_step = 0.05   # 吸附量步长 (mmol/g)
 
     q_min = max([np.nanmin(uptake_data[T]) for T in uptake_data])
     q_max = min([np.nanmax(uptake_data[T]) for T in uptake_data])
@@ -103,11 +103,11 @@ def runCalculateQstByRawData(df):
     return pd.DataFrame(results_full)
 
 def main(file_path=None):
-    singleFile = True
+    singleFile = False
 
     if singleFile:
         # 选择文件
-        sheet_name = "uio-66 Co 10"
+        sheet_name = "uio-66 (2)"
         file = fl.getFile()
         listData, out_path, _ = fl.readFileBySheet(file, sheet_name, expand = const.QST_EXP_SHEET)
         Qst_exp = runCalculateQstByRawData(listData)

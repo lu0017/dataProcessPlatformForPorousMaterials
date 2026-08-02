@@ -945,6 +945,59 @@ def getSortedLabels(data, axis=0, level=0, unique=True):
     axis = normalizeAxis(axis)
     labels = getLabels( data, axis=axis, level=level, unique=unique )
     return naturalSort(labels)
+
+def buildRegions(splitPoints, names=None, digits=2):
+    """
+    Build region dictionary from split points.
+
+    Parameters
+    ----------
+    splitPoints : sequence
+        Boundary points.
+        Example:
+        [0.33, 0.50, 0.65, 0.80]
+
+    names : list, optional
+        Region names. If None, names will be generated automatically.
+
+    digits : int
+        Decimal places used in automatic names.
+
+    Returns
+    -------
+    dict
+    """
+    if len(splitPoints) < 2:
+        raise ValueError(
+            "splitPoints must contain at least two values."
+        )
+
+    n = len(splitPoints) - 1
+
+    if names is None:
+        names = []
+
+        for i in range(n):
+            left = splitPoints[i]
+            right = splitPoints[i + 1]
+
+            if i == 0:
+                names.append(f"<{right:.{digits}f}")
+            else:
+                names.append(
+                    f"{left:.{digits}f}-{right:.{digits}f}"
+                )
+
+    elif len(names) != n:
+        raise ValueError(
+            "Number of names must equal len(splitPoints)-1."
+        )
+
+    return {
+        name: (splitPoints[i], splitPoints[i + 1])
+        for i, name in enumerate(names)
+    }
+
 def cols_to_clean_df(cols, x_col, y_col):
     """
     将 dict of list 转为 DataFrame，自动去掉 NaN/Inf

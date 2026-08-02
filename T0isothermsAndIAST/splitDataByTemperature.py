@@ -127,12 +127,12 @@ def splitDataByTemperature(file_path):
         firstSample = False
     return out_path
 
-
+import T0isothermsAndIAST.plotIsothermsByTem as PL
 def main(file_path=None):
 
     file_path = fl.getFile()
     out_path = splitDataByTemperature(file_path)
-    plotIsothermsByTem(out_path)
+    PL.plotFunction(out_path)
 
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

@@ -1,6 +1,8 @@
 from common import *
 from T1dataProcessSource import dataOperation as dop
 LABEL_MAP = {
+    "R2": r"$R^2$",
+    "Pearson_r": r"$r$",
     # -------- Spectrum --------
     "Wavenumber": r"Wavenumber (cm$^{-1}$)",
     "Raman shift (cm-1)": r"Raman shift (cm$^{-1}$)",
@@ -40,16 +42,39 @@ LABEL_MAP = {
     # "Vmic(2)/Vt": r"$V_{\mathrm{<2}}/V_{\mathrm{t}}$",
     # "Vultra (1)/Vt": r"$V_{\mathrm{<1}}/V_{\mathrm{t}}$",
     # "BET": r"$S_{\mathrm{BET}}$",
+
+    "Centroid":         r"$D_{\mathrm{c}}$ (nm)",
+    "HighLowRatio":     r"HLR ($-$)",
+    "CompetitionIndex": r"CI ($-$)",
+    "Skewness":         r"Skewness ($-$)",
+
+    "Centroid":         r"Centroid (nm)",
+    "HighLowRatio":     r"HighLowRatio (-)",
+    "CompetitionIndex": r"CompetitionIndex (-)",
+    "Skewness":         r"Skewness (-)",
+
 }
 LABEL_MAP_MATRIX = {
     # -------- Spectrum --------
     "High": r"$V_{<0.5\,nm}$",
-    "bA-T25": r"$bA$",
+    "bA-T25": r"$b_{A}$",
     "E (J/mol)": "$E$",
-    "ID/IG": "ID/IG",
+    "ID/IG": r"$I_{D}/I_{G}$",
     "O-EDS": "O (Wt%)",
     "SELE pyIAST": "IAST",
     "sel_henry": "Henry",
+
+    "GCMC_High": "$V_{<0.5\,nm}$",
+    "GCMC_HighLowRatio": "HLR",
+    "GCMC_Centroid": "Centroid",
+    "GCMC_CompetitionIndex": "CI",
+    "GCMC_Skewness": "Skewness",
+
+    "DFT_High": "$V_{<0.65\,nm}$",
+    "DFT_HighLowRatio": "HLR",
+    "DFT_Centroid": "Centroid",
+    "DFT_CompetitionIndex": "CI",
+    "DFT_Skewness": "Skewness",
 }
 def unicodeUnit(text):
     """
@@ -536,14 +561,90 @@ def removeDuplicateLegend(handles):
             labels.append(label)
             unique_handles.append(h)
     return unique_handles, labels
+def annotateBars(
+    ax,
+    bars,
+    values=None,
+    fmt=".2f",
+    offset=3,
+    fontsize=12,
+    color="black",
+    ha="center",
+    va="bottom",
+    rotation=0,
+    inside=False,
+    position=0.5,
+):
+    """
+    Add value labels to bar charts.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    bars : BarContainer
+    values : array-like, optional
+        Values to display. If None, use bar heights.
+    fmt : str, default=".2f"
+        Number format.
+    offset : float, default=3
+        Vertical offset in points (used when inside=False).
+    fontsize : int, default=12
+    color : str, default="black"
+    ha : str, default="center"
+    va : str, default="bottom"
+    rotation : float, default=0
+        Text rotation angle.
+    inside : bool, default=False
+        Whether to place labels inside the bars.
+    position : float, default=0.5
+        Relative height inside the bar (0=bottom, 1=top).
+    """
+    if values is None:
+        values = [bar.get_height() for bar in bars]
+
+    for bar, value in zip(bars, values):
+
+        if inside:
+            xy = (
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() * position,
+            )
+            xytext = (0, 0)
+            textcoords = "offset points"
+            va = "center"
+        else:
+            xy = (
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+            )
+            xytext = (0, offset)
+            textcoords = "offset points"
+
+        text = ax.annotate(
+            f"{value:{fmt}}",
+            xy=xy,
+            xytext=xytext,
+            textcoords=textcoords,
+            ha=ha,
+            va=va,
+            rotation=rotation,
+            fontsize=fontsize,
+            color=color,
+        )
+
+        # 标记为柱状图数值标签，避免 applyTextStyle 修改
+        text.set_gid("barvalue")
 def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, ):
     if ax is not None:
         ax.xaxis.label.set_size(labelsize)
         ax.yaxis.label.set_size(labelsize)
         ax.tick_params(axis="both", labelsize=ticksize)
-
-        for text in ax.texts:
-            text.set_fontsize(annotationsize)
+        if annotationsize is not None:
+            for text in ax.texts:
+                # 保留柱状图数值标签原始字号
+                if text.get_gid() == "barvalue":
+                    continue
+                text.set_fontsize(annotationsize)
 
     if fig is not None:
         if getattr(fig, "_supxlabel", None) is not None:
@@ -982,8 +1083,10 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
     ax.text(
         text_position[0],
         text_position[1],
-        f"R² = {result['R2']:.3f}\n"
-        f"r = {result['Pearson_r']:.3f}",
+        (
+        f"{applyLabel('R2')} = {result['R2']:.3f}\n"
+        f"{applyLabel('Pearson_r')} = {result['Pearson_r']:.3f}"
+        ),
         transform=ax.transAxes,
         va=pos
     )
@@ -1057,7 +1160,9 @@ def plotBatchCorrelation(results, topN=5, sort_by="R2"):
         fig.delaxes(ax)
     plt.tight_layout()
     plt.show(block=False)
-def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, figsize=(6, 4),gradientFlag=True, savepath=None):
+def plotBar( x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, figsize=(6, 4), 
+            gradientFlag=True, showValue=False, valueFmt=".3f", valueOffset=3, valueFontsize=14, 
+            valueRotation=0, valueInside=False, valuePosition=0.5, savepath=None, ):
     """
     Plot a single bar chart.
     Parameters
@@ -1095,8 +1200,20 @@ def plotBar(x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, fi
         ax.set_title(title)
     ax.tick_params(axis="x", rotation=rotation)
     # 论文风格：刻度朝内，仅左、下有刻度
+    if showValue:
+        annotateBars(
+            ax,
+            bars,
+            fmt=valueFmt,
+            offset=valueOffset,
+            fontsize=valueFontsize,
+            color="white",
+            rotation=valueRotation,
+            inside=valueInside,
+            position=valuePosition,
+        )
     applyAxisStyle(ax)
-    applyTextStyle( ax=ax, labelsize=14, ticksize=12, annotationsize=14 )
+    applyTextStyle( ax=ax, labelsize=16, ticksize=14, annotationsize=16 )
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=900)
     return ax
