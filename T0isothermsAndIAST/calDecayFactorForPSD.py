@@ -335,6 +335,18 @@ def main(file_path=None):
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
 
+    # # ##################### 出传统porosity指标##############
+    # porosity_sheet = "porosity"
+    # include = ["BET", "Vultra (0.7)", "Vultra (1)", "Vmic(2)", "Vme", "Vt", "SELE pyIAST", "sel_henry"]
+    # porosityData, porosityMeta = fl.readTableBySheet(file, porosity_sheet)
+    # porosityData = dop.naturalSortData(porosityData,axis=1)
+    # X_metrix_porspsity, Y_metrix_porspsity, summary_metrix_porspsity, results_metrix_porspsity = dop.matrixCorrelationAnalysis(porosityData, dataY=None, columns=None)
+    # figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix-porosity", expand="", expandPos=True, type="png")
+    # order = include
+    # myPlt.plotCorrelogram(results = results_metrix_porspsity, order=order, include=include, cmap="RdBu_r",decimals=2, dpi=900, 
+    #                       savePath = figureName
+    #                       )
+    # # ##################### 出传统porosity指标##############
 
     # ##################### 单独计算孔体积用##############
     # # X_metrix_po, Y_metrix_po, summary_metrix_po, results_metrix_po = dop.matrixCorrelationAnalysis( kineticdata)
@@ -347,7 +359,6 @@ def main(file_path=None):
     # # figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix-porosity2 r2", expand="", expandPos=True, type="png")
     # fl.export_to_excel_auto( volume_kernal, filename=out_path1, sheet_name="volume" )
     # fl.exportCorrelationExcel( out_path1,X_metrix_po, Y_metrix_po, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix_po,summary_matrix_SHHET="prosity2" )
-    # exclude = ["Vmic(2)/Vt", "Vultra (1)/Vt"]
     # myPlt.plotCorrelogram(results = results_metrix_po,textValue="R2", exclude=exclude, cmap="RdBu_r",decimals=2, dpi=900, 
     #                     #   savePath = figureName
     #                       )
