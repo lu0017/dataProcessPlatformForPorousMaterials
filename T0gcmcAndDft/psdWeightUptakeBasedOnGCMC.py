@@ -5,12 +5,9 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 from common import *
-
 import constantsAndName as const
-
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
-
 def select_folder():
     root = tk.Tk()
     root.withdraw()
@@ -22,7 +19,6 @@ def select_folder():
         raise ValueError("No file selected!")
     print("Selected file:", file_path)
     return file_path
-
 def readSimulationUptake(file):
     df = pd.read_excel(file, sheet_name="simulationUptake", header=None )
     # 找到 "Pore Size (nm)" 所在位置
@@ -34,14 +30,12 @@ def readSimulationUptake(file):
     # 吸附数据 [cm^3 /g framework]
     uptake = ( df.iloc[row_idx + 1:, col_idx + 1:] .astype(float) .to_numpy() )
     return poreSize, pressures, uptake
-
 def calculate_accessible_volume( helium_fraction, box_volume, framework_density):
     # Å³
     V_acc_A3 = helium_fraction * box_volume
     # cm³/g
     V_acc_cm3g = 1000.0 * helium_fraction / framework_density
     return V_acc_cm3g
-
 def readSimulationDensity(file, HeliumFraction):
     # 不指定表头，全部读进来
     df = pd.read_excel( file, sheet_name="simulationDensity", header=None )
@@ -58,7 +52,6 @@ def readSimulationDensity(file, HeliumFraction):
     else:
         density = density_cell
     return poreSize, pressures, density
-
 def readVolumeAndHeliumVoidFraction(file,sheet_name):
     # 不指定表头，全部读进来
     df = pd.read_excel( file, sheet_name, header=None )
@@ -74,21 +67,18 @@ def readVolumeAndHeliumVoidFraction(file,sheet_name):
     FrameworkDensity = ( df.iloc[row_idx + 1:, col_idx + 3] .astype(float) .to_numpy() )
     V_acc_cm3g = calculate_accessible_volume( HeliumFraction, BoxVolume, FrameworkDensity)
     return HeliumFraction, V_acc_cm3g
-
 def readBoundary(file):
     df = pd.read_excel(file, sheet_name="boundary")
     poreSize = df.iloc[:, 0].to_numpy(dtype=float) / 10.0
     lower = df.iloc[:, 1].to_numpy(dtype=float) / 10.0
     upper = df.iloc[:, 2].to_numpy(dtype=float) / 10.0
     return poreSize, lower, upper
-
 def findPSDHeader(df):
     for i in range(len(df)):
         row = df.iloc[i].astype(str).str.lower()
         if any("pore size" in item for item in row):
             return i
     raise ValueError("Cannot find PSD header row")
-
 def mergePSD(sample):
     co2Pore = sample["co2Pore"]
     co2DV   = sample["co2DV"]
@@ -102,7 +92,6 @@ def mergePSD(sample):
     pore = pore[order]
     dv = dv[order]
     return pore,dv
-
 def readExpUptake(file):
     df = pd.read_excel( file, sheet_name="exp", header=None )
     results = {}
@@ -124,7 +113,6 @@ def readExpUptake(file):
             "expUptake": expUptake
         }
     return results
-
 def readPSD(file):
     df = pd.read_excel( file, sheet_name="PSD", header=None )
     results = {}
@@ -150,7 +138,6 @@ def readPSD(file):
             "n2DV": n2DV
         }
     return results
-
 def calculatePSDVolumeAndWeight( psdPore, psdDV, boundary, ngrid=100): 
     interp = interp1d( psdPore, psdDV, bounds_error=False, fill_value=0.0 )
     volume = []
@@ -165,7 +152,6 @@ def calculatePSDVolumeAndWeight( psdPore, psdDV, boundary, ngrid=100):
     else:
         weight = np.zeros_like(volume)
     return weight, volume
-
 def calculateIgnoredFraction(psdPoreOriginal,simPore):
     simMax = np.max(simPore)
     totalNum = len(psdPoreOriginal)
@@ -175,7 +161,6 @@ def calculateIgnoredFraction(psdPoreOriginal,simPore):
     print(f"PSD points outside range = {exceedNum}/{totalNum}")
     print(f"Outside fraction = {fraction:.2f}%")
     return fraction
-
 def extendPSDToSimulationRange(psdPore,simPore):
     simMax = np.max(simPore)
     psdPore = psdPore.copy()
@@ -185,10 +170,8 @@ def extendPSDToSimulationRange(psdPore,simPore):
         print(f"Assigning to {simMax:.3f} nm")
     psdPore[psdPore > simMax] = simMax
     return psdPore
-
 def overlap(a1,a2,b1,b2):
     return max( 0.0, min(a2,b2)-max(a1,b1) )
-
 def gcmcBoundary(pore):
     pore=np.sort(np.asarray(pore))
     edge=(pore[:-1]+pore[1:])/2
@@ -202,7 +185,6 @@ def gcmcBoundary(pore):
         "lower": np.array(lower),
         "upper": np.array(upper)
     }
-
 def buildBoundary(simPore,bdPore,bdLower,bdUpper):
     lower = []
     upper = []
@@ -230,7 +212,6 @@ def buildBoundary(simPore,bdPore,bdLower,bdUpper):
         "lower": np.array(lower),
         "upper": np.array(upper)
     }
-
 # def calculateWeight( psdLower, psdUpper, psdVolume, simLower, simUpper):
 #     weight=np.zeros(len(simLower))
 #     for j in range(len(psdVolume)):
@@ -240,7 +221,6 @@ def buildBoundary(simPore,bdPore,bdLower,bdUpper):
 #             if ov > 0:
 #                 weight[i] += ( psdVolume[j] * ov / width )
 #     return weight
-
 def calculateUptakeByWeight(weight, adsorpUptake):
     contribution = weight[:, None] * adsorpUptake
     totalUptake = np.sum( contribution, axis=0 )   # mol/kg = mmol/g
@@ -253,7 +233,6 @@ def calculateUptakeByWeight(weight, adsorpUptake):
         "cumulative": cumulative,
         "total": totalUptake           # mol/kg
     }
-
 def calculateUptakeByDensity(volume, adsorpDensity):
     contribution = volume[:, None] * adsorpDensity
     totalUptakeSTP = np.sum(contribution, axis=0)  # cm3(STP)/g
@@ -269,7 +248,6 @@ def calculateUptakeByDensity(volume, adsorpDensity):
         "totalUptakeSTP": totalUptakeSTP,       # cm3(STP)/g
         "total": totalUptake              # mmol/g
     }
-
 def findThreshold(simPore, cumulative, contributionPercent, pressureIndex=-1):
     # 80/90/95%累计贡献孔径
     targets = [80, 90, 95]
@@ -286,7 +264,6 @@ def findThreshold(simPore, cumulative, contributionPercent, pressureIndex=-1):
     print("\nTop 3 contributing pores:")
     for rank, i in enumerate(top_idx, start=1):
         print( f"{rank}. " f"{simPore[i]:.3f} nm " f"({contrib[i]*100:.2f}%)" )
-
 def plotContribution(simPore,contributionPercent,pressureIndex=-1):
     plt.figure(figsize=(6,4))
     plt.plot(simPore,contributionPercent[:,pressureIndex]*100,marker="o")
@@ -295,7 +272,6 @@ def plotContribution(simPore,contributionPercent,pressureIndex=-1):
     plt.title("Pore Contribution")
     plt.tight_layout()
     plt.show()
-
 def plotCumulative(simPore,cumulative,pressureIndex=-1):
     plt.figure(figsize=(6,4))
     plt.plot(simPore,cumulative[:,pressureIndex]*100,marker="o")
@@ -304,7 +280,6 @@ def plotCumulative(simPore,cumulative,pressureIndex=-1):
     plt.title("Cumulative Contribution")
     plt.tight_layout()
     plt.show()
-
 def plotPSDContribution(simPore,weight,contributionPercent,pressureIndex=-1):
     fig,ax1 = plt.subplots(figsize=(6,4))
     ax1.bar(simPore,weight,width=0.2)
@@ -316,7 +291,6 @@ def plotPSDContribution(simPore,weight,contributionPercent,pressureIndex=-1):
     plt.title("PSD Weight vs Contribution")
     plt.tight_layout()
     plt.show()
-
 def plotContributionHeatmap(simPore,pressures,contribution):
     plt.figure(figsize=(8,5))
     plt.imshow(contribution,aspect="auto",origin="lower")
@@ -365,7 +339,6 @@ def plotCompareIsothermTwoMethod(sample, pressures, simData, simData_density):
     plt.title(sample)
     plt.legend()
     plt.tight_layout()
-
 def exportResult(simPore,boundary,pressures,weight,uptake,out_path):
     result = pd.DataFrame()
     result["Pore Size (nm)"] = simPore
@@ -391,8 +364,6 @@ def exportResult(simPore,boundary,pressures,weight,uptake,out_path):
         heatmap.to_excel(writer,sheet_name="Heatmap")
 def calculateUptakeByAdsorptionDensity():
     y = 0
-
-
 def main(file_path=None):
     flagUsingDensity = False
     # ==== 输入参数 ====
@@ -415,7 +386,6 @@ def main(file_path=None):
         psdPore,psdDV = mergePSD(sampleAll[sample])
         ignoredFraction = calculateIgnoredFraction(psdPore.copy(),simPore)
         psdPore = extendPSDToSimulationRange(psdPore,simPore)
-        
         weight, volume = calculatePSDVolumeAndWeight(psdPore,psdDV,boundary)
         if flagUsingDensity:
             uptake = calculateUptakeByDensity(volume, simData)
@@ -424,7 +394,6 @@ def main(file_path=None):
             # weight = volumeWweight
             uptake = calculateUptakeByWeight(weight, simData)
             uptake_density = calculateUptakeByDensity(volume, simData_density)
-            
         # print("ModelVolumeAcc= ", ModelVolumeAcc)
         # print("sum(volume)= ", np.sum(volume))
         # print("volume= ", volume)
@@ -447,7 +416,6 @@ def main(file_path=None):
         # exportResult(simPore,boundary,pressures,weight,uptake,out_path)
         break
     plt.show(block=True)
-
 if __name__ == "__main__": 
     f = sys.argv[1] if len(sys.argv) > 1 else None
     main(f)

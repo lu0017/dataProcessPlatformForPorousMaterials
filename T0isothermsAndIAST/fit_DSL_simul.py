@@ -65,6 +65,13 @@ def get_dslparams_from_origin(params, T_list, sheet, file):
     path = fl.getPathOnly(file)  # current folder
     file_name = "DslOriginFit"
     file = fl.get_expanded_name(path, file_name, type="xlsx")
+
+    # -----------------------------
+    # 检查文件是否存在
+    # -----------------------------
+    if file is None:
+        print(f"[Warning] File not found: {file}")
+        return params, False
     
     cols, _, validSheet = fl.readFileBySheet(file, sheet, header=[0,1])
     
@@ -369,8 +376,6 @@ def residualForDSL(params, grouped_data):
     # return np.concatenate(res)
         resid_all.append(q_obs - q_fit)
     return np.concatenate(resid_all)
-
-
 
 def getDSLpara(dsl, T):
     """

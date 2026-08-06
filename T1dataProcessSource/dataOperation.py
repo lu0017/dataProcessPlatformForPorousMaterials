@@ -765,67 +765,124 @@ def naturalSort(items):
     list
     """
     return sorted( list(items), key=naturalSortKey )
-def naturalSortData(data, axis=0, level=0):
+def naturalSortData(data, index=None, axis=0, level=0):
     """
     Sort supported data objects using natural order.
+
     Parameters
     ----------
     data : DataFrame, Series, Index, MultiIndex,
            list, tuple or ndarray
         Input object.
+
+    index : iterable, optional
+        External sorting labels. Only supported when `data`
+        is a DataFrame. If None, the DataFrame index is used.
+
     axis : {0, 1}, default=0
         Axis to sort when `data` is a DataFrame.
         * axis=0 : sort row labels (index).
         * axis=1 : sort column labels.
+
     level : int, default=0
         MultiIndex level used when sorting labels.
+
     Returns
     -------
     Same type as input whenever possible.
     """
     axis = normalizeAxis(axis)
+
     # -----------------------------
     # DataFrame
     # -----------------------------
     if isinstance(data, pd.DataFrame):
-        labels = getSortedLabels( data, axis=axis, level=level )
+
+        # Use external sorting labels
+        if index is not None:
+            order = natsort.index_natsorted(index)
+            return data.iloc[order]
+
+        labels = getSortedLabels(data, axis=axis, level=level)
+
         # sort index
         if axis == 0:
             return data.loc[labels]
+
         # sort columns
         if not isinstance(data.columns, pd.MultiIndex):
             return data.loc[:, labels]
+
         # MultiIndex columns
         columns = []
         for label in labels:
-            columns.extend( [ col for col in data.columns if col[level] == label ] )
+            columns.extend(
+                [col for col in data.columns if col[level] == label]
+            )
         return data.loc[:, columns]
+
+    # index 参数仅支持 DataFrame
+    if index is not None:
+        raise TypeError(
+            "'index' is only supported when data is a pandas.DataFrame."
+        )
+
     # -----------------------------
     # Series
     # -----------------------------
     elif isinstance(data, pd.Series):
         labels = getSortedLabels(data)
         return data.loc[labels]
+
     # -----------------------------
     # Pandas Index
     # -----------------------------
     elif isinstance(data, pd.Index):
         return pd.Index(getSortedLabels(data))
+
     # -----------------------------
     # ndarray
     # -----------------------------
     elif isinstance(data, np.ndarray):
         return np.array(getSortedLabels(data))
+
     # -----------------------------
     # tuple
     # -----------------------------
     elif isinstance(data, tuple):
         return tuple(getSortedLabels(data))
+
     # -----------------------------
     # list / iterable
     # -----------------------------
     else:
         return getSortedLabels(data)
+def naturalSortBy(data, by, reset_index=True):
+    """
+    Naturally sort a DataFrame by the values of a column.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Input DataFrame.
+
+    by : str
+        Column name used as the natural sorting key.
+
+    reset_index : bool, default=True
+        Whether to reset the index after sorting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Naturally sorted DataFrame.
+    """
+    result = naturalSortData(data, index=data[by])
+
+    if reset_index:
+        result = result.reset_index(drop=True)
+
+    return result
 def normalizeAxis(axis):
     """
     Normalize axis specification.

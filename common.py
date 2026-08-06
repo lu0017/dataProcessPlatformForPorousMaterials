@@ -20,6 +20,7 @@ import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
 import pyiast 
+import natsort
 from copy import deepcopy
 
 # ======================
