@@ -14,3 +14,4 @@ from .pyIAST import *
 from .strongDSL import *
 from .plotIsothermsByTem import *
 from .calDecayFactorForPSD import *
+from .collectFittingParameter import *

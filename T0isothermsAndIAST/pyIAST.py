@@ -472,11 +472,11 @@ def runPyIast(listData, T_C = 25, plotFlag = False, out_path = None, sheet_name=
 # main函数*************************************************************************************************************
 # -----------------------------
 def main():
-    singleFile = True
+    singleFile = False
     T_C = 25
 
     if singleFile:
-        sheet = "CC-Hy-550_60_5-650_15_5-1"
+        sheet = "CC-20M10-Bi-800-2-1"
         file = fl.getFile()
         listData, out_path, _ = fl.readFileBySheet(file, sheet, expand = const.SELE_FILE_IAST_SOFT)
         outputTxt(T_C, listData, out_path, fileName = sheet)

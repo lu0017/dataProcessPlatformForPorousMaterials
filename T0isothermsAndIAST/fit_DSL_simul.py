@@ -866,7 +866,7 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None):
 
     # 拟合N2吸附曲线
         T_max = max(grouped_data.keys())
-        n2_fit = fitN2Isothem(T_max, listData, model="Henry")
+        n2_fit = fitN2Isothem(T_max, listData, model="Langmuir")
     ##
 
         # #删除两个数据，用于比较b和q的变化是否敏感
@@ -952,7 +952,7 @@ def main(file_path=None):
 
     if singleFile:
         # # 选择文件
-        sheet_name = "CC-Hy-600-1-1"
+        sheet_name = "CC-20M10-Bi-800-2-1"
         file = fl.getFile()
         listData, out_path, _ = fl.readFileBySheet(file, sheet_name)
         runDslSimu(listData, out_path, plotFlag=True, sheet_name = sheet_name)

@@ -384,7 +384,7 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None):
 # ==========================================
 def main(file_path=None):
 
-    singleFile = True
+    singleFile = False
 
     if singleFile:
         # # 选择文件

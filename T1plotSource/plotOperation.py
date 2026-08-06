@@ -66,14 +66,14 @@ LABEL_MAP_MATRIX = {
 
     "GCMC_High": "$V_{<0.5\,nm}$",
     "GCMC_HighLowRatio": "HLR",
-    "GCMC_Centroid": "Centroid",
-    "GCMC_CompetitionIndex": "CI",
+    "GCMC_Centroid": r"$D_{c}$",
+    "GCMC_CompetitionIndex": r"$CI$",
     "GCMC_Skewness": "Skewness",
 
     "DFT_High": "$V_{<0.65\,nm}$",
     "DFT_HighLowRatio": "HLR",
-    "DFT_Centroid": "Centroid",
-    "DFT_CompetitionIndex": "CI",
+    "DFT_Centroid": r"$D_{c}$",
+    "DFT_CompetitionIndex": r"$CI$",
     "DFT_Skewness": "Skewness",
 }
 def unicodeUnit(text):

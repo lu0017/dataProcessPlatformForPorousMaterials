@@ -120,7 +120,7 @@ SkipSheets = [
     # "uio-66 Zn 40",
     # "uio-66 Co 40",
     "report",
-    "N2-PSD",
+    "N2-PSD 0.1",
     "GCMC-PSD 0-0.03_0.1"
 ]
 splitSheet = [
@@ -214,9 +214,24 @@ def check_or_create_folder(path, sub_folder_name=""):
     # else:
     #     print(f"📁 文件夹已存在: {folder_path}")
     return folder_path
-def get_expanded_name(file_path, fileName, expand="", expandPos=True, type="xlsx"):
-    """用于拓展文件名"""
+def get_expanded_name(file_path, fileName, expand="", expandPos=True, type="xlsx", level=0):
+    """用于拓展文件名
+
+    Parameters
+    ----------
+    level : int
+        返回上级目录层数。
+        0：当前目录（默认）
+        1：上一级目录
+        2：上两级目录
+        ...
+    """
+
     output_dir = getPathOnly(file_path)
+
+    for _ in range(level):
+        output_dir = os.path.dirname(output_dir)
+
     if expand == "":
         out_path = os.path.join(output_dir, f"{fileName}.{type}")
     else:
@@ -224,7 +239,8 @@ def get_expanded_name(file_path, fileName, expand="", expandPos=True, type="xlsx
             out_path = os.path.join(output_dir, f"{expand}_{fileName}.{type}")
         else:
             out_path = os.path.join(output_dir, f"{fileName}_{expand}.{type}")
-    return  out_path
+
+    return out_path
 def readData( file, sheet_name=0, keyFlag=True, keyName=None, ncols=None, sep=None, skiprows=0 ):
     """
     通用表格读取函数
