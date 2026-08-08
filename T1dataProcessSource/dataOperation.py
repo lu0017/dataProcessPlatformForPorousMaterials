@@ -343,6 +343,164 @@ def fitPeak( x, y, peaks, model="Lorentzian", method="leastsq", weights=None, fi
         **({} if fit_kws is None else fit_kws),
     )
     return result
+def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
+    """
+    Calculate R² and RMSE between experimental and predicted curves.
+
+    If the x coordinates differ (including different numbers of points),
+    the predicted curve is first aligned to the experimental x coordinates.
+
+    By default, only the overlapping x range is used for evaluation.
+    If ``allow_extrapolation=True``, linear extrapolation is performed
+    outside the prediction range.
+
+    Parameters
+    ----------
+    xTrue : array-like
+        Experimental x values.
+
+    yTrue : array-like
+        Experimental y values.
+
+    xPred : array-like
+        Predicted x values.
+
+    yPred : array-like
+        Predicted y values.
+
+    allow_extrapolation : bool, default=False
+        Whether to allow linear extrapolation when the experimental
+        x range extends beyond the prediction range.
+
+        * False : evaluate only within the overlapping x range.
+        * True  : linearly extrapolate the prediction to all
+          experimental x values.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+            - R2 : coefficient of determination.
+            - RMSE : root mean square error.
+            - x : x values used for evaluation.
+            - yTrue : experimental values used for evaluation.
+            - yPred : predicted values (interpolated/extrapolated if needed).
+            - n : number of points used for evaluation.
+    """
+
+    # -----------------------------
+    # Convert to numpy arrays
+    # -----------------------------
+    xTrue = np.asarray(xTrue, dtype=float).ravel()
+    yTrue = np.asarray(yTrue, dtype=float).ravel()
+    xPred = np.asarray(xPred, dtype=float).ravel()
+    yPred = np.asarray(yPred, dtype=float).ravel()
+
+    # -----------------------------
+    # Check lengths
+    # -----------------------------
+    if xTrue.size != yTrue.size:
+        raise ValueError(
+            f"xTrue ({xTrue.size}) and yTrue ({yTrue.size}) "
+            "must have the same length."
+        )
+
+    if xPred.size != yPred.size:
+        raise ValueError(
+            f"xPred ({xPred.size}) and yPred ({yPred.size}) "
+            "must have the same length."
+        )
+
+    if xTrue.size == 0:
+        raise ValueError("Experimental data is empty.")
+
+    if xPred.size == 0:
+        raise ValueError("Predicted data is empty.")
+
+    # -----------------------------
+    # Check finite values
+    # -----------------------------
+    if not np.all(np.isfinite(xTrue)):
+        raise ValueError("xTrue contains NaN or Inf.")
+
+    if not np.all(np.isfinite(yTrue)):
+        raise ValueError("yTrue contains NaN or Inf.")
+
+    if not np.all(np.isfinite(xPred)):
+        raise ValueError("xPred contains NaN or Inf.")
+
+    if not np.all(np.isfinite(yPred)):
+        raise ValueError("yPred contains NaN or Inf.")
+
+    # -----------------------------
+    # Sort by x
+    # -----------------------------
+    idx = np.argsort(xTrue)
+    xTrue = xTrue[idx]
+    yTrue = yTrue[idx]
+
+    idx = np.argsort(xPred)
+    xPred = xPred[idx]
+    yPred = yPred[idx]
+
+    # -----------------------------
+    # Interpolate if necessary
+    # -----------------------------
+    if (
+        xTrue.size != xPred.size
+        or not np.allclose(xTrue, xPred)
+    ):
+
+        if allow_extrapolation:
+            # Linear interpolation + extrapolation
+            interp_func = interp1d(
+                xPred,
+                yPred,
+                kind="linear",
+                fill_value="extrapolate",
+                bounds_error=False,
+            )
+
+            xEval = xTrue
+            yTrueEval = yTrue
+            yPredInterp = interp_func(xEval)
+
+        else:
+            # Use only the overlapping x range
+            xmin = max(xTrue.min(), xPred.min())
+            xmax = min(xTrue.max(), xPred.max())
+
+            mask = (xTrue >= xmin) & (xTrue <= xmax)
+
+            xEval = xTrue[mask]
+            yTrueEval = yTrue[mask]
+
+            if xEval.size < 2:
+                raise ValueError(
+                    "Less than two overlapping points between "
+                    "experimental and predicted data."
+                )
+
+            yPredInterp = np.interp(xEval, xPred, yPred)
+
+    else:
+
+        xEval = xTrue
+        yTrueEval = yTrue
+        yPredInterp = yPred
+
+    # -----------------------------
+    # Calculate metrics
+    # -----------------------------
+    return {
+        "R2": r2_score(yTrueEval, yPredInterp),
+        "RMSE": np.sqrt(mean_squared_error(yTrueEval, yPredInterp)),
+        "x": xEval,
+        "yTrue": yTrueEval,
+        "yPred": yPredInterp,
+        "n": xEval.size,
+    }
+
 def copySamples(data, sampleMap):
     """
     根据 sampleMap 拷贝指定样品。
@@ -639,6 +797,198 @@ def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
         )
         result[sample] = newdf
     return result
+def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
+    """
+    Build interpolation function.
+
+    Parameters
+    ----------
+    x : array-like
+    y : array-like
+    method : str
+        "pchip", "linear", "cubic"
+    extrapolate : bool
+    """
+
+    if method.lower() == "pchip":
+        return PchipInterpolator(x, y, extrapolate=extrapolate)
+
+    elif method.lower() == "linear":
+        return interp1d(
+            x,
+            y,
+            kind="linear",
+            bounds_error=False,
+            fill_value=np.nan
+        )
+
+    elif method.lower() == "cubic":
+        return CubicSpline(
+            x,
+            y,
+            extrapolate=extrapolate
+        )
+
+    else:
+        raise ValueError(f"Unknown interpolation method: {method}")
+
+def generateCommonX(x_data, n_points=50):
+    """
+    Generate common x coordinates for multiple datasets.
+
+    The common interpolation range is determined by the overlap
+    of all datasets.
+
+    Parameters
+    ----------
+    x_data : dict
+        Dictionary of x arrays.
+        Example:
+            {
+                "25": x1,
+                "35": x2,
+                ...
+            }
+
+    n_points : int, default=50
+        Number of interpolation points.
+
+    Returns
+    -------
+    x_common : ndarray
+        Common interpolation coordinates.
+    """
+
+    x_min = max(np.min(x) for x in x_data.values())
+    x_max = min(np.max(x) for x in x_data.values())
+
+    if x_min >= x_max:
+        raise ValueError(
+            "No overlapping x range exists among the datasets."
+        )
+
+    return np.linspace(x_min, x_max, n_points)
+def interpolateData(
+        x,
+        y,
+        x_interp=None,
+        n_points=50,
+        method="pchip"):
+    """
+    Interpolate one dataset.
+
+    Parameters
+    ----------
+    x : array-like
+        Original x values.
+
+    y : array-like
+        Original y values.
+
+    x_interp : array-like, optional
+        Interpolation x values. If None, uniformly generate
+        n_points within the data range.
+
+    n_points : int, default=50
+        Number of interpolation points when x_interp is None.
+
+    method : {"pchip", "linear", "cubic"}, default="pchip"
+
+    Returns
+    -------
+    x_interp : ndarray
+        Interpolation x values.
+
+    y_interp : ndarray
+        Interpolated y values.
+
+    interp_func : callable
+        Interpolation function.
+    """
+
+    if x_interp is None:
+        x_interp = np.linspace(
+            np.min(x),
+            np.max(x),
+            n_points
+        )
+
+    interp_func = buildInterpolationFunction(
+        x,
+        y,
+        method=method
+    )
+
+    y_interp = interp_func(x_interp)
+
+    return x_interp, y_interp, interp_func
+
+def multiDataInterpolation(
+        x_data,
+        y_data,
+        x_common=None,
+        n_points=50,
+        method="pchip"):
+    """
+    Interpolate multiple datasets onto a common x grid.
+
+    Parameters
+    ----------
+    x_data : dict
+        Dictionary of x arrays.
+
+    y_data : dict
+        Dictionary of y arrays.
+
+    x_common : array-like, optional
+        Common interpolation coordinates.
+        If None, they are automatically generated.
+
+    n_points : int, default=50
+        Number of interpolation points when x_common is None.
+
+    method : {"pchip", "linear", "cubic"}, default="pchip"
+
+    Returns
+    -------
+    df_interp : pandas.DataFrame
+        Interpolated datasets.
+        The first column is 'x_common'.
+
+    interp_funcs : dict
+        Dictionary of interpolation functions.
+    """
+
+    if x_data.keys() != y_data.keys():
+        raise ValueError("x_data and y_data must have identical keys.")
+
+    if x_common is None:
+        x_common = generateCommonX(
+            x_data,
+            n_points=n_points
+        )
+
+    result = {
+        "x_common": x_common
+    }
+
+    interp_funcs = {}
+
+    for key in x_data:
+
+        _, y_interp, interp_func = interpolateData(
+            x=x_data[key],
+            y=y_data[key],
+            x_interp=x_common,
+            method=method
+        )
+
+        result[key] = y_interp
+        interp_funcs[key] = interp_func
+
+    df_interp = pd.DataFrame(result)
+
+    return df_interp, interp_funcs
 def cropX(data, xmin=None, xmax=None):
     """
     根据 X 范围截取数据。
@@ -1244,6 +1594,8 @@ def correlationAnalysis( x, y, x_name="x", y_name="y", dropna=True):
     y_range = np.max(y) - np.min(y)
     rmse_rel = rmse / (np.abs(y_mean) + 1e-12)
     rmse_nrm = rmse / (y_range + 1e-12)
+    mae = np.mean(np.abs(y - x))
+    mape = np.mean(np.abs((y - x) / x)) * 100
     # ----------------------------------------------------
     # Spearman
     # ----------------------------------------------------
@@ -1271,6 +1623,8 @@ def correlationAnalysis( x, y, x_name="x", y_name="y", dropna=True):
         "RMSE": rmse,
         "RMSE_rel": rmse_rel,
         "RMSE_nrm": rmse_nrm,
+        "MAE": mae,
+        "MAPE": mape,
         "Spearman_r": spearman_r,
         "Spearman_p": spearman_p,
     }

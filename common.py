@@ -80,7 +80,7 @@ from lmfit.models import (
     VoigtModel,
     PseudoVoigtModel,
 )
-
+from sklearn.metrics import r2_score, mean_squared_error
 
 # ======================
 # Excel

@@ -14,7 +14,68 @@ import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
 
-def runInterpolateDsl(df, pressureUnit="kPa", plotFlag=True):
+def runInterpolateDsl( df, pressureUnit="kPa", plotFlag=True):
+
+    scale_P = 1000 if pressureUnit=="Pa" else 1
+
+    P_data, uptake_data, T_list = dop.build_P_and_uptake_data(df)
+
+    cleaned_p = {}
+    cleaned_q = {}
+
+    for T in T_list:
+
+        p, q = dop.clean_list(
+            P_data[T],
+            uptake_data[T],
+            scale_x=scale_P
+        )
+
+        cleaned_p[T] = p
+        cleaned_q[T] = q
+
+    df_interp, interp_funcs = dop.multiDataInterpolation(
+        cleaned_p,
+        cleaned_q,
+        method="pchip"
+    )
+    x_common = df_interp["x_common"].to_numpy()
+
+    interpData = {
+        f"{T}°C": (
+            x_common,
+            df_interp[T].to_numpy()
+        )
+        for T in T_list
+    }
+    if plotFlag:
+    
+        expData = {
+        f"{T}°C": (cleaned_p[T], cleaned_q[T])
+        for T in T_list
+        }
+
+        interpData = {
+            f"{T}°C": (x_common, interp_funcs[T](x_common))
+            for T in T_list
+        }
+
+        myPlt.plotCurve(
+            data=expData,
+            fit=interpData,
+            xlabel="P (kPa)",
+            ylabel="q (mmol/g)",
+            marker= False,
+            line=True,
+            fit_label="Interp",
+            savepath="tes2.png",
+        )
+
+        plt.show()
+
+    return df_interp
+
+def runInterpolateDsl0(df, pressureUnit="kPa", plotFlag=True):
     """默认单位 kPa"""
     # 2. 提取三组数据
     #kPa
@@ -96,7 +157,7 @@ def main(file_path=None):
 
     if singleFile:
         # # 选择文件
-        sheet_name = "CC-Hy-550_60_5-650_15_5-1"
+        sheet_name = "CC-Bi-550-2-1"
         file = fl.getFile()
         listData, out_path,_ = fl.readFileBySheet(file, sheet_name, expand = "Interp")
         df_interp = runInterpolateDsl(listData)

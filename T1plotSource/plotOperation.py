@@ -95,7 +95,7 @@ def formatLabel(label,Unicode=False):
         return ""
 
     label = str(label)
-    label = LABEL_MAP_MATRIX.get(label, label)
+    label = LABEL_MAP.get(label, label)
     # import matplotlib as mpl
     # print(mpl.rcParams["font.family"])
     # print(mpl.rcParams["font.sans-serif"])
@@ -963,6 +963,7 @@ def plotCurve(
     fit_linestyle="--",
     markersize=70,
     legend=True,
+    legendPosition="outside right",
     savepath=None,
 ):
     """
@@ -1065,6 +1066,7 @@ def plotCurve(
             fig=ax.figure,
             axes=[ax],
             handles=handles,
+            position=legendPosition
         )
     if savepath is not None:
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300)

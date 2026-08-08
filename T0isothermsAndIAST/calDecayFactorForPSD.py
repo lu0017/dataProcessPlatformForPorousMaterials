@@ -266,10 +266,125 @@ def calculatePSDMetrics( psdData, regions, prefix=None ):
     if prefix is not None:
         metrics = metrics.add_prefix(f"{prefix}_")
     return metrics
+def selectSamples(data, samples, sampleColumn="sample", axis=None):
+    """
+    Select specified samples from a DataFrame.
+
+    Supports:
+    1. Sample names stored in MultiIndex columns
+    2. Sample names stored in a normal column
+    3. Sample names stored in DataFrame index
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Input data.
+
+    samples : list or None
+        Samples to select.
+        If None, all samples are retained.
+
+    sampleColumn : str, optional
+        Name of the sample column when samples are stored
+        as a normal column.
+
+    axis : int or None, optional
+        None : automatically detect data structure
+        0    : sample names are stored in rows/index
+        1    : sample names are stored in MultiIndex columns
+
+    Returns
+    -------
+    pandas.DataFrame
+        Selected data.
+    """
+
+    # ==========================================
+    # Select all samples
+    # ==========================================
+    if samples is None:
+        return data.copy()
+
+    # ==========================================
+    # Case 1: MultiIndex columns
+    # ==========================================
+    if isinstance(data.columns, pd.MultiIndex):
+
+        availableSamples = (
+            data.columns
+            .get_level_values(0)
+            .unique()
+        )
+
+        missingSamples = [
+            sample
+            for sample in samples
+            if sample not in availableSamples
+        ]
+
+        if missingSamples:
+            print(
+                f"Warning: samples not found: "
+                f"{missingSamples}"
+            )
+
+        validSamples = [
+            sample
+            for sample in samples
+            if sample in availableSamples
+        ]
+
+        return data.loc[
+            :,
+            validSamples
+        ].copy()
+
+    # ==========================================
+    # Case 2: sample stored in a normal column
+    # ==========================================
+    if sampleColumn in data.columns:
+
+        return data[
+            data[sampleColumn].isin(samples)
+        ].copy()
+
+    # ==========================================
+    # Case 3: sample stored in index
+    # ==========================================
+    if data.index.name == sampleColumn:
+
+        return data.loc[
+            data.index.isin(samples)
+        ].copy()
+
+    # ==========================================
+    # Case 4: automatically detect sample index
+    # ==========================================
+    indexValues = data.index.astype(str)
+
+    if all(
+        str(sample) in indexValues
+        for sample in samples
+    ):
+        return data.loc[
+            data.index.astype(str).isin(
+                [str(sample) for sample in samples]
+            )
+        ].copy()
+
+    # ==========================================
+    # Cannot identify sample structure
+    # ==========================================
+    raise ValueError(
+        f"Cannot identify sample information.\n"
+        f"Sample column '{sampleColumn}' not found.\n"
+        f"Index name: {data.index.name}\n"
+        f"Available columns: {list(data.columns)}"
+    )
 ##########################################################################
 def main(file_path=None):
     # # 选择文件
-    psd_sheet = "PSD-DFT-CO2"
+    psd_sheet = "PSD-GCMC-CO2"
     kinetic_sheet = "thermalkinetic"
     regions_DFT = {
         "High": (0.3,0.65),
@@ -279,7 +394,7 @@ def main(file_path=None):
         "High": (0.3,0.50),
         "Middle": (0.5,0.65),
         "Low": (0.65,0.8)}
-    regions = regions_DFT
+    regions = regions_GCMC
     xColumns=[
         "HighLowRatio",
         "CompetitionIndex",
@@ -290,9 +405,25 @@ def main(file_path=None):
         "SELE pyIAST",
         "E (J/mol)"
     ]
+
     file = fl.getFile()
     psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
+
+    # # ##################### 用于分析指定样品##############
+    # =========================
+    # Select samples
+    # =========================
+    samples = [
+        "S4",
+        "S5",
+        "S8",
+        "S10",
+    ]
+    psdData = selectSamples( psdData, samples, axis=1 )
+    kineticdata = selectSamples( kineticdata, samples, sampleColumn="Sample", axis=0 )
+    # # ##################### 用于分析指定样品##############
+
     psdData = dop.naturalSortData(psdData,axis=1)
 
     # plotData = {}
@@ -313,24 +444,24 @@ def main(file_path=None):
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
 
-    # ##################### 同时计算两个kernal的数据##############
-    psd_sheet_dft = "PSD-DFT-CO2"
-    psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
-    out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=False)
-    psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
-    metrics_GCMC = calculatePSDMetrics(psdData, regions, prefix="GCMC")
-    metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
-    metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
-    xColumns = [
-        "GCMC_Centroid",
-        "GCMC_CompetitionIndex",
-        "GCMC_Skewness",
+    # # ##################### 同时计算两个kernal的数据##############
+    # psd_sheet_dft = "PSD-DFT-CO2"
+    # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
+    # out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=False)
+    # psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
+    # metrics_GCMC = calculatePSDMetrics(psdData, regions, prefix="GCMC")
+    # metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
+    # metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
+    # xColumns = [
+    #     "GCMC_Centroid",
+    #     "GCMC_CompetitionIndex",
+    #     "GCMC_Skewness",
 
-        "DFT_Centroid",
-        "DFT_CompetitionIndex",
-        "DFT_Skewness",
-        ]
-    # ##################### 同时计算两个kernal的数据##############
+    #     "DFT_Centroid",
+    #     "DFT_CompetitionIndex",
+    #     "DFT_Skewness",
+    #     ]
+    # # ##################### 同时计算两个kernal的数据##############
 
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
@@ -347,6 +478,7 @@ def main(file_path=None):
     #                       savePath = figureName
     #                       )
     # # ##################### 出传统porosity指标##############
+
 
     # ##################### 单独计算孔体积用##############
     # # X_metrix_po, Y_metrix_po, summary_metrix_po, results_metrix_po = dop.matrixCorrelationAnalysis( kineticdata)
@@ -380,11 +512,19 @@ def main(file_path=None):
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    # myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["sel_henry"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="E-sele_henry")
+    myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="E-sele_henry"
+                                )
     # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["sel_henry"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele_henry")
-    # myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-CI")
-    # myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-Centroid")
-    # myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-Skewness")
+    myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-CI"
+                                )
+    myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-Centroid"
+                                )
+    myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-Skewness"
+                                )
     # myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
     # myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 输出图片部分##############
@@ -423,9 +563,12 @@ def main(file_path=None):
     ]
     order = include
     figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=True, type="png")
-    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-                          savePath = figureName
-                          )
+    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
+    #                     #   savePath = figureName
+    #                       )
+    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
+                            #   savePath = figureName
+                              )
     plt.show(block=True)
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None
