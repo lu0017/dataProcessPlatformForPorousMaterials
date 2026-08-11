@@ -731,35 +731,7 @@ def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
         )
         result[sample] = newdf
     return result
-def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
-    """
-    Build interpolation function.
-    Parameters
-    ----------
-    x : array-like
-    y : array-like
-    method : str
-        "pchip", "linear", "cubic"
-    extrapolate : bool
-    """
-    if method.lower() == "pchip":
-        return PchipInterpolator(x, y, extrapolate=extrapolate)
-    elif method.lower() == "linear":
-        return interp1d(
-            x,
-            y,
-            kind="linear",
-            bounds_error=False,
-            fill_value=np.nan
-        )
-    elif method.lower() == "cubic":
-        return CubicSpline(
-            x,
-            y,
-            extrapolate=extrapolate
-        )
-    else:
-        raise ValueError(f"Unknown interpolation method: {method}")
+
 def generateCommonX(x_data, n_points=50):
     """
     Generate common x coordinates for multiple datasets.
@@ -789,98 +761,7 @@ def generateCommonX(x_data, n_points=50):
             "No overlapping x range exists among the datasets."
         )
     return np.linspace(x_min, x_max, n_points)
-def interpolateData(
-        x,
-        y,
-        x_interp=None,
-        n_points=50,
-        method="pchip"):
-    """
-    Interpolate one dataset.
-    Parameters
-    ----------
-    x : array-like
-        Original x values.
-    y : array-like
-        Original y values.
-    x_interp : array-like, optional
-        Interpolation x values. If None, uniformly generate
-        n_points within the data range.
-    n_points : int, default=50
-        Number of interpolation points when x_interp is None.
-    method : {"pchip", "linear", "cubic"}, default="pchip"
-    Returns
-    -------
-    x_interp : ndarray
-        Interpolation x values.
-    y_interp : ndarray
-        Interpolated y values.
-    interp_func : callable
-        Interpolation function.
-    """
-    if x_interp is None:
-        x_interp = np.linspace(
-            np.min(x),
-            np.max(x),
-            n_points
-        )
-    interp_func = buildInterpolationFunction(
-        x,
-        y,
-        method=method
-    )
-    y_interp = interp_func(x_interp)
-    return x_interp, y_interp, interp_func
-def multiDataInterpolation(
-        x_data,
-        y_data,
-        x_common=None,
-        n_points=50,
-        method="pchip"):
-    """
-    Interpolate multiple datasets onto a common x grid.
-    Parameters
-    ----------
-    x_data : dict
-        Dictionary of x arrays.
-    y_data : dict
-        Dictionary of y arrays.
-    x_common : array-like, optional
-        Common interpolation coordinates.
-        If None, they are automatically generated.
-    n_points : int, default=50
-        Number of interpolation points when x_common is None.
-    method : {"pchip", "linear", "cubic"}, default="pchip"
-    Returns
-    -------
-    df_interp : pandas.DataFrame
-        Interpolated datasets.
-        The first column is 'x_common'.
-    interp_funcs : dict
-        Dictionary of interpolation functions.
-    """
-    if x_data.keys() != y_data.keys():
-        raise ValueError("x_data and y_data must have identical keys.")
-    if x_common is None:
-        x_common = generateCommonX(
-            x_data,
-            n_points=n_points
-        )
-    result = {
-        "x_common": x_common
-    }
-    interp_funcs = {}
-    for key in x_data:
-        _, y_interp, interp_func = interpolateData(
-            x=x_data[key],
-            y=y_data[key],
-            x_interp=x_common,
-            method=method
-        )
-        result[key] = y_interp
-        interp_funcs[key] = interp_func
-    df_interp = pd.DataFrame(result)
-    return df_interp, interp_funcs
+
 def cropX(data, xmin=None, xmax=None):
     """
     根据 X 范围截取数据。
@@ -1465,10 +1346,7 @@ def correlationAnalysis(
     # ======================================================
     # Combine
     # ======================================================
-    result = {
-        **correlation,
-        **fitting
-    }
+    result = { **correlation, **fitting }
     return result
 def correlationAnalysis0( x, y, x_name="x", y_name="y", dropna=True):
     #最初的版本，只满足线性拟合，主要用于计算PSD的三指标

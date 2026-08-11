@@ -13,6 +13,7 @@ import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
+import T1dataProcessSource.modelAndFit as mf
 
 def runInterpolateDsl( df, pressureUnit="kPa", plotFlag=True):
 
@@ -34,7 +35,7 @@ def runInterpolateDsl( df, pressureUnit="kPa", plotFlag=True):
         cleaned_p[T] = p
         cleaned_q[T] = q
 
-    df_interp, interp_funcs = dop.multiDataInterpolation(
+    df_interp, interp_funcs = mf.multiDataInterpolation(
         cleaned_p,
         cleaned_q,
         method="pchip"

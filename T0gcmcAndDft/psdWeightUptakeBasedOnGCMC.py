@@ -21,7 +21,6 @@ def select_folder():
         raise ValueError("No file selected!")
     print("Selected file:", file_path)
     return file_path
-
 def debugPredictionResults(
         predictionResults,
         expDataCheck,
@@ -29,7 +28,6 @@ def debugPredictionResults(
     """
     Debug prediction results by combining simulation,
     experimental, fitted parameters, and predicted uptake.
-
     Output columns
     --------------
     Sample
@@ -41,25 +39,19 @@ def debugPredictionResults(
     q_pred
     Difference_pred_exp
     """
-
     debug_all = []
-
     for sample in predictionResults:
-
         result = predictionResults[sample]
-
         pressure = result["pressure"]
-        q_sim = result["simulation"]
+        q_sim = result["simUptake"]
         slope = result["slope"]
         intercept = result["intercept"]
         q_pred = result["predicted"]
-
         # --------------------------------------------------
         # Experimental data
         # --------------------------------------------------
         pressure_exp = expDataCheck[sample]["pressure"]
         uptake_exp = expDataCheck[sample]["expUptake"]
-
         # --------------------------------------------------
         # Build debug DataFrame
         # --------------------------------------------------
@@ -71,7 +63,6 @@ def debugPredictionResults(
             "q_sim": q_sim,
             "q_pred": q_pred,
         })
-
         # --------------------------------------------------
         # Match experimental uptake at pressure
         # --------------------------------------------------
@@ -80,16 +71,12 @@ def debugPredictionResults(
             pressure_exp,
             uptake_exp
         )
-
         df_sample["exp"] = exp_interp
-
         # Difference between predicted and experimental
         df_sample["Diff_q"] = (
             df_sample["q_pred"] - df_sample["exp"]
         )
-
         debug_all.append(df_sample)
-
     # ======================================================
     # Combine all samples
     # ======================================================
@@ -97,7 +84,6 @@ def debugPredictionResults(
         debug_all,
         ignore_index=True
     )
-
     # Reorder columns
     df_debug = df_debug[
         [
@@ -111,18 +97,14 @@ def debugPredictionResults(
             "Diff_q",
         ]
     ]
-
     # ======================================================
     # Print
     # ======================================================
     if printflag:
-
         for sample, df_sample in df_debug.groupby("Sample"):
-
             print("\n" + "=" * 100)
             print(f"Sample: {sample}")
             print("=" * 100)
-
             print(
                 df_sample[
                     [
@@ -139,41 +121,89 @@ def debugPredictionResults(
                     float_format=lambda x: f"{x:.6f}"
                 )
             )
-
     return df_debug
-def readSimulationUptake(file):
-    df = pd.read_excel(file, sheet_name="simulationUptake", header=None )
-    # 找到 "Pore Size (nm)" 所在位置
+def readSimulationUptake( file, pressure_min=None):
+    # ======================================================
+    # Read Excel
+    # ======================================================
+    df = pd.read_excel( file, sheet_name="simulationUptake", header=None )
+    # ======================================================
+    # Find "Pore Size (nm)"
+    # ======================================================
     row_idx, col_idx = np.argwhere( df.values == "Pore Size (nm)" )[0]
-    # 压力（标题行）
-    pressures = ( df.iloc[row_idx, col_idx + 1:] .astype(float) .to_numpy() )
-    # 孔径（第一列）
-    poreSize = ( df.iloc[row_idx + 1:, col_idx] .astype(float) .to_numpy() )
-    # 吸附数据 [cm^3 /g framework]
-    uptake = ( df.iloc[row_idx + 1:, col_idx + 1:] .astype(float) .to_numpy() )
-    return poreSize, pressures / 1000, uptake
+    # ======================================================
+    # Pressure
+    # ======================================================
+    pressures = ( df.iloc[ row_idx, col_idx + 1: ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Pore size
+    # ======================================================
+    poreSize = ( df.iloc[ row_idx + 1:, col_idx ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Uptake
+    # ======================================================
+    uptake = ( df.iloc[ row_idx + 1:, col_idx + 1: ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Convert pressure
+    # ======================================================
+    pressures = pressures / 1000
+    # ======================================================
+    # Pressure filter
+    # ======================================================
+    if pressure_min is not None:
+        mask = pressures >= pressure_min
+        pressures = pressures[mask]
+        # Uptake columns correspond to pressure
+        uptake = uptake[:, mask]
+    return ( poreSize, pressures, uptake )
 def calculate_accessible_volume( helium_fraction, box_volume, framework_density):
     # Å³
     V_acc_A3 = helium_fraction * box_volume
     # cm³/g
     V_acc_cm3g = 1000.0 * helium_fraction / framework_density
     return V_acc_cm3g
-def readSimulationDensity(file, HeliumFraction):
-    # 不指定表头，全部读进来
+def readSimulationDensity( file, HeliumFraction, pressure_min=None):
+    # ======================================================
+    # Read Excel
+    # ======================================================
     df = pd.read_excel( file, sheet_name="simulationDensity", header=None )
-    # 找到 "Pore Size (nm)" 所在位置
+    # ======================================================
+    # Find "Pore Size (nm)"
+    # ======================================================
     row_idx, col_idx = np.argwhere( df.values == "Pore Size (nm)" )[0]
-    # 压力（标题行）
-    pressures = ( df.iloc[row_idx, col_idx + 1:] .astype(float) .to_numpy() )
-    # 孔径（第一列）
-    poreSize = ( df.iloc[row_idx + 1:, col_idx] .astype(float) .to_numpy() )
-    # 吸附数据 [cm^3 (STP)/cm^3 framework]
-    density_cell = ( df.iloc[row_idx + 1:, col_idx + 1:] .astype(float) .to_numpy() )
+    # ======================================================
+    # Pressure
+    # ======================================================
+    pressures = ( df.iloc[ row_idx, col_idx + 1: ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Pore size
+    # ======================================================
+    poreSize = ( df.iloc[ row_idx + 1:, col_idx ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Density
+    # ======================================================
+    density_cell = ( df.iloc[ row_idx + 1:, col_idx + 1: ] .astype(float) .to_numpy() )
+    # ======================================================
+    # Helium correction
+    # ======================================================
     if HeliumFraction is not None:
-        density = ( density_cell / HeliumFraction[:, None] ) # density_accessible [cm^3 (STP)/cm^3 framework]
+        density = ( density_cell / HeliumFraction[:, None] )
     else:
         density = density_cell
-    return poreSize, pressures / 1000, density
+    # ======================================================
+    # Pressure conversion
+    # ======================================================
+    pressures = pressures / 1000
+    # ======================================================
+    # Pressure filter
+    # ======================================================
+    if pressure_min is not None:
+        mask = pressures >= pressure_min
+        pressures = pressures[mask]
+        # IMPORTANT:
+        # density columns correspond to pressure
+        density = density[:, mask]
+    return ( poreSize, pressures, density )
 def readVolumeAndHeliumVoidFraction(file,sheet_name):
     # 不指定表头，全部读进来
     df = pd.read_excel( file, sheet_name, header=None )
@@ -195,6 +225,43 @@ def readBoundary(file):
     lower = df.iloc[:, 1].to_numpy(dtype=float) / 10.0
     upper = df.iloc[:, 2].to_numpy(dtype=float) / 10.0
     return poreSize, lower, upper
+def filterByMinimumPressure( data, pressure_min=None, pressure_col="Pressure (kPa)"):
+    """
+    Filter data by minimum pressure.
+    Supports both:
+        1. pandas.DataFrame containing a pressure column
+        2. numpy.ndarray / list containing pressure values
+    Parameters
+    ----------
+    data : pandas.DataFrame, numpy.ndarray, list
+        Input data.
+    pressure_min : float or None
+        Minimum pressure. Values below this pressure are removed.
+    pressure_col : str
+        Pressure column name when data is a DataFrame.
+    Returns
+    -------
+    filtered_data
+        Filtered data with the same general data structure
+        as the input.
+    """
+    if pressure_min is None:
+        return data.copy()
+    # ======================================================
+    # DataFrame
+    # ======================================================
+    if isinstance(data, pd.DataFrame):
+        if pressure_col not in data.columns:
+            raise KeyError(
+                f"Pressure column '{pressure_col}' not found."
+            )
+        return data[ data[pressure_col] >= pressure_min ].copy()
+    # ======================================================
+    # numpy array / list
+    # ======================================================
+    else:
+        data = np.asarray(data)
+        return data[data >= pressure_min]
 def findPSDHeader(df):
     for i in range(len(df)):
         row = df.iloc[i].astype(str).str.lower()
@@ -260,6 +327,120 @@ def readPSD(file,sheet_name="PSD"):
             "n2DV": n2DV
         }
     return results
+def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, validation_type="absolute"):
+    """
+    Prepare prediction analysis data.
+    The function:
+        1. Keeps original experimental data.
+        2. Keeps original prediction data.
+        3. Builds a common pressure grid from both datasets.
+        4. Interpolates experimental and predicted uptake onto
+           the common pressure grid.
+        5. Constructs point-wise prediction results.
+        6. Collects fitting details if available.
+    Returns
+    -------
+    predictionAnalysis : dict
+        {
+            "data": DataFrame,
+            "plot_data": DataFrame,
+            "fit_details": DataFrame
+        }
+    """
+    data_all = []
+    plot_data_all = []
+    fit_details_all = []
+    for sample in predictionResults:
+        # ======================================================
+        # 1. Experimental data
+        # ======================================================
+        pressure_exp = np.asarray( expData[sample]["pressure"], dtype=float )
+        uptake_exp = np.asarray( expData[sample]["expUptake"], dtype=float )
+        # Experimental interpolation
+        _, _, exp_interp = mf.interpolateData( pressure_exp, uptake_exp, extrapolate=True )
+        # ======================================================
+        # 2. Prediction data
+        # ======================================================
+        pressure_pred = np.asarray( predictionResults[sample]["pressure"], dtype=float )
+        uptake_pred = np.asarray( predictionResults[sample]["predicted"], dtype=float )
+        # Prediction interpolation
+        _, _, pred_interp = mf.interpolateData( pressure_pred, uptake_pred, extrapolate=True )
+        # ======================================================
+        # 3. Common pressure grid
+        # ======================================================
+        pressure_plot = np.sort( np.unique( np.concatenate([ pressure_exp, pressure_pred ]) ) )
+        # ======================================================
+        # 4. Interpolated data
+        # ======================================================
+        uptake_exp_plot = exp_interp( pressure_plot )
+        uptake_pred_plot = pred_interp( pressure_plot )
+        # ======================================================
+        # 5. Point-wise prediction results
+        #
+        #    Use prediction pressure as the original
+        #    model calculation points.
+        # ======================================================
+        exp_at_pred = exp_interp( pressure_pred )
+        difference = ( exp_at_pred - uptake_pred )
+        ratio = np.divide( uptake_pred, exp_at_pred, 
+                          out=np.full_like( uptake_pred, np.nan, dtype=float ), where=exp_at_pred != 0 )
+        for p, exp_q, pred_q, diff, rat in zip( pressure_pred, exp_at_pred, uptake_pred, difference, ratio):
+            data_all.append({
+                "Sample": sample,
+                "Validation type": validation_type,
+                "Pressure (kPa)": p,
+                "Experimental": exp_q,
+                "Predicted": pred_q,
+                "Difference": diff,
+                "Ratio": rat,
+            })
+        # ======================================================
+        # 6. Plot data
+        #
+        #    Dense common grid
+        # ======================================================
+        for p, exp_q, pred_q in zip(
+                pressure_plot,
+                uptake_exp_plot,
+                uptake_pred_plot):
+            plot_data_all.append({
+                "Sample": sample,
+                "Pressure (kPa)": p,
+                "Experimental": exp_q,
+                "Predicted": pred_q,
+            })
+        # ======================================================
+        # 7. Original prediction points
+        #
+        #    Keep explicitly so they can be plotted as markers.
+        # ======================================================
+        for p, pred_q in zip( pressure_pred, uptake_pred):
+            # Already contained in `data`,
+            # but kept as metadata for clarity if needed.
+            pass
+        # ======================================================
+        # 8. Fit details
+        # ======================================================
+        if modelfit is not None:
+            fit_result = modelfit.get(sample, {})
+            if isinstance(fit_result, dict):
+                record = {
+                    "Sample": sample,
+                    "Validation type": validation_type,
+                }
+                record.update(fit_result)
+                fit_details_all.append(record)
+    # ==========================================================
+    # 9. Construct DataFrames
+    # ==========================================================
+    df_data = pd.DataFrame(data_all)
+    df_plot_data = pd.DataFrame(plot_data_all)
+    df_fit_details = pd.DataFrame(fit_details_all)
+    return {
+        "data": df_data,
+        "plot_data": df_plot_data,
+        "fit_details": df_fit_details,
+    }
 def calculatePSDVolumeAndWeight( psdPore, psdDV, boundary, ngrid=100): 
     interp = interp1d( psdPore, psdDV, bounds_error=False, fill_value=0.0 )
     volume = []
@@ -386,10 +567,7 @@ def findThreshold(simPore, cumulative, contributionPercent, pressureIndex=-1):
     print("\nTop 3 contributing pores:")
     for rank, i in enumerate(top_idx, start=1):
         print( f"{rank}. " f"{simPore[i]:.3f} nm " f"({contrib[i]*100:.2f}%)" )
-def extractUptakeAtPressure(
-        sampleResults,
-        expData,
-        pressure_kPa):
+def extractUptakeAtPressure( sampleResults, expData, pressure_kPa, extrapolate=False):
     records = []
     for sample in sampleResults:
         if sample not in expData:
@@ -397,23 +575,15 @@ def extractUptakeAtPressure(
         # ------------------------------------------------------
         # Experimental
         # ------------------------------------------------------
-        _, _, exp_interp = dop.interpolateData(
-            expData[sample]["pressure"],
-            expData[sample]["expUptake"]
-        )
-        exp_uptake = float(
-            exp_interp(pressure_kPa)
-        )
+        _, _, exp_interp = mf.interpolateData( expData[sample]["pressure"], 
+                                              expData[sample]["expUptake"], extrapolate=extrapolate)
+        exp_uptake = float( exp_interp(pressure_kPa) )
         # ------------------------------------------------------
         # Simulation
         # ------------------------------------------------------
-        _, _, sim_interp = dop.interpolateData(
-            sampleResults[sample]["pressure"],
-            sampleResults[sample]["simUptake"]
-        )
-        sim_uptake = float(
-            sim_interp(pressure_kPa)
-        )
+        _, _, sim_interp = mf.interpolateData( sampleResults[sample]["pressure"], 
+                                              sampleResults[sample]["simUptake"], extrapolate=extrapolate )
+        sim_uptake = float( sim_interp(pressure_kPa) )
         if np.isnan(exp_uptake) or np.isnan(sim_uptake):
             continue
         records.append({
@@ -423,10 +593,7 @@ def extractUptakeAtPressure(
             "q_sim": sim_uptake,
         })
     return pd.DataFrame(records)
-def extractUptakeAtAllPressures(
-        sampleResults,
-        expData,
-        pressures):
+def extractUptakeAtAllPressures( sampleResults, expData, pressures):
     """
     Extract experimental and simulation uptake at all
     specified pressures.
@@ -459,135 +626,573 @@ def extractUptakeAtAllPressures(
     # Extract uptake at each pressure
     # ==========================================================
     for pressure in pressures:      #  kPa
-        df_pressure = extractUptakeAtPressure(
-            sampleResults=sampleResults,
-            expData=expData,
-            pressure_kPa=pressure
-        )
+        df_pressure = extractUptakeAtPressure( sampleResults=sampleResults, expData=expData,
+                                               pressure_kPa=pressure, extrapolate=True )
         if not df_pressure.empty:
             all_data.append(df_pressure)
     # ==========================================================
     # Combine all pressures
     # ==========================================================
     if all_data:
-        df = pd.concat(
-            all_data,
-            ignore_index=True
-        )
+        df = pd.concat( all_data, ignore_index=True )
     else:
         df = pd.DataFrame()
     return df
-def exponentialSaturation(x, a_inf, A, k):
-    # y=a − Ae^(−kP)
-    return a_inf - A * np.exp(-k * x)
+def fitParameterBySingleModel(
+        df_parameter,
+        parameter_col,
+        parameter_name,
+        pressure_col="Pressure (kPa)",
+        fit_method="nonlinear",
+        model=None,
+        p0=None,
+        bounds=(-np.inf, np.inf),
+        param_names=None,
+        plotflag=False):
+    """
+    Fit the pressure dependence of a validation parameter
+    using a single specified model.
+    General form
+    ------------
+    Parameter(P) = f(P)
+    Parameters
+    ----------
+    df_parameter : pandas.DataFrame
+        DataFrame containing pressure and fitted parameter values.
+    parameter_col : str
+        Column containing the parameter to be fitted.
+        For example:
+            "Fit_slope"
+            "Fit_intercept"
+    parameter_name : str
+        Name of the parameter for labeling and result storage.
+    pressure_col : str
+        Pressure column name.
+    fit_method : str
+        Fitting method used by correlationAnalysis().
+        "linear" or "nonlinear".
+    model : callable, optional
+        Fitting model function.
+        Required when fit_method="nonlinear".
+    p0 : array-like, optional
+        Initial parameters for nonlinear fitting.
+    bounds : 2-tuple
+        Parameter bounds.
+    param_names : list, optional
+        Names of model parameters.
+    plotflag : bool
+        Whether to plot the fitted pressure dependence.
+    Returns
+    -------
+    fit_result : dict
+        Complete fitting result returned by correlationAnalysis().
+    """
+    # ==========================================================
+    # 1. Check required columns
+    # ==========================================================
+    required_columns = [
+        pressure_col,
+        parameter_col
+    ]
+    missing_columns = [
+        col for col in required_columns
+        if col not in df_parameter.columns
+    ]
+    if missing_columns:
+        raise KeyError(
+            f"Missing columns for {parameter_name}: "
+            f"{missing_columns}"
+        )
+    # ==========================================================
+    # 2. Prepare fitting data
+    # ==========================================================
+    df_fit = df_parameter[
+        required_columns
+    ].copy()
+    df_fit = df_fit.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+    df_fit = df_fit.dropna(
+        subset=required_columns
+    )
+    if len(df_fit) < 2:
+        return None
+    # ==========================================================
+    # 3. Perform fitting
+    # ==========================================================
+    fit_result = dop.correlationAnalysis(
+        x=df_fit[pressure_col],
+        y=df_fit[parameter_col],
+        x_name=pressure_col,
+        y_name=parameter_name,
+        fit_method=fit_method,
+        fit_func=model,
+        p0=p0,
+        bounds=bounds,
+        param_names=param_names
+    )
+    # ==========================================================
+    # 4. Plot
+    # ==========================================================
+    if plotflag:
+        myPlt.plotSingleCorrelation(
+            fit_result,
+            xlabel=pressure_col,
+            ylabel=parameter_name
+        )
+    return fit_result
+def fitParameterByMultiModel(
+        df_parameter,
+        parameter_col,
+        parameter_name,
+        pressure_col="Pressure (kPa)",
+        models=None,
+        plotflag=False):
+    """
+    Fit the pressure dependence of a validation parameter
+    using one or multiple candidate models.
+    Model selection is based on AICc when multiple models
+    are supplied.
+    Parameters
+    ----------
+    df_parameter : pandas.DataFrame
+        DataFrame containing pressure and fitted parameter values.
+    parameter_col : str
+        Column containing the parameter to be fitted.
+    parameter_name : str
+        Name of the parameter for labeling and result storage.
+    pressure_col : str, default="Pressure (kPa)"
+        Pressure column name.
+    models : None, str, list, tuple, or dict, optional
+        Model selection/configuration.
+        None
+            Use all default candidate models.
+        str
+            Use one fixed model, e.g.
+                "Linear"
+        list or tuple
+            Compare selected models, e.g.
+                ["Linear", "Quadratic"]
+        dict
+            Custom model configuration, e.g.
+                {
+                    "Linear": {
+                        "fit_method": "linear",
+                        "model": None,
+                        "p0": None,
+                        "bounds": (-np.inf, np.inf),
+                        "param_names": None
+                    }
+                }
+    plotflag : bool, default=False
+        Whether to plot the best fitting model.
+    Returns
+    -------
+    result : dict or None
+        {
+            "best_model": str,
+            "best_fit": dict,
+            "model_comparison": DataFrame,
+            "fits": dict
+        }
+        Returns None if fitting is unsuccessful.
+    """
+    # ==========================================================
+    # 1. Prepare fitting data
+    # ==========================================================
+    required_columns = [
+        pressure_col,
+        parameter_col
+    ]
+    missing_columns = [
+        col
+        for col in required_columns
+        if col not in df_parameter.columns
+    ]
+    if missing_columns:
+        raise KeyError(
+            f"Missing columns for {parameter_name}: "
+            f"{missing_columns}"
+        )
+    df_fit = df_parameter[
+        required_columns
+    ].copy()
+    df_fit = df_fit.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+    df_fit = df_fit.dropna(
+        subset=required_columns
+    )
+    # Sort by pressure
+    df_fit = df_fit.sort_values(
+        by=pressure_col
+    ).reset_index(drop=True)
+    if len(df_fit) < 3:
+        print(
+            f"Not enough data points to fit "
+            f"{parameter_name}: N={len(df_fit)}"
+        )
+        return None
+
+    # ==========================================================
+    # 3. Resolve requested models
+    # ==========================================================
+    if models is None:
+        # ------------------------------------------------------
+        # Use all default candidate models
+        # ------------------------------------------------------
+        selected_models = mf.model_library.copy()
+    elif isinstance(models, str):
+        # ------------------------------------------------------
+        # One fixed model
+        # ------------------------------------------------------
+        if models not in mf.model_library:
+            raise ValueError(
+                f"Unknown model: {models}. "
+                f"Available models: "
+                f"{list(mf.model_library.keys())}"
+            )
+        selected_models = {
+            models: mf.model_library[models]
+        }
+    elif isinstance(models, (list, tuple)):
+        # ------------------------------------------------------
+        # Selected subset of candidate models
+        # ------------------------------------------------------
+        selected_models = {}
+        for model_name in models:
+            if model_name not in mf.model_library:
+                raise ValueError(
+                    f"Unknown model: {model_name}. "
+                    f"Available models: "
+                    f"{list(mf.model_library.keys())}"
+                )
+            selected_models[model_name] = (
+                mf.model_library[model_name]
+            )
+    elif isinstance(models, dict):
+        # ------------------------------------------------------
+        # Custom model configuration
+        # ------------------------------------------------------
+        selected_models = models
+    else:
+        raise TypeError(
+            "`models` must be one of:\n"
+            "  None\n"
+            "  str\n"
+            "  list / tuple\n"
+            "  dict"
+        )
+    if not selected_models:
+        raise ValueError(
+            f"No models were specified for "
+            f"{parameter_name}."
+        )
+    # ==========================================================
+    # 4. Fit all selected models
+    # ==========================================================
+    fits = {}
+    comparison_records = []
+    n = len(df_fit)
+    for model_name, config in selected_models.items():
+        try:
+            # --------------------------------------------------
+            # Validate configuration
+            # --------------------------------------------------
+            required_config = [
+                "fit_method",
+                "model",
+                "p0",
+                "bounds",
+                "param_names"
+            ]
+            missing_config = [
+                key
+                for key in required_config
+                if key not in config
+            ]
+            if missing_config:
+                raise KeyError(
+                    f"Missing model configuration for "
+                    f"{model_name}: {missing_config}"
+                )
+            # --------------------------------------------------
+            # Fit model
+            # --------------------------------------------------
+            fit_result = fitParameterBySingleModel(
+                df_parameter=df_fit,
+                parameter_col=parameter_col,
+                parameter_name=parameter_name,
+                pressure_col=pressure_col,
+                fit_method=config["fit_method"],
+                model=config.get("model"),
+                p0=config.get("p0"),
+                bounds=config.get(
+                    "bounds",
+                    (-np.inf, np.inf)
+                ),
+                param_names=config.get(
+                    "param_names"
+                ),
+                plotflag=False
+            )
+            if fit_result is None:
+                continue
+            # --------------------------------------------------
+            # Store complete fitting result
+            # --------------------------------------------------
+            fits[model_name] = fit_result
+            # --------------------------------------------------
+            # Convert fitting result to record
+            # --------------------------------------------------
+            record = mf.fittingResultToRecord(
+                fit_result,
+                parameter_name=parameter_name
+            )
+            # --------------------------------------------------
+            # Number of fitted parameters
+            # --------------------------------------------------
+            if config["fit_method"] == "linear":
+                k = 2
+            else:
+                param_names = config.get(
+                    "param_names"
+                )
+                if param_names is None:
+                    raise ValueError(
+                        f"`param_names` is required for "
+                        f"nonlinear model: {model_name}"
+                    )
+                k = len(param_names)
+            # --------------------------------------------------
+            # Calculate SSE
+            # --------------------------------------------------
+            rmse = record.get(
+                "RMSE",
+                np.nan
+            )
+            if not np.isfinite(rmse):
+                sse = np.nan
+            else:
+                sse = n * rmse ** 2
+            # --------------------------------------------------
+            # Calculate AIC
+            # --------------------------------------------------
+            if (
+                np.isfinite(sse)
+                and sse > 0
+            ):
+                aic = (
+                    n * np.log(sse / n)
+                    + 2 * k
+                )
+            elif (
+                np.isfinite(sse)
+                and sse == 0
+            ):
+                aic = -np.inf
+            else:
+                aic = np.nan
+            # --------------------------------------------------
+            # Calculate AICc
+            # --------------------------------------------------
+            if (
+                np.isfinite(aic)
+                and n - k - 1 > 0
+            ):
+                aicc = (
+                    aic
+                    + 2 * k * (k + 1)
+                    / (n - k - 1)
+                )
+            elif aic == -np.inf:
+                aicc = -np.inf
+            else:
+                aicc = np.inf
+            # --------------------------------------------------
+            # Store model comparison record
+            # --------------------------------------------------
+            comparison_records.append({
+                "Parameter": parameter_name,
+                "Model": model_name,
+                "N": n,
+                "N_parameters": k,
+                "R2": record.get(
+                    "R2",
+                    np.nan
+                ),
+                "RMSE": record.get(
+                    "RMSE",
+                    np.nan
+                ),
+                "AIC": aic,
+                "AICc": aicc
+            })
+        except Exception as e:
+            # --------------------------------------------------
+            # Keep failed model in comparison table
+            # --------------------------------------------------
+            comparison_records.append({
+                "Parameter": parameter_name,
+                "Model": model_name,
+                "N": n,
+                "N_parameters": np.nan,
+                "R2": np.nan,
+                "RMSE": np.nan,
+                "AIC": np.nan,
+                "AICc": np.nan,
+                "Error": str(e)
+            })
+    # ==========================================================
+    # 5. Build model comparison table
+    # ==========================================================
+    df_comparison = pd.DataFrame(
+        comparison_records
+    )
+    if df_comparison.empty:
+        print(
+            f"No valid model was fitted for "
+            f"{parameter_name}."
+        )
+        return None
+    # ==========================================================
+    # 6. Print model comparison
+    # ==========================================================
+    print(
+        "\n================ MODEL COMPARISON ================"
+    )
+    print(
+        df_comparison.to_string(
+            index=False
+        )
+    )
+    print(
+        "==================================================="
+    )
+    # ==========================================================
+    # 7. Find valid models
+    # ==========================================================
+    valid = df_comparison[
+        df_comparison["AICc"].notna()
+    ].copy()
+    # Remove models whose fitting failed
+    valid = valid[
+        valid["Model"].isin(
+            fits.keys()
+        )
+    ]
+    if valid.empty:
+        print(
+            f"No valid fitted model for "
+            f"{parameter_name}."
+        )
+        return None
+    # ==========================================================
+    # 8. Calculate Delta AICc
+    # ==========================================================
+    min_aicc = valid["AICc"].min()
+    df_comparison["Delta_AICc"] = np.nan
+    valid_indices = valid.index
+    df_comparison.loc[
+        valid_indices,
+        "Delta_AICc"
+    ] = (
+        df_comparison.loc[
+            valid_indices,
+            "AICc"
+        ]
+        - min_aicc
+    )
+    # ==========================================================
+    # 9. Select best model
+    # ==========================================================
+    best_idx = valid["AICc"].idxmin()
+    best_model = df_comparison.loc[
+        best_idx,
+        "Model"
+    ]
+    best_fit = fits[
+        best_model
+    ]
+    # ==========================================================
+    # 10. Determine whether model was fixed
+    # ==========================================================
+    model_fixed = (
+        isinstance(models, str)
+        or (
+            isinstance(models, (list, tuple))
+            and len(models) == 1
+        )
+    )
+    # Add selection information
+    df_comparison["Selected"] = False
+    df_comparison.loc[
+        best_idx,
+        "Selected"
+    ] = True
+    # ==========================================================
+    # 11. Plot best model
+    # ==========================================================
+    if plotflag:
+        myPlt.plotSingleCorrelation(
+            best_fit,
+            xlabel=pressure_col,
+            ylabel=parameter_name
+        )
+    # ==========================================================
+    # 12. Return
+    # ==========================================================
+    return {
+        "best_model": best_model,
+        "best_fit": best_fit,
+        "model_comparison": df_comparison,
+        "fits": fits,
+        "model_fixed": model_fixed
+    }
 def fitValidationParameters(
         validation,
         validation_types=("absolute", "differential"),
         pressure_col="Pressure (kPa)",
         pressure_min=10,
-        slope_model=mf.exponentialSaturation,
-        slope_p0=None,
-        slope_bounds=(-np.inf, np.inf),
-        slope_param_names=None,
-        intercept_model=mf.exponentialSaturation,
-        intercept_p0=None,
-        intercept_bounds=(-np.inf, np.inf),
-        intercept_param_names=None,
+        slope_models=None,
+        intercept_models=None,
         plotflag=False):
     """
     Fit pressure dependence of validation Slope and Intercept.
-    General form
-    ------------
-    Slope(P)     = f_slope(P)
-    Intercept(P) = f_intercept(P)
-    The fitting model can be specified independently for
-    Slope(P) and Intercept(P).
+    For each validation type:
+        1. Fit Slope using multiple candidate models.
+        2. Fit Intercept using multiple candidate models.
+        3. Select the best model based on AICc.
     Parameters
     ----------
     validation : dict
-        Output from analyzeSimulationValidation().
+        Output from validationSimAndExp().
     validation_types : tuple
         Validation types to analyze.
     pressure_col : str
         Pressure column name.
     pressure_min : float or None
         Minimum pressure used for parameter fitting.
-        If None, no pressure filtering is applied.
-    slope_model : callable
-        Model function for Slope(P).
-    slope_p0 : array-like, optional
-        Initial parameters for Slope(P).
-    slope_bounds : 2-tuple
-        Parameter bounds for Slope(P).
-    slope_param_names : list, optional
-        Parameter names for Slope(P).
-    intercept_model : callable
-        Model function for Intercept(P).
-    intercept_p0 : array-like, optional
-        Initial parameters for Intercept(P).
-    intercept_bounds : 2-tuple
-        Parameter bounds for Intercept(P).
-    intercept_param_names : list, optional
-        Parameter names for Intercept(P).
+    slope_models : dict, optional
+        Candidate models for Slope(P).
+    intercept_models : dict, optional
+        Candidate models for Intercept(P).
     plotflag : bool
-        Whether to plot the fitted pressure dependence.
+        Whether to plot the best fitting model.
     Returns
     -------
     parameter_fits : dict
-        {
-            "absolute": {
-                "data": DataFrame,
-                "metrics": DataFrame,
-            },
-            "differential": {
-                "data": DataFrame,
-                "metrics": DataFrame,
-            }
-        }
     """
     # ==========================================================
-    # 1. Default model parameters
-    # ==========================================================
-    if slope_model is None:
-        slope_model = mf.exponentialSaturation
-    if intercept_model is None:
-        intercept_model = mf.exponentialSaturation
-    # Default parameters for exponential saturation
-    if slope_p0 is None:
-        slope_p0 = [
-            0.45,   # a_inf
-            0.40,   # A
-            0.05    # k
-        ]
-    if slope_param_names is None:
-        slope_param_names = [
-            "a_inf",
-            "A",
-            "k"
-        ]
-    if intercept_p0 is None:
-        intercept_p0 = [
-            0.5,    # b_inf
-            0.5,    # B
-            0.01    # k
-        ]
-    if intercept_param_names is None:
-        intercept_param_names = [
-            "a_inf",
-            "A",
-            "k"
-        ]
-    # ==========================================================
-    # 2. Prepare result container
+    # 1. Prepare result container
     # ==========================================================
     parameter_fits = {}
     # ==========================================================
-    # 3. Loop over validation types
+    # 2. Loop over validation types
     # ==========================================================
     for validation_type in validation_types:
-        # ======================================================
-        # 3.1 Check validation type
-        # ======================================================
         if validation_type not in validation:
             continue
         df_metrics = validation[
@@ -596,12 +1201,7 @@ def fitValidationParameters(
         if df_metrics is None or df_metrics.empty:
             continue
         # ======================================================
-        # 3.2 Check required columns
-        #
-        # New unified result format:
-        #
-        # Fit_slope
-        # Fit_intercept
+        # 3. Required columns
         # ======================================================
         required_columns = [
             pressure_col,
@@ -609,8 +1209,7 @@ def fitValidationParameters(
             "Fit_intercept"
         ]
         missing_columns = [
-            col
-            for col in required_columns
+            col for col in required_columns
             if col not in df_metrics.columns
         ]
         if missing_columns:
@@ -619,7 +1218,7 @@ def fitValidationParameters(
                 f"{missing_columns}"
             )
         # ======================================================
-        # 3.3 Prepare parameter data
+        # 4. Prepare parameter data
         # ======================================================
         df_parameter = df_metrics[
             required_columns
@@ -632,81 +1231,85 @@ def fitValidationParameters(
             subset=required_columns
         )
         # ======================================================
-        # 3.4 Pressure filter
+        # 5. Pressure filter
         # ======================================================
         if pressure_min is not None:
             df_parameter = df_parameter[
-                df_parameter[pressure_col] >= pressure_min
+                df_parameter[pressure_col]
+                >= pressure_min
             ].copy()
-        if len(df_parameter) < 2:
+        if len(df_parameter) < 3:
             continue
         # ======================================================
-        # 4. Fit Slope(P)
+        # 6. Fit Slope using multiple models
         # ======================================================
-        slope_fit = dop.correlationAnalysis(
-            x=df_parameter[pressure_col],
-            y=df_parameter["Fit_slope"],
-            x_name="Pressure (kPa)",
-            y_name="Slope",
-            fit_method="nonlinear",
-            fit_func=slope_model,
-            p0=slope_p0,
-            bounds=slope_bounds,
-            param_names=slope_param_names
+        slope_result = fitParameterByMultiModel(
+            df_parameter=df_parameter,
+            parameter_col="Fit_slope",
+            parameter_name="Slope",
+            pressure_col=pressure_col,
+            models=slope_models,
+            plotflag=plotflag
         )
         # ======================================================
-        # 5. Fit Intercept(P)
+        # 7. Fit Intercept using multiple models
         # ======================================================
-        intercept_fit = dop.correlationAnalysis(
-            x=df_parameter[pressure_col],
-            y=df_parameter["Fit_intercept"],
-            x_name="Pressure (kPa)",
-            y_name="Intercept",
-            fit_method="nonlinear",
-            fit_func=intercept_model,
-            p0=intercept_p0,
-            bounds=intercept_bounds,
-            param_names=intercept_param_names
+        intercept_result = fitParameterByMultiModel(
+            df_parameter=df_parameter,
+            parameter_col="Fit_intercept",
+            parameter_name="Intercept",
+            pressure_col=pressure_col,
+            models=intercept_models,
+            plotflag=plotflag
         )
+        if slope_result is None:
+            continue
+        if intercept_result is None:
+            continue
         # ======================================================
-        # 6. Convert fitting results to records
+        # 8. Build best-fit metrics
         # ======================================================
+        slope_record = mf.fittingResultToRecord(
+            slope_result["best_fit"],
+            parameter_name="Slope"
+        )
+        intercept_record = mf.fittingResultToRecord(
+            intercept_result["best_fit"],
+            parameter_name="Intercept"
+        )
+        slope_record["Model"] = (
+            slope_result["best_model"]
+        )
+        intercept_record["Model"] = (
+            intercept_result["best_model"]
+        )
         df_fit_metrics = pd.DataFrame([
-            mf.fittingResultToRecord(
-                slope_fit,
-                parameter_name="Slope"
-            ),
-            mf.fittingResultToRecord(
-                intercept_fit,
-                parameter_name="Intercept"
-            )
+            slope_record,
+            intercept_record
         ])
         # ======================================================
-        # 7. Plot
-        # ======================================================
-        if plotflag:
-            myPlt.plotSingleCorrelation(
-                slope_fit,
-                xlabel="Pressure (kPa)",
-                ylabel="Slope"
-            )
-            myPlt.plotSingleCorrelation(
-                intercept_fit,
-                xlabel="Pressure (kPa)",
-                ylabel="Intercept"
-            )
-        # ======================================================
-        # 8. Store
+        # 9. Store results
         # ======================================================
         parameter_fits[validation_type] = {
             "data": df_parameter,
             "metrics": df_fit_metrics,
-            # --------------------------------------------------
-            # Store complete fitting results
-            # --------------------------------------------------
             "fits": {
-                "Slope": slope_fit,
-                "Intercept": intercept_fit
+                "Slope":
+                    slope_result["best_fit"],
+                "Intercept":
+                    intercept_result["best_fit"]
+            },
+            "model_comparison": {
+                "Slope":
+                    slope_result["model_comparison"],
+                "Intercept":
+                    intercept_result["model_comparison"]
+            },
+            "all_fits": {
+                "Slope":
+                    slope_result["fits"],
+                "Intercept":
+                    intercept_result["fits"]
             }
         }
     return parameter_fits
@@ -767,32 +1370,19 @@ def analyzeNormalizedIsotherm(
     # ==========================================================
     # 2. Merge sample-specific qmax into current-pressure data
     # ==========================================================
-    df = df.merge(
-        qmax,
-        on="Sample",
-        how="left"
-    )
+    df = df.merge( qmax, on="Sample", how="left" )
     # ==========================================================
     # 3. Calculate normalized uptake
     #
     # q_exp_norm = q_exp(P) / q_exp,max
     # q_sim_norm = q_sim(P) / q_sim,max
     # ==========================================================
-    df["q_exp_norm"] = (
-        df["q_exp"]
-        / df["q_exp_max"]
-    )
-    df["q_sim_norm"] = (
-        df["q_sim"]
-        / df["q_sim_max"]
-    )
+    df["q_exp_norm"] = ( df["q_exp"] / df["q_exp_max"] )
+    df["q_sim_norm"] = ( df["q_sim"] / df["q_sim_max"] )
     # ==========================================================
     # 4. Remove invalid values
     # ==========================================================
-    valid = (
-        np.isfinite(df["q_exp_norm"])
-        & np.isfinite(df["q_sim_norm"])
-    )
+    valid = ( np.isfinite(df["q_exp_norm"]) & np.isfinite(df["q_sim_norm"]) )
     df_valid = df.loc[valid].copy()
     # ==========================================================
     # 5. Minimum sample requirement
@@ -829,11 +1419,7 @@ def analyzeNormalizedIsotherm(
             ylabel=r"Experimental $q/q_{\max}$"
         )
     return df_valid, metrics
-def analyzeUptakeResponse(
-        df,
-        pressure_kPa,
-        pair_mode="all",
-        plotflag=False):
+def analyzeUptakeResponse( df, pressure_kPa, pair_mode="all", plotflag=False):
     """
     Analyze pairwise differential uptake response between samples.
     Mathematical relationship
@@ -877,26 +1463,16 @@ def analyzeUptakeResponse(
             for j in range(i + 1, len(samples)):
                 sample_i = samples[i]
                 sample_j = samples[j]
-                row_i = df.loc[
-                    df["Sample"] == sample_i
-                ].iloc[0]
-                row_j = df.loc[
-                    df["Sample"] == sample_j
-                ].iloc[0]
+                row_i = df.loc[ df["Sample"] == sample_i ].iloc[0]
+                row_j = df.loc[ df["Sample"] == sample_j ].iloc[0]
                 # --------------------------------------------------
                 # Differential experimental uptake
                 # --------------------------------------------------
-                delta_exp = (
-                    row_i["q_exp"]
-                    - row_j["q_exp"]
-                )
+                delta_exp = ( row_i["q_exp"] - row_j["q_exp"] )
                 # --------------------------------------------------
                 # Differential simulation uptake
                 # --------------------------------------------------
-                delta_sim = (
-                    row_i["q_sim"]
-                    - row_j["q_sim"]
-                )
+                delta_sim = ( row_i["q_sim"] - row_j["q_sim"] )
                 records.append({
                     "Pressure (kPa)": pressure_kPa,
                     "Sample_i": sample_i,
@@ -909,9 +1485,7 @@ def analyzeUptakeResponse(
                     "Delta_q_sim": delta_sim,
                 })
     else:
-        raise ValueError(
-            f"Unsupported pair_mode: {pair_mode}"
-        )
+        raise ValueError( f"Unsupported pair_mode: {pair_mode}" )
     # ==========================================================
     # Create DataFrame
     # ==========================================================
@@ -921,10 +1495,7 @@ def analyzeUptakeResponse(
     # ==========================================================
     # Remove invalid values
     # ==========================================================
-    valid = (
-        np.isfinite(df_delta["Delta_q_exp"])
-        & np.isfinite(df_delta["Delta_q_sim"])
-    )
+    valid = ( np.isfinite(df_delta["Delta_q_exp"]) & np.isfinite(df_delta["Delta_q_sim"]) )
     df_delta = df_delta.loc[valid].copy()
     # ==========================================================
     # Minimum pair requirement
@@ -951,29 +1522,17 @@ def analyzeUptakeResponse(
     # Plot
     # ==========================================================
     if plotflag:
-        myPlt.plotSingleCorrelation(
-            metrics,
-            xlabel=r"Simulation $\Delta q$",
-            ylabel=r"Experimental $\Delta q$"
-        )
+        myPlt.plotSingleCorrelation( metrics, xlabel=r"Simulation $\Delta q$", ylabel=r"Experimental $\Delta q$" )
     return df_delta, metrics
 def analyzeUptakeAtPressure( df, plotflag=False):
     if len(df) < 3:
         return df, None
-    metrics = dop.correlationAnalysis(
-        x=df["q_sim"],
-        y=df["q_exp"],
-        x_name="Simulation uptake",
-        y_name="Experimental uptake",
-    )
+    metrics = dop.correlationAnalysis( x=df["q_sim"], y=df["q_exp"], x_name="Simulation uptake", 
+                                      y_name="Experimental uptake", )
     if plotflag:
-        myPlt.plotSingleCorrelation(
-            metrics,
-            xlabel="Simulation",
-            ylabel="Experimental"
-        )
+        myPlt.plotSingleCorrelation( metrics, xlabel="Simulation", ylabel="Experimental" )
     return df, metrics
-def analyzeSimulationValidation( sampleResults, expData, pressures, plotflag=False):
+def validationSimAndExp( sampleResults, expData, pressures, plotflag=False):
     """
     Analyze simulation vs. experiment at all pressures.
     Validation relationships
@@ -1028,90 +1587,45 @@ def analyzeSimulationValidation( sampleResults, expData, pressures, plotflag=Fal
     # ==========================================================
     # 3. Analyze each pressure
     # ==========================================================
-    for pressure, df_uptake in df_uptake_all.groupby(
-        "Pressure (kPa)"
-    ):
+    for pressure, df_uptake in df_uptake_all.groupby( "Pressure (kPa)" ):
         # ======================================================
         # 3.1 Absolute uptake
-        #
         # q_exp(P) vs q_sim(P)
         # ======================================================
-        (
-            df_absolute,
-            absolute_metrics
-        ) = analyzeUptakeAtPressure(
-            df=df_uptake,
-            plotflag=plotflag
-        )
+        ( df_absolute, absolute_metrics ) = analyzeUptakeAtPressure( df=df_uptake, plotflag=plotflag )
         if not df_absolute.empty:
-            results["absolute"]["data"].append(
-                df_absolute
-            )
+            results["absolute"]["data"].append( df_absolute )
         if absolute_metrics is not None:
             results["absolute"]["metrics"].append(
-                mf.fittingResultToRecord(
-                    absolute_metrics,
-                    extra={
-                        "Pressure (kPa)": pressure
-                    }
-                )
+                mf.fittingResultToRecord( absolute_metrics, extra={ "Pressure (kPa)": pressure } )
             )
         # ======================================================
         # 3.2 Normalized uptake
-        #
         # q_exp(P) / q_exp,max
         # vs
         # q_sim(P) / q_sim,max
         # ======================================================
-        (
-            df_normalized,
-            normalized_metrics
-        ) = analyzeNormalizedIsotherm(
-            df=df_uptake,
-            df_uptake_all=df_uptake_all,
-            plotflag=plotflag
-        )
+        ( df_normalized, normalized_metrics ) = analyzeNormalizedIsotherm( df=df_uptake, 
+                                                                          df_uptake_all=df_uptake_all, plotflag=plotflag )
         if not df_normalized.empty:
-            results["normalized"]["data"].append(
-                df_normalized
-            )
+            results["normalized"]["data"].append( df_normalized )
         if normalized_metrics is not None:
             results["normalized"]["metrics"].append(
-                mf.fittingResultToRecord(
-                    normalized_metrics,
-                    extra={
-                        "Pressure (kPa)": pressure
-                    }
-                )
+                mf.fittingResultToRecord( normalized_metrics, extra={ "Pressure (kPa)": pressure } )
             )
         # ======================================================
         # 3.3 Differential uptake
-        #
         # Δq_exp(P) vs Δq_sim(P)
         # ======================================================
         if len(df_uptake) >= 2:
-            (
-                df_differential,
-                differential_metrics
-            ) = analyzeUptakeResponse(
-                df=df_uptake,
-                pressure_kPa=pressure,
-                pair_mode="all",
-                plotflag=plotflag
-            )
+            ( df_differential, differential_metrics ) = analyzeUptakeResponse( df=df_uptake, 
+                                                                              pressure_kPa=pressure, pair_mode="all", 
+                                                                              plotflag=plotflag )
             if not df_differential.empty:
-                results["differential"]["data"].append(
-                    df_differential
-                )
+                results["differential"]["data"].append( df_differential )
             if differential_metrics is not None:
                 results["differential"]["metrics"].append(
-                    mf.fittingResultToRecord(
-                        differential_metrics,
-                        extra={
-                            "Pressure (kPa)": pressure
-                        },
-                        n_name="N_pairs"
-                    )
+                    mf.fittingResultToRecord(differential_metrics, extra={"Pressure (kPa)": pressure}, n_name="N_pairs")
                 )
     # ==========================================================
     # 4. Combine results
@@ -1122,22 +1636,14 @@ def analyzeSimulationValidation( sampleResults, expData, pressures, plotflag=Fal
         # Data
         # ------------------------------------------------------
         if contents["data"]:
-            df_data = pd.concat(
-                contents["data"],
-                ignore_index=True
-            )
+            df_data = pd.concat( contents["data"], ignore_index=True )
         else:
             df_data = pd.DataFrame()
         # ------------------------------------------------------
         # Metrics
         # ------------------------------------------------------
-        df_metrics = pd.DataFrame(
-            contents["metrics"]
-        )
-        validation[validation_type] = {
-            "data": df_data,
-            "metrics": df_metrics
-        }
+        df_metrics = pd.DataFrame( contents["metrics"] )
+        validation[validation_type] = { "data": df_data, "metrics": df_metrics }
     return validation
 def plotContribution(simPore,contributionPercent,pressureIndex=-1):
     plt.figure(figsize=(6,4))
@@ -1186,17 +1692,97 @@ def plotReconstructedIsotherm(pressures,totalUptake):
     plt.title("Reconstructed Isotherm")
     plt.tight_layout()
     plt.show()
+def plotPredictionAnalysis( predictionAnalysis, sample=None, 
+                           plot_original_prediction=False, fit_label="exp=f(sim)", legendPosition="upper left"):
+    """
+    Plot prediction analysis results.
+    Parameters
+    ----------
+    predictionAnalysis : dict
+        Output from preparePredictionAnalysisData().
+    sample : str or None
+        Sample to plot. If None, plot all samples.
+    plot_original_prediction : bool
+        Whether to overlay original prediction points.
+    fit_label : str
+        Label for prediction curve.
+    """
+    df_plot = predictionAnalysis["plot_data"]
+    df_data = predictionAnalysis["data"]
+    if sample is None:
+        samples = df_plot["Sample"].unique()
+    else:
+        samples = [sample]
+    for sample_name in samples:
+        # ======================================================
+        # Dense interpolated curves
+        # ======================================================
+        df_sample = df_plot[
+            df_plot["Sample"] == sample_name
+        ]
+        myPlt.plotCurve(
+            data={ sample_name: ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Experimental"].to_numpy() ) },
+            fit={ sample_name: ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Predicted"].to_numpy() ) },
+            fit_label=fit_label,
+            marker=True,
+            line=True,
+            legendPosition=legendPosition
+        )
+        # ======================================================
+        # Original prediction points
+        # ======================================================
+        if plot_original_prediction:
+            df_original = df_data[ df_data["Sample"] == sample_name ]
+            myPlt.plotCurve(
+                data={
+                    sample_name: (
+                        df_original["Pressure (kPa)"].to_numpy(),
+                        df_original["Predicted"].to_numpy()
+                    )
+                },
+                marker=True,
+                line=True,
+                legendPosition=legendPosition
+            )
+    plt.show(block=False)
 def exportAnalysisToExcel( analysis, filename, prefix=None):
+    """
+    Export analysis DataFrames to Excel.
+    Parameters
+    ----------
+    analysis : dict
+        Nested analysis dictionary.
+    filename : str
+        Output Excel filename.
+    prefix : str or None
+        Optional prefix for sheet names.
+    """
+    exported_sheets = []
     for analysis_type, contents in analysis.items():
+        if not isinstance(contents, dict):
+            continue
         for result_type, df in contents.items():
             if not isinstance(df, pd.DataFrame):
                 continue
+            # ==================================================
+            # Sheet name
+            # ==================================================
             if prefix:
                 sheet_name = ( f"{prefix}_{analysis_type}_{result_type}" )
             else:
                 sheet_name = ( f"{analysis_type}_{result_type}" )
+            # Excel sheet-name limitation
+            sheet_name = sheet_name[:31]
+            # ==================================================
+            # Export
+            # ==================================================
             fl.export_to_excel_auto( df, filename=filename, sheet_name=sheet_name )
-    print(f"\nAnalysis results exported to: {filename}")
+            exported_sheets.append(sheet_name)
+    print( f"\nAnalysis results exported to: {filename}" )
+    if exported_sheets:
+        print("Sheets:")
+        for sheet in exported_sheets:
+            print(f"  - {sheet}")
 def exportPsdWeightDetail(simPore,boundary,pressures,weight,uptake,out_path):
     result = pd.DataFrame()
     result["Pore Size (nm)"] = simPore
@@ -1221,196 +1807,121 @@ def exportPsdWeightDetail(simPore,boundary,pressures,weight,uptake,out_path):
         result.to_excel(writer,sheet_name="Contribution",index=False)
         isotherm.to_excel(writer,sheet_name="Isotherm",index=False)
         heatmap.to_excel(writer,sheet_name="Heatmap")
-def calculatePsdWeightedSimulation(
-        file_path,
-        sampleAll,
-        expData,
-        simPore,
-        pressures,
-        simData,
-        ModelVolumeAcc,
-        flagUsingDensity=False,
-        simData_density=None,
-        debug=False,
-        export=False):
+def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore, pressures, 
+                                   simData, ModelVolumeAcc, flagUsingDensity=False, simData_density=None, 
+                                   debug=False, export=False):
     """
     Calculate PSD-weighted simulation uptake for all samples,
     including diagnostic analysis, plotting, metrics calculation,
     and optional export of PSD-weight details.
-
     Parameters
     ----------
     file_path : str
         Input Excel file path.
-
     sampleAll : dict
         PSD information for all samples.
-
     expData : dict
         Experimental uptake data for all samples.
         Used for metrics calculation and comparison plots.
-
     simPore : array-like
         Simulation pore-size grid.
-
     pressures : array-like
         Simulation pressure grid.
         Unit: kPa.
-
     simData : array-like
         Simulation uptake/density data used for PSD weighting.
-
     ModelVolumeAcc : float
         Accessible simulation model volume.
-
     flagUsingDensity : bool
         If True:
             calculate uptake directly using pore volume and
             simulation density.
-
         If False:
             calculate PSD-volume weight using ModelVolumeAcc
             and calculate uptake using simulation uptake.
-
     simData_density : array-like or None
         Simulation density data.
         Used only when flagUsingDensity=False for comparison.
-
     debug : bool
         If True, perform threshold analysis and generate
         diagnostic plots.
-
     export : bool
         If True, export PSD-weighting details for each sample.
-
     Returns
     -------
     sampleResults : dict
         PSD-weighted simulation isotherms.
-
         {
             sample: {
                 "pressure": pressures,
                 "uptake": uptake["total"]
             }
         }
-
     simulationDetails : dict
         Detailed calculation results for each sample.
-
     fitMetrics : dict
         Fit metrics between experimental and PSD-weighted
         simulation uptake.
     """
-
     # ==========================================================
     # 1. Initialize
     # ==========================================================
     boundary = gcmcBoundary(simPore)
-
     sampleResults = {}
     simulationDetails = {}
     fitMetrics = {}
-
     # ==========================================================
     # 2. Calculate PSD-weighted simulation for each sample
     # ==========================================================
     for sample in sampleAll:
-
         print("=" * 70)
         print(f"Processing sample: {sample}")
         print("=" * 70)
-
         # ------------------------------------------------------
         # 2.1 Merge PSD
         # ------------------------------------------------------
-        psdPore, psdDV = mergePSD(
-            sampleAll[sample]
-        )
-
+        psdPore, psdDV = mergePSD( sampleAll[sample] )
         # ------------------------------------------------------
         # 2.2 Calculate ignored PSD fraction
         # ------------------------------------------------------
-        ignoredFraction = calculateIgnoredFraction(
-            psdPore.copy(),
-            simPore
-        )
-
+        ignoredFraction = calculateIgnoredFraction( psdPore.copy(), simPore )
         # ------------------------------------------------------
         # 2.3 Extend PSD to simulation range
         # ------------------------------------------------------
-        psdPore = extendPSDToSimulationRange(
-            psdPore,
-            simPore
-        )
-
+        psdPore = extendPSDToSimulationRange( psdPore, simPore )
         # ------------------------------------------------------
         # 2.4 Calculate PSD volume and weight
         # ------------------------------------------------------
-        weight, volume = calculatePSDVolumeAndWeight(
-            psdPore,
-            psdDV,
-            boundary
-        )
-
+        weight, volume = calculatePSDVolumeAndWeight( psdPore, psdDV, boundary )
         # ------------------------------------------------------
         # 2.5 Calculate PSD-weighted uptake
         # ------------------------------------------------------
         uptake_density = None
-
         if flagUsingDensity:
-
-            uptake = calculateUptakeByDensity(
-                volume,
-                simData
-            )
-
+            uptake = calculateUptakeByDensity( volume, simData )
         else:
-
             # PSD volume → weighting factor
             volumeWweight = volume / ModelVolumeAcc
             weight = volumeWweight
-
             # PSD-weighted uptake
-            uptake = calculateUptakeByWeight(
-                weight,
-                simData
-            )
-
+            uptake = calculateUptakeByWeight( weight, simData )
             # --------------------------------------------------
             # Optional density-based calculation
             # --------------------------------------------------
             if simData_density is not None:
-
-                uptake_density = calculateUptakeByDensity(
-                    volume,
-                    simData_density
-                )
-
+                uptake_density = calculateUptakeByDensity( volume, simData_density )
         # ------------------------------------------------------
         # 2.6 Store final simulation result
         # ------------------------------------------------------
-        sampleResults[sample] = {
-            "pressure": pressures,
-            "simUptake": uptake["total"],
-        }
-
+        sampleResults[sample] = { "pressure": pressures, "simUptake": uptake["total"], }
         # ------------------------------------------------------
         # 2.7 Calculate fit metrics against experiment
         # ------------------------------------------------------
         metrics = None
-
         if sample in expData:
-
-            metrics = dop.calculateFitMetrics(
-                xTrue=expData[sample]["pressure"],
-                yTrue=expData[sample]["expUptake"],
-                xPred=pressures,
-                yPred=uptake["total"]
-            )
-
+            metrics = mf.computeFitMetrics( fit_x=pressures, fit_y=uptake["total"], 
+                                        exp_x=expData[sample]["pressure"], exp_y=expData[sample]["expUptake"] )
             fitMetrics[sample] = metrics
-
         # ------------------------------------------------------
         # 2.8 Store detailed calculation results
         # ------------------------------------------------------
@@ -1424,160 +1935,76 @@ def calculatePsdWeightedSimulation(
             "uptake_density": uptake_density,
             "metrics": metrics,
         }
-
         # ======================================================
         # 3. Debug / diagnostic analysis
         # ======================================================
         if debug:
-
             # --------------------------------------------------
             # 3.1 Threshold analysis
             # --------------------------------------------------
-            findThreshold(
-                simPore,
-                uptake["cumulative"],
-                uptake["percent"]
-            )
-
+            findThreshold( simPore, uptake["cumulative"], uptake["percent"] )
             # --------------------------------------------------
             # 3.2 PSD contribution
             # --------------------------------------------------
-            plotContribution(
-                simPore,
-                uptake["percent"]
-            )
-
+            plotContribution( simPore, uptake["percent"] )
             # --------------------------------------------------
             # 3.3 Cumulative contribution
             # --------------------------------------------------
-            plotCumulative(
-                simPore,
-                uptake["cumulative"]
-            )
-
+            plotCumulative( simPore, uptake["cumulative"] )
             # --------------------------------------------------
             # 3.4 PSD contribution weighted by pore volume
             # --------------------------------------------------
-            plotPSDContribution(
-                simPore,
-                weight,
-                uptake["percent"]
-            )
-
+            plotPSDContribution( simPore, weight, uptake["percent"] )
             # --------------------------------------------------
             # 3.5 Contribution heatmap
             # --------------------------------------------------
-            plotContributionHeatmap(
-                simPore,
-                pressures,
-                uptake["contribution"]
-            )
-
+            plotContributionHeatmap( simPore, pressures, uptake["contribution"] )
             # --------------------------------------------------
             # 3.6 Reconstructed isotherm
             # --------------------------------------------------
-            plotReconstructedIsotherm(
-                pressures,
-                uptake["total"]
-            )
-
+            plotReconstructedIsotherm( pressures, uptake["total"] )
             # --------------------------------------------------
             # 3.7 Experimental vs PSD-weighted simulation
             # --------------------------------------------------
             if sample in expData:
-
                 plt.ion()
-
                 myPlt.plotCurve(
-                    data={
-                        sample: (
-                            expData[sample]["pressure"],
-                            expData[sample]["expUptake"]
-                        ),
-                    },
-                    fit={
-                        sample: (
-                            pressures,
-                            uptake["total"]
-                        ),
-                    },
+                    data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
+                    fit={ sample: ( pressures, uptake["total"] ), },
                     fit_label="PSD-weighted",
                     marker=True,
                     line=True,
                     legendPosition="upper left"
                 )
-
                 # ------------------------------------------------
                 # 3.8 Experimental vs density-based simulation
                 # ------------------------------------------------
-                if (
-                    not flagUsingDensity
-                    and uptake_density is not None
-                ):
-
+                if ( not flagUsingDensity and uptake_density is not None ):
                     myPlt.plotCurve(
-                        data={
-                            sample: (
-                                expData[sample]["pressure"],
-                                expData[sample]["expUptake"]
-                            ),
-                        },
-                        fit={
-                            sample: (
-                                pressures,
-                                uptake_density["total"]
-                            ),
-                        },
+                        data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
+                        fit={ sample: ( pressures, uptake_density["total"] ), },
                         fit_label="PSD-weighted_density",
                         marker=True,
                         line=True,
                         legendPosition="upper left"
                     )
-
                     # --------------------------------------------
                     # 3.9 Uptake vs density-based uptake
                     # --------------------------------------------
                     myPlt.plotCurve(
-                        data={
-                            sample: (
-                                pressures,
-                                uptake["total"]
-                            ),
-                        },
-                        fit={
-                            sample: (
-                                pressures,
-                                uptake_density["total"]
-                            ),
-                        },
+                        data={ sample: ( pressures, uptake["total"] ), },
+                        fit={ sample: ( pressures, uptake_density["total"] ), },
                         fit_label="PSD-weighted_density",
                         marker=True,
                         line=False,
                         legendPosition="upper left"
                     )
-
         # ======================================================
         # 4. Export PSD weighting details
         # ======================================================
         if export:
-
-            out_path = fl.get_expanded_name(
-                file_path,
-                sample,
-                expand="PSD_weighted",
-                expandPos=True,
-                type="xlsx"
-            )
-
-            exportPsdWeightDetail(
-                simPore,
-                boundary,
-                pressures,
-                weight,
-                uptake,
-                out_path
-            )
-
+            out_path = fl.get_expanded_name( file_path, sample, expand="PSD_weighted", expandPos=True, type="xlsx" )
+            exportPsdWeightDetail( simPore, boundary, pressures, weight, uptake, out_path )
     return sampleResults, simulationDetails, fitMetrics
 def predictExperimentalFromSimulation(
         sampleResults,
@@ -1586,144 +2013,109 @@ def predictExperimentalFromSimulation(
     """
     Predict experimental uptake from simulation uptake using
     the fitted pressure-dependent Slope and Intercept models.
-
     Model hierarchy
     ---------------
     Slope(P)     = f_slope(P)
     Intercept(P) = f_intercept(P)
-
     q_exp_pred(P) =
         Slope(P) * q_sim(P) + Intercept(P)
-
     Parameters
     ----------
     sampleResults : dict
         PSD-weighted simulation results.
-
         {
             sample: {
                 "pressure": pressures,
                 "uptake": simulation_uptake
             }
         }
-
     modelfit : dict
         Output from fitValidationParameters().
-
     validation_type : str
         Validation type, e.g. "absolute".
-
     Returns
     -------
     predictionResults : dict
         Predicted experimental results for each sample.
     """
-
     predictionResults = {}
-
     # ==========================================================
     # 1. Get complete fitting results
     # ==========================================================
-    fit_results = modelfit[
-        validation_type
-    ]["fits"]
-
+    fit_results = modelfit[ validation_type ]["fits"]
     slope_fit = fit_results["Slope"]
     intercept_fit = fit_results["Intercept"]
-
     # ==========================================================
     # 2. Get fitted models
     # ==========================================================
     slope_model = slope_fit["FitFunc"]
     intercept_model = intercept_fit["FitFunc"]
-
     # ==========================================================
     # 3. Get fitted parameters
     # ==========================================================
     slope_params = slope_fit["Parameters"]
     intercept_params = intercept_fit["Parameters"]
-
     # ==========================================================
     # 4. Apply model to each sample
     # ==========================================================
     for sample, result in sampleResults.items():
-
-        pressure = np.asarray(
-            result["pressure"],
-            dtype=float
-        )
-
-        q_sim = np.asarray(
-            result["simUptake"],
-            dtype=float
-        )
-
+        pressure = np.asarray( result["pressure"], dtype=float )
+        q_sim = np.asarray( result["simUptake"], dtype=float )
         # ------------------------------------------------------
         # 4.1 Predict pressure-dependent Slope
         # ------------------------------------------------------
-        slope = slope_model(
-            pressure,
-            **slope_params
-        )
-
+        slope = slope_model( pressure, **slope_params )
         # ------------------------------------------------------
         # 4.2 Predict pressure-dependent Intercept
         # ------------------------------------------------------
-        intercept = intercept_model(
-            pressure,
-            **intercept_params
-        )
-
+        intercept = intercept_model( pressure, **intercept_params )
         # ------------------------------------------------------
         # 4.3 Apply exp = f(sim)
         #
         # q_exp = Slope(P) * q_sim + Intercept(P)
         # ------------------------------------------------------
-        q_pred = mf.linearModel(
-            q_sim,
-            slope,
-            intercept
-        )
-
+        q_pred = mf.linearModel( q_sim, slope, intercept )
         # ------------------------------------------------------
         # 4.4 Store
         # ------------------------------------------------------
         predictionResults[sample] = {
             "pressure": pressure,
-            "simulation": q_sim,
+            "simUptake": q_sim,
             "slope": slope,
             "intercept": intercept,
             "predicted": q_pred,
         }
-
     return predictionResults
 def main(file_path=None):
-    flagUsingDensity = False
     # ==== 输入参数 ====
+    flagUsingDensity = False
+    pressure_min = 0.0 #kPa
+    ########### 读取数据 ###########
     file_path = select_folder()   # 改成你的文件路径
     HeliumFraction, ModelVolumeAcc = readVolumeAndHeliumVoidFraction(file_path,sheet_name="volume")
     if flagUsingDensity:
-        simPore,pressures,density_simu_acc = readSimulationDensity(file_path,HeliumFraction)
+        simPore,pressures,density_simu_acc = readSimulationDensity(file_path,HeliumFraction,pressure_min=pressure_min)
         simData = density_simu_acc
     else:
-        simPore,pressures,uptake_simu_acc = readSimulationUptake(file_path)
+        simPore,pressures,uptake_simu_acc = readSimulationUptake(file_path,pressure_min=pressure_min)
         simData = uptake_simu_acc
-        _,_,density_simu_acc = readSimulationDensity(file_path,HeliumFraction)
+        _,_,density_simu_acc = readSimulationDensity(file_path,HeliumFraction,pressure_min=pressure_min)
         simData_density = density_simu_acc
-    boundary = gcmcBoundary(simPore)
     sampleAll = readPSD(file_path)
     expData =readExpUptake(file_path)
+    ########### 读取数据 ###########
     sampleResults, simulationDetails, fitMetrics = \
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
                                          simData_density=simData_density, debug=False, export=False )
-    validation = analyzeSimulationValidation( sampleResults=sampleResults, expData=expData, pressures=pressures, )
-    modelfit = fitValidationParameters(validation,plotflag=False)
-    out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp1", expandPos=True, type="xlsx")
-    # exportAnalysisToExcel(validation,out_path2)
-    # exportAnalysisToExcel(modelfit,out_path2,prefix="fit")
-
+    validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
+    out_path2 = fl.get_expanded_name(file_path, fileName="sim2expP1", expandPos=True, type="xlsx")
+    exportAnalysisToExcel(validation,out_path2)
+    modelfixed = "Exponential Saturation"
+    modelfixed = None
+    modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed,intercept_models=modelfixed)
+    exportAnalysisToExcel(modelfit,out_path2,prefix="fit")
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")
@@ -1735,27 +2127,28 @@ def main(file_path=None):
                                        debug=False, export=False )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
                                                           modelfit=modelfit, validation_type="absolute" )
+    predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
+                                                       expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
+    plotPredictionAnalysis( predictionAnalysis, sample=None )
     for sample in predictionResults:
-
         pressure_exp = expDataCheck[sample]["pressure"]
+        _, _, exp_interp = mf.interpolateData( expDataCheck[sample]["pressure"],
+                                                          expDataCheck[sample]["expUptake"], extrapolate=True)
+        exp_uptake = exp_interp(pressures)
         uptake_exp = expDataCheck[sample]["expUptake"]
-
-
         pressure_pred = predictionResults[sample]["pressure"]
         uptake_pred = predictionResults[sample]["predicted"]
-
         myPlt.plotCurve(
-            data={ sample: ( pressure_exp, uptake_exp ), },
+            data={ sample: ( pressures, exp_uptake ), },
             fit={ sample: ( pressure_pred, uptake_pred ), },
             fit_label="exp=f(sim)",
             marker=True,
-            line=True,
+            line=False,
             legendPosition="upper left"
         )
         plt.show(block=False)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     #############使用新的样品验证模型拟合是否合适###################
-
     plt.show(block=True)
 if __name__ == "__main__": 
     f = sys.argv[1] if len(sys.argv) > 1 else None
