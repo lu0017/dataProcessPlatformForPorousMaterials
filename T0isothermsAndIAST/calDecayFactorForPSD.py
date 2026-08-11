@@ -410,19 +410,19 @@ def main(file_path=None):
     psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
 
-    # # ##################### 用于分析指定样品##############
-    # =========================
-    # Select samples
-    # =========================
-    samples = [
-        "S4",
-        "S5",
-        "S8",
-        "S10",
-    ]
-    psdData = selectSamples( psdData, samples, axis=1 )
-    kineticdata = selectSamples( kineticdata, samples, sampleColumn="Sample", axis=0 )
-    # # ##################### 用于分析指定样品##############
+    # # # ##################### 用于分析指定样品##############
+    # # =========================
+    # # Select samples
+    # # =========================
+    # samples = [
+    #     "S4",
+    #     "S5",
+    #     "S8",
+    #     "S10",
+    # ]
+    # psdData = selectSamples( psdData, samples, axis=1 )
+    # kineticdata = selectSamples( kineticdata, samples, sampleColumn="Sample", axis=0 )
+    # # # ##################### 用于分析指定样品##############
 
     psdData = dop.naturalSortData(psdData,axis=1)
 
@@ -444,24 +444,24 @@ def main(file_path=None):
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
 
-    # # ##################### 同时计算两个kernal的数据##############
-    # psd_sheet_dft = "PSD-DFT-CO2"
-    # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
-    # out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=False)
-    # psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
-    # metrics_GCMC = calculatePSDMetrics(psdData, regions, prefix="GCMC")
-    # metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
-    # metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
-    # xColumns = [
-    #     "GCMC_Centroid",
-    #     "GCMC_CompetitionIndex",
-    #     "GCMC_Skewness",
+    # ##################### 同时计算两个kernal的数据##############
+    psd_sheet_dft = "PSD-DFT-CO2"
+    psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
+    out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
+    psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
+    metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
+    metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
+    metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
+    xColumns = [
+        "GCMC_Centroid",
+        "GCMC_CompetitionIndex",
+        "GCMC_Skewness",
 
-    #     "DFT_Centroid",
-    #     "DFT_CompetitionIndex",
-    #     "DFT_Skewness",
-    #     ]
-    # # ##################### 同时计算两个kernal的数据##############
+        "DFT_Centroid",
+        "DFT_CompetitionIndex",
+        "DFT_Skewness",
+        ]
+    # ##################### 同时计算两个kernal的数据##############
 
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
@@ -497,11 +497,11 @@ def main(file_path=None):
     # ##################### 单独计算孔体积用##############
 
 
-    # # ##################### 保存数据到excel##############
-    # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
-    # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
-    # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
-    # # ##################### 保存数据到excel##############
+    # ##################### 保存数据到excel##############
+    fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
+    fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
+    fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
+    # ##################### 保存数据到excel##############
 
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
@@ -512,19 +512,19 @@ def main(file_path=None):
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="E-sele_henry"
-                                )
-    # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["sel_henry"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele_henry")
-    myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-CI"
-                                )
-    myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-Centroid"
-                                )
-    myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-Skewness"
-                                )
+    # myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="E-sele_henry"
+    #                             )
+    # # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["sel_henry"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele_henry")
+    # myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-CI"
+    #                             )
+    # myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-Centroid"
+    #                             )
+    # myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-Skewness"
+    #                             )
     # myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
     # myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 输出图片部分##############
@@ -563,12 +563,12 @@ def main(file_path=None):
     ]
     order = include
     figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=True, type="png")
-    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-    #                     #   savePath = figureName
-    #                       )
-    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
-                            #   savePath = figureName
-                              )
+    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
+                        #   savePath = figureName
+                          )
+    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
+    #                         #   savePath = figureName
+    #                           )
     plt.show(block=True)
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

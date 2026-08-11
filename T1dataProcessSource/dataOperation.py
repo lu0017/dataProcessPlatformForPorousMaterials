@@ -1,5 +1,6 @@
 from common import *
 import constantsAndName as const
+import T1dataProcessSource.modelAndFit as mf
 def extract_temperature(col_name):
     """Extract numeric temperature from a column name like '15Absolute Pressure (kPa)'."""
     match = re.match(r"^(-?\d+\.?\d*)", col_name)
@@ -111,7 +112,6 @@ def build_P_and_uptake_data(df_dict):
         uptake_data[T_K] = organized[T]["q"]
     T_K = celsius_to_kelvin(T_C, unit="C")
     return P_data, uptake_data, T_K
-
 def buildPeakModel( peaks, model="Lorentzian", ):
     """
     Build a combined peak model.
@@ -158,8 +158,6 @@ def buildPeakModel( peaks, model="Lorentzian", ):
             peakModel += m
     return peakModel
 import numpy as np
-
-
 def guessPeakParameters(
     peakModel,
     x,
@@ -168,80 +166,59 @@ def guessPeakParameters(
 ):
     """
     Generate initial fitting parameters.
-
     Parameters
     ----------
     peakModel : lmfit.Model
         Peak model returned by buildPeakModel().
-
     x : ndarray
         X values.
-
     y : ndarray
         Y values.
-
     peaks : list of dict
         Peak definitions.
-
     Returns
     -------
     lmfit.Parameters
         Initial parameters.
     """
-
     x = np.asarray(x)
     y = np.asarray(y)
-
     # 利用模型创建 Parameters
     params = peakModel.make_params()
-
     ymax = np.max(y)
-
     for peak in peaks:
-
         prefix = peak["name"] + "_"
-
         # -----------------------------
         # center
         # -----------------------------
         center = peak["center"]
-
         params[prefix + "center"].set(
             value=center,
             min=peak.get("center_min", x.min()),
             max=peak.get("center_max", x.max()),
         )
-
         # -----------------------------
         # sigma
         # -----------------------------
         sigma = peak.get("sigma", 50)
-
         params[prefix + "sigma"].set(
             value=sigma,
             min=peak.get("sigma_min", 1),
             max=peak.get("sigma_max", 500),
         )
-
         # -----------------------------
         # amplitude (area)
         # -----------------------------
         amp = peak.get("amplitude")
-
         if amp is None:
-
             idx = np.argmin(np.abs(x - center))
-
             amp = abs(y[idx]) * sigma
-
             if amp <= 0:
                 amp = ymax * sigma
-
         params[prefix + "amplitude"].set(
             value=amp,
             min=0,
         )
-
     return params
 def calculatePeakProperties( result, peaks, ):
     """
@@ -346,36 +323,27 @@ def fitPeak( x, y, peaks, model="Lorentzian", method="leastsq", weights=None, fi
 def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
     """
     Calculate R² and RMSE between experimental and predicted curves.
-
     If the x coordinates differ (including different numbers of points),
     the predicted curve is first aligned to the experimental x coordinates.
-
     By default, only the overlapping x range is used for evaluation.
     If ``allow_extrapolation=True``, linear extrapolation is performed
     outside the prediction range.
-
     Parameters
     ----------
     xTrue : array-like
         Experimental x values.
-
     yTrue : array-like
         Experimental y values.
-
     xPred : array-like
         Predicted x values.
-
     yPred : array-like
         Predicted y values.
-
     allow_extrapolation : bool, default=False
         Whether to allow linear extrapolation when the experimental
         x range extends beyond the prediction range.
-
         * False : evaluate only within the overlapping x range.
         * True  : linearly extrapolate the prediction to all
           experimental x values.
-
     Returns
     -------
     dict
@@ -387,7 +355,6 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
             - yPred : predicted values (interpolated/extrapolated if needed).
             - n : number of points used for evaluation.
     """
-
     # -----------------------------
     # Convert to numpy arrays
     # -----------------------------
@@ -395,7 +362,6 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
     yTrue = np.asarray(yTrue, dtype=float).ravel()
     xPred = np.asarray(xPred, dtype=float).ravel()
     yPred = np.asarray(yPred, dtype=float).ravel()
-
     # -----------------------------
     # Check lengths
     # -----------------------------
@@ -404,45 +370,35 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
             f"xTrue ({xTrue.size}) and yTrue ({yTrue.size}) "
             "must have the same length."
         )
-
     if xPred.size != yPred.size:
         raise ValueError(
             f"xPred ({xPred.size}) and yPred ({yPred.size}) "
             "must have the same length."
         )
-
     if xTrue.size == 0:
         raise ValueError("Experimental data is empty.")
-
     if xPred.size == 0:
         raise ValueError("Predicted data is empty.")
-
     # -----------------------------
     # Check finite values
     # -----------------------------
     if not np.all(np.isfinite(xTrue)):
         raise ValueError("xTrue contains NaN or Inf.")
-
     if not np.all(np.isfinite(yTrue)):
         raise ValueError("yTrue contains NaN or Inf.")
-
     if not np.all(np.isfinite(xPred)):
         raise ValueError("xPred contains NaN or Inf.")
-
     if not np.all(np.isfinite(yPred)):
         raise ValueError("yPred contains NaN or Inf.")
-
     # -----------------------------
     # Sort by x
     # -----------------------------
     idx = np.argsort(xTrue)
     xTrue = xTrue[idx]
     yTrue = yTrue[idx]
-
     idx = np.argsort(xPred)
     xPred = xPred[idx]
     yPred = yPred[idx]
-
     # -----------------------------
     # Interpolate if necessary
     # -----------------------------
@@ -450,7 +406,6 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
         xTrue.size != xPred.size
         or not np.allclose(xTrue, xPred)
     ):
-
         if allow_extrapolation:
             # Linear interpolation + extrapolation
             interp_func = interp1d(
@@ -460,35 +415,26 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
                 fill_value="extrapolate",
                 bounds_error=False,
             )
-
             xEval = xTrue
             yTrueEval = yTrue
             yPredInterp = interp_func(xEval)
-
         else:
             # Use only the overlapping x range
             xmin = max(xTrue.min(), xPred.min())
             xmax = min(xTrue.max(), xPred.max())
-
             mask = (xTrue >= xmin) & (xTrue <= xmax)
-
             xEval = xTrue[mask]
             yTrueEval = yTrue[mask]
-
             if xEval.size < 2:
                 raise ValueError(
                     "Less than two overlapping points between "
                     "experimental and predicted data."
                 )
-
             yPredInterp = np.interp(xEval, xPred, yPred)
-
     else:
-
         xEval = xTrue
         yTrueEval = yTrue
         yPredInterp = yPred
-
     # -----------------------------
     # Calculate metrics
     # -----------------------------
@@ -500,7 +446,6 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
         "yPred": yPredInterp,
         "n": xEval.size,
     }
-
 def copySamples(data, sampleMap):
     """
     根据 sampleMap 拷贝指定样品。
@@ -550,19 +495,16 @@ def renameSamples(data, sampleMap):
 def swapDictLevels(data, keep_keys=None):
     """
     Swap the first and second levels of a nested dictionary.
-
     Parameters
     ----------
     data : dict
         Nested dictionary with two levels.
     keep_keys : list or tuple or set, optional
         Keys that should remain at the first level without swapping.
-
     Returns
     -------
     dict
         Dictionary with swapped first and second levels.
-
     Example
     -------
     Before
@@ -578,7 +520,6 @@ def swapDictLevels(data, keep_keys=None):
             "metadata": {...}
         }
     }
-
     After
     {
         "A": {
@@ -595,24 +536,17 @@ def swapDictLevels(data, keep_keys=None):
         }
     }
     """
-
     if keep_keys is None:
         keep_keys = []
-
     result = {}
-
     for outer_key, inner_dict in data.items():
-
         for inner_key, value in inner_dict.items():
-
             if inner_key in keep_keys:
                 result.setdefault(inner_key, {})
                 result[inner_key][outer_key] = deepcopy(value)
                 continue
-
             result.setdefault(inner_key, {})
             result[inner_key][outer_key] = deepcopy(value)
-
     return result
 def smooth( y, method="savgol", **kwargs, ):
     """
@@ -800,7 +734,6 @@ def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
 def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
     """
     Build interpolation function.
-
     Parameters
     ----------
     x : array-like
@@ -809,10 +742,8 @@ def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
         "pchip", "linear", "cubic"
     extrapolate : bool
     """
-
     if method.lower() == "pchip":
         return PchipInterpolator(x, y, extrapolate=extrapolate)
-
     elif method.lower() == "linear":
         return interp1d(
             x,
@@ -821,24 +752,19 @@ def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
             bounds_error=False,
             fill_value=np.nan
         )
-
     elif method.lower() == "cubic":
         return CubicSpline(
             x,
             y,
             extrapolate=extrapolate
         )
-
     else:
         raise ValueError(f"Unknown interpolation method: {method}")
-
 def generateCommonX(x_data, n_points=50):
     """
     Generate common x coordinates for multiple datasets.
-
     The common interpolation range is determined by the overlap
     of all datasets.
-
     Parameters
     ----------
     x_data : dict
@@ -849,24 +775,19 @@ def generateCommonX(x_data, n_points=50):
                 "35": x2,
                 ...
             }
-
     n_points : int, default=50
         Number of interpolation points.
-
     Returns
     -------
     x_common : ndarray
         Common interpolation coordinates.
     """
-
     x_min = max(np.min(x) for x in x_data.values())
     x_max = min(np.max(x) for x in x_data.values())
-
     if x_min >= x_max:
         raise ValueError(
             "No overlapping x range exists among the datasets."
         )
-
     return np.linspace(x_min, x_max, n_points)
 def interpolateData(
         x,
@@ -876,53 +797,40 @@ def interpolateData(
         method="pchip"):
     """
     Interpolate one dataset.
-
     Parameters
     ----------
     x : array-like
         Original x values.
-
     y : array-like
         Original y values.
-
     x_interp : array-like, optional
         Interpolation x values. If None, uniformly generate
         n_points within the data range.
-
     n_points : int, default=50
         Number of interpolation points when x_interp is None.
-
     method : {"pchip", "linear", "cubic"}, default="pchip"
-
     Returns
     -------
     x_interp : ndarray
         Interpolation x values.
-
     y_interp : ndarray
         Interpolated y values.
-
     interp_func : callable
         Interpolation function.
     """
-
     if x_interp is None:
         x_interp = np.linspace(
             np.min(x),
             np.max(x),
             n_points
         )
-
     interp_func = buildInterpolationFunction(
         x,
         y,
         method=method
     )
-
     y_interp = interp_func(x_interp)
-
     return x_interp, y_interp, interp_func
-
 def multiDataInterpolation(
         x_data,
         y_data,
@@ -931,63 +839,47 @@ def multiDataInterpolation(
         method="pchip"):
     """
     Interpolate multiple datasets onto a common x grid.
-
     Parameters
     ----------
     x_data : dict
         Dictionary of x arrays.
-
     y_data : dict
         Dictionary of y arrays.
-
     x_common : array-like, optional
         Common interpolation coordinates.
         If None, they are automatically generated.
-
     n_points : int, default=50
         Number of interpolation points when x_common is None.
-
     method : {"pchip", "linear", "cubic"}, default="pchip"
-
     Returns
     -------
     df_interp : pandas.DataFrame
         Interpolated datasets.
         The first column is 'x_common'.
-
     interp_funcs : dict
         Dictionary of interpolation functions.
     """
-
     if x_data.keys() != y_data.keys():
         raise ValueError("x_data and y_data must have identical keys.")
-
     if x_common is None:
         x_common = generateCommonX(
             x_data,
             n_points=n_points
         )
-
     result = {
         "x_common": x_common
     }
-
     interp_funcs = {}
-
     for key in x_data:
-
         _, y_interp, interp_func = interpolateData(
             x=x_data[key],
             y=y_data[key],
             x_interp=x_common,
             method=method
         )
-
         result[key] = y_interp
         interp_funcs[key] = interp_func
-
     df_interp = pd.DataFrame(result)
-
     return df_interp, interp_funcs
 def cropX(data, xmin=None, xmax=None):
     """
@@ -1118,51 +1010,40 @@ def naturalSort(items):
 def naturalSortData(data, index=None, axis=0, level=0):
     """
     Sort supported data objects using natural order.
-
     Parameters
     ----------
     data : DataFrame, Series, Index, MultiIndex,
            list, tuple or ndarray
         Input object.
-
     index : iterable, optional
         External sorting labels. Only supported when `data`
         is a DataFrame. If None, the DataFrame index is used.
-
     axis : {0, 1}, default=0
         Axis to sort when `data` is a DataFrame.
         * axis=0 : sort row labels (index).
         * axis=1 : sort column labels.
-
     level : int, default=0
         MultiIndex level used when sorting labels.
-
     Returns
     -------
     Same type as input whenever possible.
     """
     axis = normalizeAxis(axis)
-
     # -----------------------------
     # DataFrame
     # -----------------------------
     if isinstance(data, pd.DataFrame):
-
         # Use external sorting labels
         if index is not None:
             order = natsort.index_natsorted(index)
             return data.iloc[order]
-
         labels = getSortedLabels(data, axis=axis, level=level)
-
         # sort index
         if axis == 0:
             return data.loc[labels]
-
         # sort columns
         if not isinstance(data.columns, pd.MultiIndex):
             return data.loc[:, labels]
-
         # MultiIndex columns
         columns = []
         for label in labels:
@@ -1170,38 +1051,32 @@ def naturalSortData(data, index=None, axis=0, level=0):
                 [col for col in data.columns if col[level] == label]
             )
         return data.loc[:, columns]
-
     # index 参数仅支持 DataFrame
     if index is not None:
         raise TypeError(
             "'index' is only supported when data is a pandas.DataFrame."
         )
-
     # -----------------------------
     # Series
     # -----------------------------
     elif isinstance(data, pd.Series):
         labels = getSortedLabels(data)
         return data.loc[labels]
-
     # -----------------------------
     # Pandas Index
     # -----------------------------
     elif isinstance(data, pd.Index):
         return pd.Index(getSortedLabels(data))
-
     # -----------------------------
     # ndarray
     # -----------------------------
     elif isinstance(data, np.ndarray):
         return np.array(getSortedLabels(data))
-
     # -----------------------------
     # tuple
     # -----------------------------
     elif isinstance(data, tuple):
         return tuple(getSortedLabels(data))
-
     # -----------------------------
     # list / iterable
     # -----------------------------
@@ -1210,28 +1085,22 @@ def naturalSortData(data, index=None, axis=0, level=0):
 def naturalSortBy(data, by, reset_index=True):
     """
     Naturally sort a DataFrame by the values of a column.
-
     Parameters
     ----------
     data : pandas.DataFrame
         Input DataFrame.
-
     by : str
         Column name used as the natural sorting key.
-
     reset_index : bool, default=True
         Whether to reset the index after sorting.
-
     Returns
     -------
     pandas.DataFrame
         Naturally sorted DataFrame.
     """
     result = naturalSortData(data, index=data[by])
-
     if reset_index:
         result = result.reset_index(drop=True)
-
     return result
 def normalizeAxis(axis):
     """
@@ -1352,24 +1221,19 @@ def getSortedLabels(data, axis=0, level=0, unique=True):
     axis = normalizeAxis(axis)
     labels = getLabels( data, axis=axis, level=level, unique=unique )
     return naturalSort(labels)
-
 def buildRegions(splitPoints, names=None, digits=2):
     """
     Build region dictionary from split points.
-
     Parameters
     ----------
     splitPoints : sequence
         Boundary points.
         Example:
         [0.33, 0.50, 0.65, 0.80]
-
     names : list, optional
         Region names. If None, names will be generated automatically.
-
     digits : int
         Decimal places used in automatic names.
-
     Returns
     -------
     dict
@@ -1378,33 +1242,26 @@ def buildRegions(splitPoints, names=None, digits=2):
         raise ValueError(
             "splitPoints must contain at least two values."
         )
-
     n = len(splitPoints) - 1
-
     if names is None:
         names = []
-
         for i in range(n):
             left = splitPoints[i]
             right = splitPoints[i + 1]
-
             if i == 0:
                 names.append(f"<{right:.{digits}f}")
             else:
                 names.append(
                     f"{left:.{digits}f}-{right:.{digits}f}"
                 )
-
     elif len(names) != n:
         raise ValueError(
             "Number of names must equal len(splitPoints)-1."
         )
-
     return {
         name: (splitPoints[i], splitPoints[i + 1])
         for i, name in enumerate(names)
     }
-
 def cols_to_clean_df(cols, x_col, y_col):
     """
     将 dict of list 转为 DataFrame，自动去掉 NaN/Inf
@@ -1549,7 +1406,72 @@ def convert_units(rawData):
     df_new["T_unit"] = "K"
     df_new["q_unit"] = "mmol/g"
     return df_new
-def correlationAnalysis( x, y, x_name="x", y_name="y", dropna=True):
+
+def correlationAnalysis(
+        x,
+        y,
+        x_name="x",
+        y_name="y",
+        dropna=True,
+        fit_method="linear",
+        fit_func=None,
+        p0=None,
+        bounds=(-np.inf, np.inf),
+        param_names=None):
+    # ======================================================
+    # Correlation
+    # ======================================================
+    correlation = mf.calculateCorrelation(
+        x=x,
+        y=y,
+        x_name=x_name,
+        y_name=y_name,
+        dropna=dropna
+    )
+    # ======================================================
+    # Fitting
+    # ======================================================
+    if fit_method == "linear":
+        fitting = mf.fitLinear(
+            x=x,
+            y=y,
+            x_name=x_name,
+            y_name=y_name,
+            dropna=dropna
+        )
+    elif fit_method == "nonlinear":
+        if fit_func is None:
+            raise ValueError(
+                "fit_func must be provided "
+                "when fit_method='nonlinear'."
+            )
+        fitting = mf.fitNonlinear(
+            x=x,
+            y=y,
+            func=fit_func,
+            p0=p0,
+            bounds=bounds,
+            param_names=param_names,
+            x_name=x_name,
+            y_name=y_name,
+            dropna=dropna
+        )
+    elif fit_method is None:
+        fitting = {}
+    else:
+        raise ValueError(
+            f"Unknown fit_method: {fit_method}"
+        )
+    # ======================================================
+    # Combine
+    # ======================================================
+    result = {
+        **correlation,
+        **fitting
+    }
+    return result
+def correlationAnalysis0( x, y, x_name="x", y_name="y", dropna=True):
+    #最初的版本，只满足线性拟合，主要用于计算PSD的三指标
     """
     Perform correlation and simple linear regression analysis.
     Parameters
@@ -1594,8 +1516,8 @@ def correlationAnalysis( x, y, x_name="x", y_name="y", dropna=True):
     y_range = np.max(y) - np.min(y)
     rmse_rel = rmse / (np.abs(y_mean) + 1e-12)
     rmse_nrm = rmse / (y_range + 1e-12)
-    mae = np.mean(np.abs(y - x))
-    mape = np.mean(np.abs((y - x) / x)) * 100
+    mae = np.mean(np.abs(y - y_fit))
+    mape = np.mean(np.abs((y - y_fit) / y)) * 100
     # ----------------------------------------------------
     # Spearman
     # ----------------------------------------------------
@@ -1744,7 +1666,6 @@ def matrixCorrelationAnalysis(dataX, dataY=None, columns=None):
     # Natural sort samples
     # -----------------------------
     dataX = naturalSortData(dataX)
-
     if dataY is None:
         data = dataX
     else:

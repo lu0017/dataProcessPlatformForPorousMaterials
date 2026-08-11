@@ -14,7 +14,7 @@ import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 
-import T0isothermsAndIAST.modelAndFit as mf
+import T1dataProcessSource.modelAndFit as mf
 import T0isothermsAndIAST.strongDSL as sl
 import T0isothermsAndIAST.isostericHeatQstForRawData as qstByRawdata
 

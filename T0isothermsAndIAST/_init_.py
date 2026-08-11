@@ -9,7 +9,6 @@ from .interpolateForDSL import *
 from .isostericHeatQstForRawData import *
 from .isostericHeatQstForSimu import *
 from .splitDataByTemperature import *
-from .modelAndFit import *
 from .pyIAST import *
 from .strongDSL import *
 from .plotIsothermsByTem import *

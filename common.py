@@ -60,6 +60,7 @@ from itertools import cycle
 # ======================
 from scipy.interpolate import interp1d
 from scipy.stats import linregress
+from scipy.optimize import curve_fit
 from scipy.optimize import brentq
 from scipy.interpolate import PchipInterpolator
 from scipy.interpolate import CubicSpline
@@ -67,6 +68,7 @@ from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import spearmanr
+from scipy.stats import pearsonr
 
 # ======================
 # Fitting

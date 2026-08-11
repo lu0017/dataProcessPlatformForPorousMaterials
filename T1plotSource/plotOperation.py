@@ -95,7 +95,7 @@ def formatLabel(label,Unicode=False):
         return ""
 
     label = str(label)
-    label = LABEL_MAP.get(label, label)
+    label = LABEL_MAP_MATRIX.get(label, label)
     # import matplotlib as mpl
     # print(mpl.rcParams["font.family"])
     # print(mpl.rcParams["font.sans-serif"])
