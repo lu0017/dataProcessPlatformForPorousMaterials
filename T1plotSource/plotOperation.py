@@ -1072,7 +1072,8 @@ def plotCurve(
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300)
 
     return ax
-def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), pos="top"):
+def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
+                     pos="top", xscale="linear", yscale="linear"):
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -1082,6 +1083,8 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
     y_fit = np.asarray(result["Y_fit"])
     idx = np.argsort(x)
     applyAxisStyle(ax)
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
     ax.text(
         text_position[0],
         text_position[1],
@@ -1099,9 +1102,10 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
     ax.set_ylabel( applyLabel(result["y_name"], ylabel) )
     applyTextStyle(ax,labelsize=16, ticksize=14, annotationsize=16)
 
-def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4), pos="top", savepath=None):
+def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4),
+                           pos="top", xscale="linear", yscale="linear",savepath=None):
     fig, ax = plt.subplots(figsize=figsize)
-    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos)
+    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos, xscale, yscale)
     plt.tight_layout()
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=600)

@@ -1340,9 +1340,7 @@ def correlationAnalysis(
     elif fit_method is None:
         fitting = {}
     else:
-        raise ValueError(
-            f"Unknown fit_method: {fit_method}"
-        )
+        raise ValueError( f"Unknown fit_method: {fit_method}" )
     # ======================================================
     # Combine
     # ======================================================

@@ -4,58 +4,79 @@ def calculateFitMetrics(y_true, y_pred):
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     if y_true.shape != y_pred.shape:
-        raise ValueError(
-            "y_true and y_pred must have the same shape."
-        )
+        raise ValueError( "y_true and y_pred must have the same shape." )
     residual = y_true - y_pred
     ss_res = np.sum(residual ** 2)
-    ss_tot = np.sum(
-        (y_true - np.mean(y_true)) ** 2
-    )
+    ss_tot = np.sum( (y_true - np.mean(y_true)) ** 2 )
     if ss_tot > 0:
         r2 = 1 - ss_res / ss_tot
     else:
         r2 = np.nan
-    rmse = np.sqrt(
-        np.mean(residual ** 2)
-    )
+    rmse = np.sqrt( np.mean(residual ** 2) )
     y_mean = np.mean(y_true)
-    rmse_rel = (
-        rmse /
-        (np.abs(y_mean) + 1e-12)
-    )
-    y_range = (
-        np.max(y_true) -
-        np.min(y_true)
-    )
-    rmse_nrm = (
-        rmse /
-        (y_range + 1e-12)
-    )
-    mae = np.mean(
-        np.abs(residual)
-    )
-    with np.errstate(
-        divide="ignore",
-        invalid="ignore"
-    ):
-        relative_residual = np.where(
-            y_true != 0,
-            residual / y_true,
-            0.0
-        )
-    mape = np.mean(
-        np.abs(relative_residual)
-    ) * 100
+    rmse_rel = ( rmse / (np.abs(y_mean) + 1e-12) )
+    y_range = ( np.max(y_true) - np.min(y_true) )
+    rmse_nrm = ( rmse / (y_range + 1e-12) )
+    mae = np.mean( np.abs(residual) )
+    with np.errstate( divide="ignore", invalid="ignore" ):
+        relative_residual = np.where( y_true != 0, residual / y_true, 0.0 )
+    mape = np.mean( np.abs(relative_residual) ) * 100
     return {
         "Residual": residual,
         "RelativeResidual": relative_residual,
+        "SSE": ss_res,
         "R2": r2,
         "RMSE": rmse,
         "RMSE_rel": rmse_rel,
         "RMSE_nrm": rmse_nrm,
         "MAE": mae,
         "MAPE": mape,
+    }
+def calculateModelSelectionMetrics( sse, n, k):
+    """
+    Calculate model selection metrics.
+    Parameters
+    ----------
+    sse : float
+        Sum of squared errors.
+    n : int
+        Number of observations.
+    k : int
+        Number of fitted parameters.
+    Returns
+    -------
+    dict
+        {
+            "AIC": ...,
+            "AICc": ...
+        }
+    """
+    # ==========================================================
+    # Validate
+    # ==========================================================
+    if not np.isfinite(sse):
+        return { "AIC": np.nan, "AICc": np.nan }
+    # ==========================================================
+    # AIC
+    # ==========================================================
+    if sse > 0:
+        aic = ( n * np.log(sse / n) + 2 * k )
+    elif sse == 0:
+        aic = -np.inf
+    else:
+        aic = np.nan
+    # ==========================================================
+    # AICc
+    # ==========================================================
+    if ( np.isfinite(aic) and n - k - 1 > 0 ):
+        aicc = ( aic + 2 * k * (k + 1) / (n - k - 1) )
+    elif aic == -np.inf:
+        aicc = -np.inf
+    else:
+        aicc = np.inf
+    return {
+        "AIC": aic,
+        "AICc": aicc
     }
 def compute_fit_metrics(fit_x, fit_y, exp_x, exp_y, method='linear', use_interp=True,):
     # from sklearn.metrics import r2_score 旧版，新版是computeFitMetrics（）
@@ -601,74 +622,32 @@ def fittingResultToRecord00( result, parameter_name):
         # ==================================================
         # Correlation
         # ==================================================
-        "Pearson_r": result.get(
-            "Pearson_r",
-            np.nan
-        ),
-        "Pearson_p": result.get(
-            "Pearson_p",
-            np.nan
-        ),
-        "Spearman_r": result.get(
-            "Spearman_r",
-            np.nan
-        ),
-        "Spearman_p": result.get(
-            "Spearman_p",
-            np.nan
-        ),
+        "Pearson_r": result.get( "Pearson_r", np.nan ),
+        "Pearson_p": result.get( "Pearson_p", np.nan ),
+        "Spearman_r": result.get( "Spearman_r", np.nan ),
+        "Spearman_p": result.get( "Spearman_p", np.nan ),
         # ==================================================
         # Goodness of fit
         # ==================================================
-        "R2": result.get(
-            "R2",
-            np.nan
-        ),
-        "RMSE": result.get(
-            "RMSE",
-            np.nan
-        ),
-        "RMSE_rel": result.get(
-            "RMSE_rel",
-            np.nan
-        ),
-        "RMSE_nrm": result.get(
-            "RMSE_nrm",
-            np.nan
-        ),
-        "MAE": result.get(
-            "MAE",
-            np.nan
-        ),
-        "MAPE": result.get(
-            "MAPE",
-            np.nan
-        ),
+        "R2": result.get( "R2", np.nan ),
+        "RMSE": result.get( "RMSE", np.nan ),
+        "RMSE_rel": result.get( "RMSE_rel", np.nan ),
+        "RMSE_nrm": result.get( "RMSE_nrm", np.nan ),
+        "MAE": result.get( "MAE", np.nan ),
+        "MAPE": result.get( "MAPE", np.nan ),
     }
     # ======================================================
     # Parameters
     # ======================================================
-    for name, value in result.get(
-        "Parameters",
-        {}
-    ).items():
+    for name, value in result.get( "Parameters", {} ).items():
         record[f"Fit_{name}"] = value
     # ======================================================
     # Parameter standard errors
     # ======================================================
-    for name, value in result.get(
-        "ParameterStdErr",
-        {}
-    ).items():
-        record[
-            f"Fit_{name}_StdErr"
-        ] = value
+    for name, value in result.get( "ParameterStdErr", {} ).items():
+        record[ f"Fit_{name}_StdErr" ] = value
     return record
-def fittingResultToRecord(
-        result,
-        parameter_name=None,
-        extra=None,
-        n_name="N"):
+def fittingResultToRecord( result, parameter_name=None, extra=None, n_name="N"):
     """
     Convert an analysis/fitting result dictionary
     into one flat record.
@@ -725,6 +704,7 @@ def fittingResultToRecord(
     # Goodness of fit
     # ======================================================
     for name in [
+        "SSE",
         "R2",
         "RMSE",
         "RMSE_rel",
@@ -737,10 +717,7 @@ def fittingResultToRecord(
     # ======================================================
     # Model information
     # ======================================================
-    fit_func = result.get(
-        "FitFunc",
-        result.get("FitFunction", None)
-    )
+    fit_func = result.get( "FitFunc", result.get("FitFunction", None) )
     if fit_func is not None:
         record["Model"] = getattr(
             fit_func,
@@ -755,25 +732,15 @@ def fittingResultToRecord(
     # ======================================================
     # Fitted parameters
     # ======================================================
-    parameters = result.get(
-        "Parameters",
-        {}
-    )
+    parameters = result.get( "Parameters", {} )
     for name, value in parameters.items():
-        record[
-            f"Fit_{name}"
-        ] = value
+        record[ f"Fit_{name}" ] = value
     # ======================================================
     # Parameter uncertainty
     # ======================================================
-    parameter_stderr = result.get(
-        "ParameterStdErr",
-        {}
-    )
+    parameter_stderr = result.get( "ParameterStdErr", {} )
     for name, value in parameter_stderr.items():
-        record[
-            f"Fit_{name}_StdErr"
-        ] = value
+        record[ f"Fit_{name}_StdErr" ] = value
     return record
 def calculateCorrelation(
         x,
@@ -879,11 +846,9 @@ exponentialSaturation.equation = ( "y = a_inf - A * exp(-k * x)" )
 def quadratic(x, a, b, c):
     """
     Quadratic model.
-
     Mathematical form
     ------------------
     y = a * x**2 + b * x + c
-
     Parameters
     ----------
     x : array-like
@@ -894,7 +859,6 @@ def quadratic(x, a, b, c):
         Linear coefficient.
     c : float
         Intercept.
-
     Returns
     -------
     y : float or np.ndarray
@@ -903,13 +867,10 @@ def quadratic(x, a, b, c):
     return a * x**2 + b * x + c
 quadratic.model_name = "Quadratic"
 quadratic.equation = ( "y = a * x^2 + b * x + c" )
-
-
 # ==========================================================
 # 1. Model library
 # ==========================================================
 model_library = {
-
     "Linear": {
         "fit_method": "linear",
         "model": None,
@@ -917,7 +878,6 @@ model_library = {
         "bounds": (-np.inf, np.inf),
         "param_names": None
     },
-
     "Quadratic": {
         "fit_method": "nonlinear",
         "model": quadratic,
@@ -929,7 +889,6 @@ model_library = {
             "c"
         ]
     },
-
     "Exponential Saturation": {
         "fit_method": "nonlinear",
         "model": exponentialSaturation,
