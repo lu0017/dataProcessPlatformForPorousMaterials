@@ -744,14 +744,26 @@ def _excel_exists_and_valid(filename):
         return True
     except (BadZipFile, OSError, ValueError):
         return False
-def export_to_excel_auto(df, filename="results.xlsx", sheet_name=None):
+def export_to_excel_auto(df, filename="results.xlsx", sheet_name=None, index=False):
     """
-    自动导出 DataFrame 到 Excel
-    - 优先使用 DEFAULT_LABELS（含别名+单位）
-    - 其次用 DEFAULT_UNITS 拼接
-    - 否则保持原名
-    - sheet_name None 时自动生成 Sheet1, Sheet2 ...
-    - 若 sheet 已存在则覆盖
+        自动导出 DataFrame 到 Excel
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            要导出的 DataFrame
+        filename : str
+            Excel 文件路径
+        sheet_name : str or None
+            Sheet 名称。
+            None 时自动生成 Sheet1, Sheet2, ...
+        index : bool
+            是否导出 DataFrame index。
+        Notes
+        -----
+        - 优先使用 DEFAULT_LABELS（含别名+单位）
+        - 其次用 DEFAULT_UNITS 拼接
+        - 否则保持原名
+        - 若 sheet 已存在则覆盖
     """
     # 自动生成 sheet 名
     if sheet_name is None:
@@ -792,10 +804,10 @@ def export_to_excel_auto(df, filename="results.xlsx", sheet_name=None):
         os.remove(filename)
     if excel_ok:
         with pd.ExcelWriter( filename, engine="openpyxl", mode="a", if_sheet_exists="replace", ) as writer:
-            df_export.to_excel(writer, sheet_name=sheet_name, index=False)
+            df_export.to_excel(writer, sheet_name=sheet_name, index=index)
     else:
         with pd.ExcelWriter( filename, engine="openpyxl", mode="w", ) as writer:
-            df_export.to_excel(writer, sheet_name=sheet_name, index=False)
+            df_export.to_excel(writer, sheet_name=sheet_name, index=index,)
     print(f"已导出 sheet: {sheet_name} -> {filename}")
 def saveToExcel(df, out_path, sheet_name=None):
     """

@@ -42,17 +42,14 @@ LABEL_MAP = {
     # "Vmic(2)/Vt": r"$V_{\mathrm{<2}}/V_{\mathrm{t}}$",
     # "Vultra (1)/Vt": r"$V_{\mathrm{<1}}/V_{\mathrm{t}}$",
     # "BET": r"$S_{\mathrm{BET}}$",
-
     "Centroid":         r"$D_{\mathrm{c}}$ (nm)",
     "HighLowRatio":     r"HLR ($-$)",
     "CompetitionIndex": r"CI ($-$)",
     "Skewness":         r"Skewness ($-$)",
-
     "Centroid":         r"Centroid (nm)",
     "HighLowRatio":     r"HighLowRatio (-)",
     "CompetitionIndex": r"CompetitionIndex (-)",
     "Skewness":         r"Skewness (-)",
-
 }
 LABEL_MAP_MATRIX = {
     # -------- Spectrum --------
@@ -63,13 +60,11 @@ LABEL_MAP_MATRIX = {
     "O-EDS": "O (Wt%)",
     "SELE pyIAST": r"$S_{IAST}$",
     "sel_henry": r"$S_{Henry}$",
-
     "GCMC_High": "$V_{<0.5\,nm}$",
     "GCMC_HighLowRatio": "HLR",
     "GCMC_Centroid": r"$D_{c}$",
     "GCMC_CompetitionIndex": r"$CI$",
     "GCMC_Skewness": "Skewness",
-
     "DFT_High": "$V_{<0.65\,nm}$",
     "DFT_HighLowRatio": "HLR",
     "DFT_Centroid": r"$D_{c}$",
@@ -93,7 +88,6 @@ def formatLabel(label,Unicode=False):
     """
     if label is None:
         return ""
-
     label = str(label)
     label = LABEL_MAP_MATRIX.get(label, label)
     # import matplotlib as mpl
@@ -112,14 +106,12 @@ def formatLabel(label,Unicode=False):
 def applyLabel(default, custom=None):
     """
     Return formatted label.
-
     Parameters
     ----------
     default : str
         Default variable name.
     custom : str or None
         User-defined label.
-
     Returns
     -------
     str
@@ -577,7 +569,6 @@ def annotateBars(
 ):
     """
     Add value labels to bar charts.
-
     Parameters
     ----------
     ax : matplotlib.axes.Axes
@@ -601,9 +592,7 @@ def annotateBars(
     """
     if values is None:
         values = [bar.get_height() for bar in bars]
-
     for bar, value in zip(bars, values):
-
         if inside:
             xy = (
                 bar.get_x() + bar.get_width() / 2,
@@ -619,7 +608,6 @@ def annotateBars(
             )
             xytext = (0, offset)
             textcoords = "offset points"
-
         text = ax.annotate(
             f"{value:{fmt}}",
             xy=xy,
@@ -631,7 +619,6 @@ def annotateBars(
             fontsize=fontsize,
             color=color,
         )
-
         # 标记为柱状图数值标签，避免 applyTextStyle 修改
         text.set_gid("barvalue")
 def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, ):
@@ -645,11 +632,9 @@ def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize
                 if text.get_gid() == "barvalue":
                     continue
                 text.set_fontsize(annotationsize)
-
     if fig is not None:
         if getattr(fig, "_supxlabel", None) is not None:
             fig._supxlabel.set_fontsize(labelsize)
-
         if getattr(fig, "_supylabel", None) is not None:
             fig._supylabel.set_fontsize(labelsize)
 def applyLegend(
@@ -755,7 +740,6 @@ def applyLegend(
         loc=cfg["loc"],
         **kwargs,
     )
-
 def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
     """
     Set fixed major tick interval and style.
@@ -934,16 +918,12 @@ def plotSpectrum(
     # Legend
     # ==================================================
     applyLegend( fig, axes, show=legend, fontsize=textSize)
-    
     # ==================================================
     # Save
     # ==================================================
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=dpi)
     return axes
-
-
-
 def plotCurve(
     data,
     ax=None,
@@ -964,6 +944,7 @@ def plotCurve(
     markersize=70,
     legend=True,
     legendPosition="outside right",
+    title=None,
     savepath=None,
 ):
     """
@@ -989,8 +970,18 @@ def plotCurve(
     matplotlib.axes.Axes
     """
     if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
     applyAxisStyle(ax)
+    if title is not None:
+        # Figure title
+        fig.suptitle(title)
+        # Window title, when supported by the backend
+        try:
+            fig.canvas.manager.set_window_title(title)
+        except (AttributeError, RuntimeError):
+            pass
     sample_names = list(data.keys())
     color_list = ColorPalette.get(colors, len(sample_names))
     def _extract_xy(curve):
@@ -1045,9 +1036,7 @@ def plotCurve(
             )
     ax.set_xlabel(xlabel or x)
     ax.set_ylabel(ylabel or y)
-
     if legend:
-
         handles = buildCurveLegend(
             sample_names=sample_names,
             color_list=color_list,
@@ -1061,7 +1050,6 @@ def plotCurve(
             fit_linestyle=fit_linestyle,
             markersize=markersize,
         )
-
         applyLegend(
             fig=ax.figure,
             axes=[ax],
@@ -1070,7 +1058,6 @@ def plotCurve(
         )
     if savepath is not None:
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300)
-
     return ax
 def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
                      pos="top", xscale="linear", yscale="linear"):
@@ -1101,7 +1088,6 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
     ax.set_xlabel( applyLabel(result["x_name"], xlabel) )
     ax.set_ylabel( applyLabel(result["y_name"], ylabel) )
     applyTextStyle(ax,labelsize=16, ticksize=14, annotationsize=16)
-
 def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4),
                            pos="top", xscale="linear", yscale="linear",savepath=None):
     fig, ax = plt.subplots(figsize=figsize)
@@ -1110,7 +1096,6 @@ def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=600)
     plt.show(block=False)
-    
 def plotBatchCorrelation(results, topN=5, sort_by="R2"):
     """
     Batch plot top-N correlations.
@@ -1269,37 +1254,28 @@ def _buildCorrelationMatrices(
 ):
     """
     Strict correlation matrix builder.
-
     Parameters
     ----------
     circleSize : str
         Variable controlling circle area.
-
     circleColor : str
         Variable controlling circle and text color.
-
     textValue : str
         Variable displayed in the upper triangle.
     """
-
     # =====================================================
     # Define order
     # =====================================================
     if order is None:
         order = list(results.keys())
-
     order = list(order)
-
     if include is not None:
         include_set = set(include)
         order = [v for v in order if v in include_set]
-
     if exclude is not None:
         exclude_set = set(exclude)
         order = [v for v in order if v not in exclude_set]
-
     n = len(order)
-
     # =====================================================
     # Initialize matrices
     # =====================================================
@@ -1308,34 +1284,27 @@ def _buildCorrelationMatrices(
     COLOR = np.full((n, n), np.nan)
     TEXT = np.full((n, n), np.nan)
     P = np.full((n, n), np.nan)
-
     np.fill_diagonal(R, 1.0)
     np.fill_diagonal(SIZE, 1.0)
     np.fill_diagonal(COLOR, 1.0)
     np.fill_diagonal(TEXT, 1.0)
     np.fill_diagonal(P, 0.0)
-
     # =====================================================
     # Fill matrices
     # =====================================================
     for i, x in enumerate(order):
-
         row = results.get(x)
         if row is None:
             continue
-
         for j, y in enumerate(order):
-
             item = row.get(y)
             if item is None:
                 continue
-
             R[i, j] = item.get("Pearson_r", np.nan)
             SIZE[i, j] = item.get(circleSize, np.nan)
             COLOR[i, j] = item.get(circleColor, np.nan)
             TEXT[i, j] = item.get(textValue, np.nan)
             P[i, j] = item.get(pKey, np.nan)
-
     return order, R, SIZE, COLOR, TEXT, P
 def _drawLowerTriangle(
     ax,
@@ -1351,70 +1320,51 @@ def _drawLowerTriangle(
 ):
     """
     Draw the lower triangle of a correlogram.
-
     Circle
     ------
     Area :
         Controlled by SIZE and sizeTransform.
-
     Color :
         Controlled by COLOR.
-
     Parameters
     ----------
     ax : matplotlib.axes.Axes
         Target axes.
-
     SIZE : ndarray
         Matrix controlling circle area.
-
     COLOR : ndarray
         Matrix controlling circle color.
-
     cmap : str or Colormap
-
     norm : matplotlib.colors.Normalize, optional
-
     circleScale : float
-
     sizeTransform : {"square", "abs", "none"}
         square : area = |SIZE|²
         abs    : area = |SIZE|
         none   : area = SIZE
-
     Returns
     -------
     scatter : PathCollection
     """
     if norm is None:
         norm = Normalize(vmin=-1, vmax=1)
-
     scatter = None
     n = SIZE.shape[0]
-
     for i in range(n):
         for j in range(i):
-
             size = SIZE[i, j]
             color = COLOR[i, j]
-
             if np.isnan(size) or np.isnan(color):
                 continue
-
             if sizeTransform == "square":
                 area = circleScale * (abs(size) ** 2)
-
             elif sizeTransform == "abs":
                 area = circleScale * abs(size)
-
             elif sizeTransform == "none":
                 area = circleScale * size
-
             else:
                 raise ValueError(
                     f"Unknown sizeTransform: {sizeTransform}"
                 )
-
             scatter = ax.scatter(
                 j,
                 i,
@@ -1427,7 +1377,6 @@ def _drawLowerTriangle(
                 alpha=alpha,
                 zorder=3,
             )
-
     return scatter
 def _drawUpperTriangle(
     ax,
@@ -1444,58 +1393,40 @@ def _drawUpperTriangle(
 ):
     """
     Draw the upper triangle of a correlogram.
-
     Upper triangle
     --------------
     Text:
         Controlled by VALUE.
-
     Text color:
         Controlled by COLOR.
-
     Significance:
         Controlled by P.
     """
-
     if norm is None:
         norm = Normalize(vmin=-1, vmax=1)
-
     if significanceLevels is None:
         significanceLevels = {
             0.001: "***",
             0.01: "**",
             0.05: "*",
         }
-
     cmapObj = plt.get_cmap(cmap)
-
     n = VALUE.shape[0]
-
     for i in range(n):
         for j in range(i + 1, n):
-
             value = VALUE[i, j]
             colorValue = COLOR[i, j]
-
             if np.isnan(value):
                 continue
-
             color = cmapObj(norm(colorValue))
-
             text = f"{value:.{decimals}f}"
-
             if showSignificance and P is not None:
-
                 p = P[i, j]
-
                 if not np.isnan(p):
-
                     for level, stars in significanceLevels.items():
-
                         if p <= level:
                             text += stars
                             break
-
             ax.text(
                 j,
                 i,
@@ -1575,7 +1506,6 @@ def _drawColorbar( fig, ax, scatter, label="Pearson correlation", shrink=0.85, a
     cbar = fig.colorbar( scatter, ax=ax, shrink=shrink, aspect=aspect, pad=pad )
     # Label
     cbar.set_label(label, fontsize=labelSize)
-
     # Tick labels
     cbar.ax.tick_params(labelsize=tickSize)
     return cbar
@@ -1722,7 +1652,6 @@ def plotCorrelogram(
         sizeTransform = "square"
     scatter = _drawLowerTriangle( ax=ax, SIZE=SIZE, COLOR=COLOR, cmap=cmap, norm=norm, circleScale=circleScale, 
                                  sizeTransform=sizeTransform, )
-
     _drawUpperTriangle( ax=ax, COLOR=COLOR, VALUE=TEXT, P=P, decimals=decimals, cmap=cmap, norm=norm, 
                        showSignificance=showSignificance, significanceLevels=significanceLevels, fontSize=fontSize, )
     # _drawDiagonal( ax=ax, labels=order, mode=diagonalMode, fontSize=fontSize + 1 )
@@ -1745,4 +1674,3 @@ def plotCorrelogram(
         plt.tight_layout()
         plt.show(block=False)
     return fig, ax
-
