@@ -1555,22 +1555,28 @@ def modifyPoreVolume( volume, target_index, delta_volume, source_index=None):
         raise ValueError( "Modified pore volume contains negative values." )
     modified_volume[ np.abs(modified_volume) < 1e-12 ] = 0.0
     return modified_volume
-def calculateSimByAddition( volume, target_index, delta_volume, simPore, simData, ModelVolumeAcc, flagUsingDensity=False, 
-                           simData_density=None):
+def calculateSimByPerturbation( volume, target_index, delta_volume, simPore, simData, 
+                               ModelVolumeAcc, flagUsingDensity=False, simData_density=None, source_index=None):
     """
-    Calculate PSD-weighted GCMC uptake after adding pore volume
-    to one fixed GCMC pore-size window.
+    Calculate PSD-weighted GCMC uptake after perturbing pore volume.
+    Two modes are supported:
+    Addition:
+        source_index = None
+        V_target' = V_target + delta_volume
+    Transfer / redistribution:
+        source_index is not None
+        V_source' = V_source - delta_volume
+        V_target' = V_target + delta_volume
     """
     # ------------------------------------------------------
     # 1. Modify pore volume
     # ------------------------------------------------------
-    modified_volume = modifyPoreVolume( volume=volume, target_index=target_index, delta_volume=delta_volume )
+    modified_volume = modifyPoreVolume( volume=volume, target_index=target_index, delta_volume=delta_volume, source_index=source_index )
     # ------------------------------------------------------
     # 2. Recalculate weighted simulation
     # ------------------------------------------------------
     result = calculateWeightedSimulationFromVolume( volume=modified_volume, simData=simData, 
-                                                   ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
-                                                   simData_density=simData_density )
+               ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, simData_density=simData_density )
     # ------------------------------------------------------
     # 3. Store perturbation information
     # ------------------------------------------------------
@@ -1579,8 +1585,26 @@ def calculateSimByAddition( volume, target_index, delta_volume, simPore, simData
     result["target_index"] = target_index
     result["target_pore"] = simPore[target_index]
     result["delta_volume"] = delta_volume
-    result["operation"] = "addition"
+    result["source_index"] = source_index
+    if source_index is None:
+        result["operation"] = "addition"
+    else:
+        result["operation"] = "transfer"
+        result["source_pore"] = simPore[source_index]
     return result
+def calculateSimByAddition( volume, target_index, delta_volume, simPore, simData, 
+                           ModelVolumeAcc, flagUsingDensity=False, simData_density=None):
+    return calculateSimByPerturbation(
+        volume=volume,
+        target_index=target_index,
+        delta_volume=delta_volume,
+        simPore=simPore,
+        simData=simData,
+        ModelVolumeAcc=ModelVolumeAcc,
+        flagUsingDensity=flagUsingDensity,
+        simData_density=simData_density,
+        source_index=None
+    )
 def plotContribution(simPore,contributionPercent,pressureIndex=-1):
     plt.figure(figsize=(6,4))
     plt.plot(simPore,contributionPercent[:,pressureIndex]*100,marker="o")
@@ -1681,10 +1705,92 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
             legendPosition=legendPosition
         )
     plt.show(block=False)
-def plotPerturbationAddition(
-        sample,
-        perturbationResults,
-        poreResult):
+def processPerturbationPlotIndex( plotIndex, operation, simPore, sample, defaultAdditionIndex=18, defaultTransferPair=(0, 18)):
+    if operation not in ["addition", "transfer"]:
+        raise ValueError( f"Unsupported operation='{operation}'. " "Use 'addition' or 'transfer'." )
+    # ==========================================================
+    # 1. Set default
+    # ==========================================================
+    if plotIndex is None:
+        if operation == "addition":
+            plotIndex = [defaultAdditionIndex]
+        elif operation == "transfer":
+            plotIndex = defaultTransferPair
+    # ==========================================================
+    # 2. All
+    # ==========================================================
+    if isinstance(plotIndex, str):
+        if plotIndex == "all":
+            return { "plotIndex": "all", "plotIndices": None, "plotPair": None }
+        raise ValueError( f"Unsupported plotIndex='{plotIndex}'." )
+    # ==========================================================
+    # 3. Addition
+    # ==========================================================
+    if operation == "addition":
+        plotIndices = np.atleast_1d(plotIndex).astype(int)
+        invalidIndex = plotIndices[ (plotIndices < 0) | (plotIndices >= len(simPore)) ]
+        if len(invalidIndex) > 0:
+            raise IndexError( f"Invalid plotIndex for sample '{sample}': " f"{invalidIndex.tolist()}. " 
+                             f"Valid range: 0-{len(simPore) - 1}." )
+        return {
+            "plotIndex": plotIndex,
+            "plotIndices": plotIndices,
+            "plotPair": None
+        }
+    # ==========================================================
+    # 4. Transfer
+    # ==========================================================
+    if operation == "transfer":
+        if np.isscalar(plotIndex):
+            plotIndexArray = [int(plotIndex)]
+        else:
+            plotIndexArray = np.asarray( plotIndex, dtype=int ).flatten().tolist()
+        # ------------------------------------------------------
+        # Single index:
+        #
+        # plotIndex=18
+        #     -> default source -> 18
+        #
+        # plotIndex=[18]
+        #     -> default source -> 18
+        # ------------------------------------------------------
+        if len(plotIndexArray) == 1:
+            sourceIndex = int(defaultTransferPair[0])
+            targetIndex = plotIndexArray[0]
+            plotPair = ( sourceIndex, targetIndex )
+        # ------------------------------------------------------
+        # Explicit pair:
+        #
+        # plotIndex=(15, 18)
+        #     -> 15 -> 18
+        # ------------------------------------------------------
+        elif len(plotIndexArray) == 2:
+            plotPair = ( plotIndexArray[0], plotIndexArray[1] )
+        else:
+            raise ValueError(
+                "For operation='transfer', plotIndex must be "
+                "a single target index, "
+                "[target_index], "
+                "(source_index, target_index), "
+                "[source_index, target_index], "
+                "or 'all'."
+            )
+        sourceIndex = plotPair[0]
+        targetIndex = plotPair[1]
+        if not (0 <= sourceIndex < len(simPore)):
+            raise IndexError( f"Invalid source index: {sourceIndex}. " f"Valid range: 0-{len(simPore) - 1}." )
+        if not (0 <= targetIndex < len(simPore)):
+            raise IndexError( f"Invalid target index: {targetIndex}. " f"Valid range: 0-{len(simPore) - 1}." )
+        if sourceIndex == targetIndex:
+            print( f"sourceIndex and targetIndex are the same ({targetIndex}). " f"Automatically moving targetIndex back by one." )
+            targetIndex = (targetIndex - 1) % len(simPore)
+            plotPair = (sourceIndex, targetIndex)
+        return {
+            "plotIndex": plotIndex,
+            "plotIndices": None,
+            "plotPair": plotPair
+        }
+def plotPerturbation( sample, perturbationResults, poreResult):
     """
     Plot original and modified results for one pore-volume perturbation.
     Three plots are generated:
@@ -1697,7 +1803,7 @@ def plotPerturbationAddition(
         Sample name.
     perturbationResults : dict
         Complete perturbation result generated by
-        calculatePerturbationByAddition().
+        calculatePerturbation().
     poreResult : dict
         Perturbation result for one pore-size window.
     Returns
@@ -1707,69 +1813,40 @@ def plotPerturbationAddition(
     # ======================================================
     # 1. Extract original / baseline information
     # ======================================================
-    simPore = np.asarray(
-        perturbationResults["simPore"],
-        dtype=float
-    )
-    pressures = np.asarray(
-        perturbationResults["pressure"],
-        dtype=float
-    )
-    original_volume = np.asarray(
-        perturbationResults["original_volume"],
-        dtype=float
-    )
-    original_sim = np.asarray(
-        perturbationResults["original_simUptake"],
-        dtype=float
-    )
-    original_pred = np.asarray(
-        perturbationResults["original_predicted"],
-        dtype=float
-    )
+    simPore = np.asarray( perturbationResults["simPore"], dtype=float )
+    pressures = np.asarray( perturbationResults["pressure"], dtype=float )
+    original_volume = np.asarray( perturbationResults["original_volume"], dtype=float )
+    original_sim = np.asarray( perturbationResults["original_simUptake"], dtype=float )
+    original_pred = np.asarray( perturbationResults["original_predicted"], dtype=float )
     # ======================================================
     # 2. Extract perturbation information
     # ======================================================
     target_index = poreResult["target_index"]
+    source_index = poreResult["source_index"]
     target_pore = poreResult["target_pore"]
+    source_pore = poreResult["source_pore"]
     delta_volume = poreResult["delta_volume"]
-    modified_volume = np.asarray(
-        poreResult["modified_volume"],
-        dtype=float
-    )
-    modified_sim = np.asarray(
-        poreResult["modified_simUptake"],
-        dtype=float
-    )
-    modified_pred = np.asarray(
-        poreResult["modified_predicted"],
-        dtype=float
-    )
+    operation = perturbationResults["operation"]
+    modified_volume = np.asarray( poreResult["modified_volume"], dtype=float )
+    modified_sim = np.asarray( poreResult["modified_simUptake"], dtype=float )
+    modified_pred = np.asarray( poreResult["modified_predicted"], dtype=float )
+    delta_volume = poreResult["delta_volume"]
+    if operation == "addition":
+        title = ( f"{sample}-PSD-" f"pore{target_pore:.2f}nm," f"ΔV={delta_volume:.4f}" )
+    elif operation == "transfer":
+        title = ( f"{sample}-PSD-" f"pore{source_pore:.2f}→{target_pore:.2f}nm," f"ΔV={delta_volume:.4f}" )
     # ======================================================
     # 3. PSD / pore-volume distribution
     # ======================================================
     myPlt.plotCurve(
-        data={
-            "Original": (
-                simPore,
-                original_volume
-            ),
-        },
-        fit={
-            "Original": (
-                simPore,
-                modified_volume
-            ),
-        },
+        data={ "Original": ( simPore, original_volume ), },
+        fit={ "Original": ( simPore, modified_volume ), },
         fit_label="Modified",
         x="Pore size",
         y="Volume",
         xlabel="Pore size (nm)",
         ylabel="Pore volume",
-        title=(
-            f"{sample} - PSD - "
-            f"pore {target_pore:.2f} nm"
-        ),
+        title=title,
         marker=True,
         line=True,
         legendPosition="upper left",
@@ -1778,27 +1855,14 @@ def plotPerturbationAddition(
     # 4. PSD-weighted simulation uptake
     # ======================================================
     myPlt.plotCurve(
-        data={
-            "Original": (
-                pressures,
-                original_sim
-            ),
-        },
-        fit={
-            "Original": (
-                pressures,
-                modified_sim
-            ),
-        },
+        data={ "Original": ( pressures, original_sim ), },
+        fit={ "Original": ( pressures, modified_sim ), },
         fit_label="Modified",
         x="Pressure",
         y="Uptake",
         xlabel="Pressure (kPa)",
         ylabel="CO$_2$ uptake",
-        title=(
-            f"{sample} - SIM - "
-            f"pore {target_pore:.2f} nm"
-        ),
+        title=title,
         marker=True,
         line=True,
         legendPosition="upper left",
@@ -1807,27 +1871,18 @@ def plotPerturbationAddition(
     # 5. Predicted experimental uptake
     # ======================================================
     myPlt.plotCurve(
-        data={
-            "Original": (
+        data={ "Original": (
                 pressures,
-                original_pred
-            ),
-        },
-        fit={
-            "Original": (
+                original_pred ), },
+        fit={ "Original": (
                 pressures,
-                modified_pred
-            ),
-        },
+                modified_pred ), },
         fit_label="Modified",
         x="Pressure",
         y="Uptake",
         xlabel="Pressure (kPa)",
         ylabel="Predicted CO$_2$ uptake",
-        title=(
-            f"{sample} - PRE - "
-            f"pore {target_pore:.2f} nm"
-        ),
+        title=title,
         marker=True,
         line=True,
         legendPosition="upper left",
@@ -1836,15 +1891,25 @@ def plotPerturbationAddition(
     # ======================================================
     # 6. Debug information
     # ======================================================
-    print(
-        f"[Perturbation Plot] {sample} | "
-        f"index={target_index} | "
-        f"pore={target_pore:.4f} nm | "
-        f"deltaV={delta_volume}"
-    )
-def plotSensitivityHeatmap(
-        perturbationResults,
-        sensitivity_type="pred"):
+    if operation == "addition":
+        print(
+            f"[Perturbation Plot] {sample} | "
+            f"operation=addition | "
+            f"index={target_index} | "
+            f"pore={target_pore:.4f} nm | "
+            f"deltaV={delta_volume}"
+        )
+    elif operation == "transfer":
+        print(
+            f"[Perturbation Plot] {sample} | "
+            f"operation=transfer | "
+            f"source_index={source_index} | "
+            f"source_pore={source_pore:.4f} nm | "
+            f"target_index={target_index} | "
+            f"target_pore={target_pore:.4f} nm | "
+            f"deltaV={delta_volume}"
+        )
+def plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred"):
     """
     Plot perturbation sensitivity heatmap.
     X-axis : Pressure (kPa)
@@ -1858,51 +1923,24 @@ def plotSensitivityHeatmap(
         sensitivity_key = "sensitivity_pred"
         title = "Predicted Experimental Sensitivity"
     else:
-        raise ValueError(
-            "sensitivity_type must be 'sim' or 'pred'."
-        )
-    pressures = np.asarray(
-        perturbationResults["pressure"],
-        dtype=float
-    )
+        raise ValueError( "sensitivity_type must be 'sim' or 'pred'." )
+
+    pressures = np.asarray( perturbationResults["pressure"], dtype=float )
     poreResults = perturbationResults["pore_results"]
-    simPore = np.array([
-        result["target_pore"]
-        for result in poreResults
-    ])
-    sensitivity = np.array([
-        result[sensitivity_key]
-        for result in poreResults
-    ])
-    plt.figure(
-        figsize=(8, 5)
-    )
-    plt.imshow(
-        sensitivity,
-        aspect="auto",
-        origin="lower"
-    )
-    plt.colorbar(
-        label="Sensitivity"
-    )
-    plt.xticks(
-        np.arange(len(pressures)),
-        [f"{p:g}" for p in pressures],
-        rotation=45
-    )
-    plt.yticks(
-        np.arange(len(simPore)),
-        [f"{p:.2f}" for p in simPore]
-    )
-    plt.xlabel(
-        "Pressure (kPa)"
-    )
-    plt.ylabel(
-        "Pore Size (nm)"
-    )
-    plt.title(
-        f"{perturbationResults['sample']} - {title}"
-    )
+    simPore = np.array([ result["target_pore"] for result in poreResults ])
+    sensitivity = np.array([ result[sensitivity_key] for result in poreResults ])
+    if perturbationResults["operation"] == "transfer":
+        source_index = poreResults[0]["source_index"]
+        source_pore = poreResults[0]["source_pore"]
+        title += f"\nSource pore: {source_pore:.2f} nm"
+    plt.figure( figsize=(8, 5) )
+    plt.imshow( sensitivity, aspect="auto", origin="lower" )
+    plt.colorbar( label="Sensitivity" )
+    plt.xticks( np.arange(len(pressures)), [f"{p:g}" for p in pressures], rotation=45 )
+    plt.yticks( np.arange(len(simPore)), [f"{p:.2f}" for p in simPore] )
+    plt.xlabel( "Pressure (kPa)" )
+    plt.ylabel( "Pore Size (nm)" )
+    plt.title( f"{perturbationResults['sample']} - {title}" )
     plt.tight_layout()
     plt.show(block=False)
 def exportParameterFittingToExcel( analysis, filename, prefix=None):
@@ -2496,30 +2534,116 @@ def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type=
             "predicted": q_pred,
         }
     return predictionResults
-def calculatePerturbationByAddition(
-        sample,
-        simulationDetails,
-        predictionResults,
-        simData,
-        ModelVolumeAcc,
-        flagUsingDensity=False,
-        simData_density=None,
-        modelfit=None,
-        validation_type="absolute",
-        delta_volume=0.0,
-        plotIndex=None,
-        debug=False):
+def preparePerturbationData( sample, simulationDetails, predictionResults, operation, delta_volume, source_index=None):
+    # ==========================================================
+    # 1. Basic validation
+    # ==========================================================
+    if delta_volume <= 0:
+        raise ValueError( "delta_volume must be positive." )
+    if operation not in ["addition", "transfer"]:
+        raise ValueError( "operation must be either 'addition' or 'transfer'." )
+    if sample not in simulationDetails:
+        raise KeyError( f"Sample '{sample}' not found in simulationDetails." )
+    if sample not in predictionResults:
+        raise KeyError( f"Sample '{sample}' not found in predictionResults." )
+    # ==========================================================
+    # 2. Get original simulation information
+    # ==========================================================
+    details = simulationDetails[sample]
+    pressures = np.asarray( details["pressures"], dtype=float )
+    volume = np.asarray( details["volume"], dtype=float ).copy()
+    simPore = np.asarray( details["simPore"], dtype=float )
+    # ==========================================================
+    # 3. Validate / adjust transfer
+    # ==========================================================
+    if operation == "transfer":
+        if source_index is None:
+            raise ValueError( "source_index must be specified for operation='transfer'." )
+        if not (0 <= source_index < len(volume)):
+            raise IndexError( f"Invalid source_index={source_index}. " f"Valid range: 0-{len(volume)-1}." )
+        if volume[source_index] == 0:
+            raise ValueError( f"Source pore volume at index " f"{source_index} is zero." )
+        # If requested delta is larger than source volume,
+        # transfer the entire source volume.
+        delta_volume = min( delta_volume, volume[source_index] )
+    # ==========================================================
+    # 4. Get original prediction
+    # ==========================================================
+    originalPrediction = predictionResults[sample]
+    originalSim = np.asarray( originalPrediction["simUptake"], dtype=float )
+    originalPred = np.asarray( originalPrediction["predicted"], dtype=float )
+    # ==========================================================
+    # 5. Validate dimensions
+    # ==========================================================
+    if len(volume) != len(simPore):
+        raise ValueError( f"Length mismatch for sample '{sample}': "
+            f"volume={len(volume)}, "
+            f"simPore={len(simPore)}." )
+    if len(originalSim) != len(pressures):
+        raise ValueError( f"Length mismatch for sample '{sample}': "
+            f"simUptake={len(originalSim)}, "
+            f"pressures={len(pressures)}." )
+    if len(originalPred) != len(pressures):
+        raise ValueError( f"Length mismatch for sample '{sample}': "
+            f"predicted={len(originalPred)}, "
+            f"pressures={len(pressures)}." )
+    return {
+        "pressures": pressures,
+        "volume": volume,
+        "simPore": simPore,
+        "originalSim": originalSim,
+        "originalPred": originalPred,
+        "delta_volume": delta_volume
+    }
+def generatePerturbationPairs( operation, simPore, volume, delta_volume, source_index=17, target_index=None):
     """
-    Perform pore-volume addition perturbation analysis for one sample.
-    For each GCMC pore-size window, a fixed pore volume increment
-    delta_volume is added to that pore-size window.
-    The function calculates:
-        - modified PSD-weighted simulation uptake
-        - change in simulated uptake
-        - simulated uptake sensitivity
-        - predicted experimental uptake
-        - change in predicted uptake
-        - predicted uptake sensitivity
+    Generate perturbation pairs for addition or transfer.
+    Addition:
+        source_index is ignored.
+        target_index is ignored.
+        -> (None, target) for every pore window
+    Transfer:
+        source_index is fixed.
+        target_index=None
+            -> (source, target) for every other target
+        target_index specified
+            -> one (source, target) pair
+    """
+    nPore = len(simPore)
+    if operation == "addition":
+        return [ (None, target) for target in range(nPore) ]
+    if operation == "transfer":
+        if source_index is None:
+            raise ValueError( "source_index must be specified for " "operation='transfer'." )
+        if not (0 <= source_index < nPore):
+            raise IndexError( f"Invalid source_index={source_index}. " f"Valid range: 0-{nPore - 1}." )
+        if target_index is None:
+            return [ (source_index, target) for target in range(nPore) if target != source_index ]
+        if not (0 <= target_index < nPore):
+            raise IndexError( f"Invalid target_index={target_index}. " f"Valid range: 0-{nPore - 1}." )
+        if source_index == target_index:
+            raise ValueError( f"Invalid transfer pair: " f"{source_index} -> {target_index}. " 
+                             f"Source and target must be different." )
+        return [ (source_index, target_index) ]
+    raise ValueError( f"Unsupported operation='{operation}'. " "Use 'addition' or 'transfer'." )
+def calculatePerturbation( sample, simulationDetails, predictionResults, simData, ModelVolumeAcc, 
+                          flagUsingDensity=False, simData_density=None, modelfit=None, 
+                          validation_type="absolute", source_index=0, target_index=None,
+                          delta_volume=0.0, operation="addition", plotIndex=None, debug=False):
+    """
+    Perform pore-volume perturbation analysis for one sample.
+    Two perturbation modes are supported:
+    1. Addition
+       operation = "addition"
+       For each GCMC pore-size window:
+           V_target' = V_target + delta_volume
+       The total pore volume increases by delta_volume.
+    2. Transfer / redistribution
+       operation = "transfer"
+       For every valid ordered pair of pore-size windows:
+           V_source' = V_source - delta_volume
+           V_target' = V_target + delta_volume
+       The total pore volume is conserved.
     Parameters
     ----------
     sample : str
@@ -2542,13 +2666,26 @@ def calculatePerturbationByAddition(
     validation_type : str, default="absolute"
         Validation model type used for prediction.
     delta_volume : float, default=0.0
-        Pore volume added to each individual GCMC pore-size window.
+        Volume change used for the perturbation.
+        For addition:
+            +delta_volume is added to one pore.
+        For transfer:
+            delta_volume is removed from the source pore
+            and added to the target pore.
+    operation : {"addition", "transfer"}, default="addition"
+        Perturbation type.
     plotIndex : None, int, list, or "all", default=None
         Controls perturbation plotting.
-        None      : no plotting
-        int       : plot one pore index
-        list/array: plot selected pore indices
-        "all"     : plot all pore indices
+        For addition:
+            None       : no plotting
+            int        : plot the specified pore index
+            list/array : plot selected pore indices
+            "all"      : plot all pore indices
+        For transfer:
+            None       : no plotting
+            int        : plot all transfers involving this pore index
+            list/array : plot all transfers involving selected pore indices
+            "all"      : plot all transfers
     debug : bool, default=False
         Print detailed calculation information.
     Returns
@@ -2556,98 +2693,45 @@ def calculatePerturbationByAddition(
     perturbationResults : dict
         Perturbation results for the specified sample.
     """
+    #checke delta_volume = min( delta_volume, volume[source_index] )
+    data = preparePerturbationData( sample=sample, simulationDetails=simulationDetails, 
+            predictionResults=predictionResults, operation=operation, delta_volume=delta_volume, source_index=source_index )
+    pressures = data["pressures"]
+    volume = data["volume"]
+    simPore = data["simPore"]
+    originalSim = data["originalSim"]
+    originalPred = data["originalPred"]
+    delta_volume = data["delta_volume"]
     # ==========================================================
-    # 1. Basic validation
+    # 8. Generate perturbation pairs
     # ==========================================================
-    if delta_volume == 0:
-        raise ValueError(
-            "delta_volume must be non-zero."
-        )
-    if sample not in simulationDetails:
-        raise KeyError(
-            f"Sample '{sample}' not found in simulationDetails."
-        )
-    if sample not in predictionResults:
-        raise KeyError(
-            f"Sample '{sample}' not found in predictionResults."
-        )
-    # ==========================================================
-    # 2. Get original simulation information
-    # ==========================================================
-    details = simulationDetails[sample]
-    pressures = np.asarray(
-        details["pressures"],
-        dtype=float
-    )
-    volume = np.asarray(
-        details["volume"],
-        dtype=float
-    ).copy()
-    simPore = np.asarray(
-        details["simPore"],
-        dtype=float
-    )
-    # ==========================================================
-    # 3. Get original prediction
-    # ==========================================================
-    originalPrediction = predictionResults[sample]
-    originalSim = np.asarray(
-        originalPrediction["simUptake"],
-        dtype=float
-    )
-    originalPred = np.asarray(
-        originalPrediction["predicted"],
-        dtype=float
-    )
-    # ==========================================================
-    # 4. Validate dimensions
-    # ==========================================================
-    if len(volume) != len(simPore):
-        raise ValueError(
-            f"Length mismatch for sample '{sample}': "
-            f"volume={len(volume)}, simPore={len(simPore)}."
-        )
-    if len(originalSim) != len(pressures):
-        raise ValueError(
-            f"Length mismatch for sample '{sample}': "
-            f"simUptake={len(originalSim)}, "
-            f"pressures={len(pressures)}."
-        )
-    if len(originalPred) != len(pressures):
-        raise ValueError(
-            f"Length mismatch for sample '{sample}': "
-            f"predicted={len(originalPred)}, "
-            f"pressures={len(pressures)}."
-        )
-    # ==========================================================
+    perturbationPairs = generatePerturbationPairs( operation=operation, simPore=simPore, volume=volume, 
+            delta_volume=delta_volume, source_index=source_index, target_index=target_index )
     # 5. Process plotIndex
+    plotInfo = processPerturbationPlotIndex( plotIndex=plotIndex, operation=operation, simPore=simPore, 
+                sample=sample, defaultAdditionIndex=perturbationPairs[0][1], defaultTransferPair=perturbationPairs[6] )
+    plotIndex = plotInfo["plotIndex"]
+    plotIndices = plotInfo["plotIndices"]
+    plotPair = plotInfo["plotPair"]
     # ==========================================================
-    plotIndices = None
-    if plotIndex is not None and plotIndex != "all":
-        plotIndices = np.atleast_1d(
-            plotIndex
-        ).astype(int)
-        invalidIndex = plotIndices[
-            (plotIndices < 0) |
-            (plotIndices >= len(simPore))
-        ]
-        if len(invalidIndex) > 0:
-            raise IndexError(
-                f"Invalid plotIndex for sample '{sample}': "
-                f"{invalidIndex.tolist()}. "
-                f"Valid range: 0-{len(simPore) - 1}."
-            )
+    # 6. Store original total volume
+    originalTotalVolume = np.sum(volume)
     # ==========================================================
-    # 6. Initialize result
-    # ==========================================================
+    # 7. Initialize result
     perturbationResults = {
         "sample": sample,
+        # --------------------------
+        # Perturbation information
+        # --------------------------
+        "operation": operation,
+        "delta_volume": delta_volume,
         # --------------------------
         # Original / baseline
         # --------------------------
         "pressure": pressures.copy(),
         "simPore": simPore.copy(),
         "original_volume": volume.copy(),
+        "original_total_volume": originalTotalVolume,
         "original_simUptake": originalSim.copy(),
         "original_predicted": originalPred.copy(),
         # --------------------------
@@ -2656,126 +2740,180 @@ def calculatePerturbationByAddition(
         "pore_results": []
     }
     # ==========================================================
-    # 7. Loop over GCMC pore-size windows
+    # 9. Loop over perturbations
     # ==========================================================
-    for target_index in range(len(simPore)):
+    plotData = {}
+    for source_index, target_index in perturbationPairs:
         target_pore = simPore[target_index]
-        # ------------------------------------------------------
-        # 7.1 Add pore volume
-        # ------------------------------------------------------
-        result = calculateSimByAddition(
-            volume=volume,
-            target_index=target_index,
-            delta_volume=delta_volume,
-            simPore=simPore,
-            simData=simData,
-            ModelVolumeAcc=ModelVolumeAcc,
-            flagUsingDensity=flagUsingDensity,
-            simData_density=simData_density
-        )
-        # ------------------------------------------------------
-        # 7.2 Extract modified simulation
-        # ------------------------------------------------------
-        modified_volume = np.asarray(
-            result["modified_volume"],
-            dtype=float
-        )
-        modifiedSim = np.asarray(
-            result["uptake"]["total"],
-            dtype=float
-        )
-        # ------------------------------------------------------
-        # 7.3 Prepare one-sample prediction input
-        # ------------------------------------------------------
+        if source_index is None:
+            source_pore = None
+        else:
+            source_pore = simPore[source_index]
+        # ======================================================
+        # 9.1 Calculate modified PSD-weighted simulation
+        # ======================================================
+        result = calculateSimByPerturbation( volume=volume, target_index=target_index, 
+                 delta_volume=delta_volume, simPore=simPore, simData=simData, ModelVolumeAcc=ModelVolumeAcc, 
+                 flagUsingDensity=flagUsingDensity, simData_density=simData_density, source_index=source_index )
+        # ======================================================
+        # 9.2 Extract modified simulation
+        # ======================================================
+        modified_volume = np.asarray( result["modified_volume"], dtype=float )
+        modifiedSim = np.asarray( result["uptake"]["total"], dtype=float )
+        # ======================================================
+        # 9.3 Check total volume conservation
+        # ======================================================
+        modifiedTotalVolume = np.sum( modified_volume )
+        if operation == "transfer":
+            volumeConserved = np.isclose( modifiedTotalVolume, originalTotalVolume, rtol=1e-10, atol=1e-12 )
+            if not volumeConserved:
+                raise RuntimeError(
+                    f"Total pore volume was not conserved for "
+                    f"sample '{sample}', "
+                    f"source_index={source_index}, "
+                    f"target_index={target_index}: "
+                    f"original={originalTotalVolume:.12g}, "
+                    f"modified={modifiedTotalVolume:.12g}."
+                )
+        else:
+            volumeConserved = False
+        # ======================================================
+        # 9.4 Prepare one-sample prediction input
+        # ======================================================
         modifiedSampleResults = {
             sample: {
                 "pressure": pressures.copy(),
                 "simUptake": modifiedSim.copy()
             }
         }
-        # ------------------------------------------------------
-        # 7.4 Predict experimental uptake
-        # ------------------------------------------------------
-        modifiedPredictionResults = predictExperimentalFromSimulation(
-            sampleResults=modifiedSampleResults,
-            modelfit=modelfit,
-            validation_type=validation_type
-        )
-        modifiedPrediction = modifiedPredictionResults[sample]
-        modifiedPred = np.asarray(
-            modifiedPrediction["predicted"],
-            dtype=float
-        )
-        # ------------------------------------------------------
-        # 7.5 Calculate changes
-        # ------------------------------------------------------
-        deltaSim = (
-            modifiedSim -
-            originalSim
-        )
-        deltaPred = (
-            modifiedPred -
-            originalPred
-        )
-        # ------------------------------------------------------
-        # 7.6 Calculate sensitivity
-        # ------------------------------------------------------
-        sensitivitySim = (
-            deltaSim /
-            delta_volume
-        )
-        sensitivityPred = (
-            deltaPred /
-            delta_volume
-        )
-        # ------------------------------------------------------
-        # 7.7 Store pore-specific result
-        # ------------------------------------------------------
+        # ======================================================
+        # 9.5 Predict experimental uptake
+        # ======================================================
+        modifiedPredictionResults = ( predictExperimentalFromSimulation( sampleResults=modifiedSampleResults, 
+                                            modelfit=modelfit, validation_type=validation_type ) )
+        modifiedPrediction = ( modifiedPredictionResults[sample] )
+        modifiedPred = np.asarray( modifiedPrediction["predicted"], dtype=float )
+        # ======================================================
+        # 9.6 Calculate changes
+        # ======================================================
+        deltaSim = ( modifiedSim - originalSim )
+        deltaPred = ( modifiedPred - originalPred )
+        if operation == "transfer":
+            label = f"{source_pore:g} → {target_pore:g} nm"
+        elif operation == "addition":
+            label = f"+{target_pore:g} nm"
+        else:
+            label = f"{source_pore:g} → {target_pore:g} nm"
+
+        plotData[label] = pd.DataFrame({
+            "Pressure": pressures,
+            "Delta q": deltaSim
+        })
+        # ======================================================
+        # Print Δq(P)
+        # ======================================================
+        # print(f"\n[Perturbation] source={source_index}, target={target_index}")
+        # print(f"    source pore = {source_pore}")
+        # print(f"    target pore = {target_pore}")
+        # print(f"    delta volume = {delta_volume:+.6g}")
+
+        # print("    Δq_sim(P):")
+        # for P, dq in zip(pressures, deltaSim):
+        #     print(f"        P = {P:10.4g} kPa : Δq = {dq:+.8g}")
+
+        # print("    Δq_pred(P):")
+        # for P, dq in zip(pressures, deltaPred):
+        #     print(f"        P = {P:10.4g} kPa : Δq = {dq:+.8g}")
+        # ======================================================
+        # 9.7 Calculate sensitivity
+        # ======================================================
+        sensitivitySim = ( deltaSim / delta_volume )
+        sensitivityPred = ( deltaPred / delta_volume )
+        # ======================================================
+        # 9.8 Store perturbation result
+        # ======================================================
         poreResult = {
+            # Perturbation information
+            "source_index": source_index,
             "target_index": target_index,
+            "source_pore": source_pore,
             "target_pore": target_pore,
             "delta_volume": delta_volume,
+            # Volume information
+            "original_volume": volume.copy(),
             "modified_volume": modified_volume.copy(),
+            "original_total_volume": originalTotalVolume,
+            "modified_total_volume": modifiedTotalVolume,
+            "volume_change": modifiedTotalVolume - originalTotalVolume,
+            "volume_conserved": volumeConserved,
+            # --------------------------
             # Simulation
+            # --------------------------
             "modified_simUptake": modifiedSim.copy(),
             "delta_simUptake": deltaSim.copy(),
             "sensitivity_sim": sensitivitySim.copy(),
+            # --------------------------
             # Predicted experiment
+            # --------------------------
             "modified_predicted": modifiedPred.copy(),
             "delta_predicted": deltaPred.copy(),
             "sensitivity_pred": sensitivityPred.copy(),
+            # --------------------------
             # Calibration parameters
+            # --------------------------
             "slope": modifiedPrediction["slope"],
             "intercept": modifiedPrediction["intercept"],
-            "operation": "addition"
+            # --------------------------
+            # Operation
+            # --------------------------
+            "operation": operation
         }
-        perturbationResults["pore_results"].append(
-            poreResult
-        )
         # ======================================================
-        # 7.8 Optional plotting
+        # 9.9 Append result
+        # ======================================================
+        perturbationResults[ "pore_results" ].append( poreResult )
+        # ======================================================
+        # 9.10 Optional plotting
         # ======================================================
         flagPlot = False
         if plotIndex == "all":
             flagPlot = True
-        elif plotIndices is not None:
-            flagPlot = (
-                target_index in plotIndices
-            )
+        elif operation == "addition":
+            flagPlot = target_index in plotIndices
+        elif operation == "transfer":
+            flagPlot = ( source_index == plotPair[0] and target_index == plotPair[1] )
         if flagPlot:
-            plotPerturbationAddition( sample=sample, perturbationResults=perturbationResults, poreResult=poreResult )
+            if operation == "addition":
+                plotPerturbation( sample=sample, perturbationResults=perturbationResults, poreResult=poreResult )
+            elif operation == "transfer":
+                plotPerturbation( sample=sample, perturbationResults=perturbationResults, poreResult=poreResult )
         # ======================================================
-        # 7.9 Debug output
+        # 9.11 Debug output
         # ======================================================
         if debug:
-            print(
-                f"[Perturbation] "
-                f"{sample} | "
-                f"index={target_index} | "
-                f"pore={target_pore:.4f} nm | "
-                f"deltaV={delta_volume}"
-            )
+            if operation == "addition":
+                print( f"[Perturbation] " f"{sample} | " f"operation=addition | " f"target={target_index} | " f"pore={target_pore:.4f} nm | " f"deltaV=+{delta_volume}" )
+            else:
+                print(
+                    f"[Perturbation] "
+                    f"{sample} | "
+                    f"operation=transfer | "
+                    f"source={source_index} "
+                    f"({source_pore:.4f} nm) | "
+                    f"target={target_index} "
+                    f"({target_pore:.4f} nm) | "
+                    f"source_dV=-{delta_volume} | "
+                    f"target_dV=+{delta_volume} | "
+                    f"totalV="
+                    f"{modifiedTotalVolume:.8g}"
+                )
+    # 10. Sensitivity heatmap
     plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
+    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", 
+                     ylabel=r"$\Delta q$", reverse_x=False, legend=True, linewidth=1.5, textSize=12 )
+    # ==========================================================
+    # 11. Return
+    # ==========================================================
     return perturbationResults
 def main(file_path=None):
     # ==== 输入参数 ====
@@ -2799,7 +2937,7 @@ def main(file_path=None):
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
-                                         simData_density=simData_density, debug=False, export=False )
+                                         simData_density=simData_density, debug=False, export=True )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp", expandPos=True, type="xlsx")
     # exportAnalysisToExcel(validation,out_path2)
@@ -2813,21 +2951,20 @@ def main(file_path=None):
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")
     sampleResultsCheck, simulationDetailsCheck, _ = \
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
-                                       expData=expDataCheck, simPore=simPore, pressures=pressures, 
-                                       simData=simData, ModelVolumeAcc=ModelVolumeAcc, 
-                                       flagUsingDensity=flagUsingDensity, simData_density=simData_density, 
-                                       debug=False, export=False )
+            expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, 
+            ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
+            simData_density=simData_density, debug=False, export=False )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
-                                                          modelfit=modelfit, validation_type="absolute" )
+                        modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
-                                                       expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
+                         expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
     # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     #############使用新的样品验证模型拟合是否合适###################
     for sample in sampleCheck:
-        perturbationResult = calculatePerturbationByAddition(
+        perturbationResult = calculatePerturbation(
             sample=sample,
             simulationDetails=simulationDetailsCheck,
             predictionResults=predictionResults,
@@ -2837,8 +2974,10 @@ def main(file_path=None):
             simData_density=simData_density,
             modelfit=modelfit,
             validation_type="absolute",
-            delta_volume=0.01,
-            plotIndex=[5], #plotIndex="all", plotIndex=[0, 3, 7, 12]
+            # operation="transfer",
+            source_index=1,
+            delta_volume=0.05,
+            plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
             )
         # break
