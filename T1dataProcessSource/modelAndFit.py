@@ -843,6 +843,33 @@ def exponentialSaturation(x, a_inf, A, k):
     return a_inf - A * np.exp(-k * x)
 exponentialSaturation.model_name = "Exponential Saturation"
 exponentialSaturation.equation = ( "y = a_inf - A * exp(-k * x)" )
+def stretchedExponential(x, a_inf, A, k, beta):
+    """
+    Stretched exponential model.
+    Mathematical form
+    ------------------
+    y = a_inf - A * exp(-(k * x)**beta)
+    Parameters
+    ----------
+    x : array-like
+        Independent variable.
+    a_inf : float
+        Asymptotic value as x approaches infinity.
+    A : float
+        Initial deviation from the asymptotic value.
+    k : float
+        Characteristic rate constant.
+    beta : float
+        Stretching exponent controlling the curvature of the
+        exponential decay.
+    Returns
+    -------
+    y : float or np.ndarray
+        Predicted value.
+    """
+    return a_inf - A * np.exp(-np.power(k * np.asarray(x), beta))
+stretchedExponential.model_name = "Stretched Exponential"
+stretchedExponential.equation = ( "y = a_inf - A * exp(-(k * x)**beta)" )
 def quadratic(x, a, b, c):
     """
     Quadratic model.
@@ -901,6 +928,21 @@ model_library = {
             "a_inf",
             "A",
             "k"
+        ]
+    },
+    "Stretched Exponential": {
+    "fit_method": "nonlinear",
+    "model": stretchedExponential,
+    "p0": [0.1, 0.1, 0.01, 1.0],
+    "bounds": (
+        [-np.inf, -np.inf, 1e-10, 0.05],
+        [np.inf, np.inf, np.inf, 5.0]
+    ),
+    "param_names": [
+        "a_inf",
+        "A",
+        "k",
+        "beta"
         ]
     }
 }

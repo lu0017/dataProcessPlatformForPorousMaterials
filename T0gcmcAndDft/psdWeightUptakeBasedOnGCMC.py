@@ -1265,7 +1265,7 @@ def analyzeNormalizedIsotherm( df, df_uptake_all, plotflag=False):
     if plotflag:
         myPlt.plotSingleCorrelation(
             metrics,
-            xlabel=r"Simulation $q/q_{\max}$",
+            xlabel=r"Simulated $q/q_{\max}$",
             ylabel=r"Experimental $q/q_{\max}$"
         )
     return df_valid, metrics
@@ -2336,7 +2336,7 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
         myPlt.plotCurve(
             data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
             fit={ sample: ( pressures, uptake["total"] ), },
-            fit_label="PSD-weighted",
+            fit_label="simulated",
             marker=True,
             line=True,
             legendPosition="upper left"
@@ -2394,6 +2394,7 @@ def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore,
     simulationDetails = {}
     fitMetrics = {}
     debug_done = False
+    k = 0
     for sample in sampleAll:
         # ======================================================
         # 1. Prepare original PSD
@@ -2444,6 +2445,9 @@ def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore,
         # ======================================================
         # 7. Debug
         # ======================================================
+        k += 1
+        if k % 2 == 0:
+            debug_done = False
         if debug and not debug_done:
             debugPsdWeightedSimulation( sample=sample, simPore=simPore, pressures=pressures, 
                                        uptake=uptake, weight=weight, expData=expData, 
@@ -2918,7 +2922,7 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
 def main(file_path=None):
     # ==== 输入参数 ====
     flagUsingDensity = False
-    pressure_min = 10 #kPa
+    pressure_min = 0.07 #kPa
     ########### 读取数据 ###########
     file_path = select_folder()   # 改成你的文件路径
     HeliumFraction, ModelVolumeAcc = readVolumeAndHeliumVoidFraction(file_path,sheet_name="volume")
@@ -2937,15 +2941,15 @@ def main(file_path=None):
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
-                                         simData_density=simData_density, debug=False, export=True )
+                                         simData_density=simData_density, debug=False, export=False )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
-    out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp", expandPos=True, type="xlsx")
-    # exportAnalysisToExcel(validation,out_path2)
+    out_path2 = fl.get_expanded_name(file_path, fileName="sim2expP3", expandPos=True, type="xlsx")
+    exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
-    modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
+    modelfit = fitValidationParameters(validation,plotflag=True,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
-    # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit")
+    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit")
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")
@@ -2975,8 +2979,8 @@ def main(file_path=None):
             modelfit=modelfit,
             validation_type="absolute",
             # operation="transfer",
-            source_index=1,
-            delta_volume=0.05,
+            source_index=2,
+            delta_volume=0.02,
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
             )

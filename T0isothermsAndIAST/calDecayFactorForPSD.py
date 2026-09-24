@@ -444,24 +444,24 @@ def main(file_path=None):
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
 
-    # ##################### 同时计算两个kernal的数据##############
-    psd_sheet_dft = "PSD-DFT-CO2"
-    psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
-    out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
-    psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
-    metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
-    metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
-    metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
-    xColumns = [
-        "GCMC_Centroid",
-        "GCMC_CompetitionIndex",
-        "GCMC_Skewness",
+    # # ##################### 同时计算两个kernal的数据##############
+    # psd_sheet_dft = "PSD-DFT-CO2"
+    # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
+    # out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
+    # psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
+    # metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
+    # metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
+    # metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
+    # xColumns = [
+    #     "GCMC_Centroid",
+    #     "GCMC_CompetitionIndex",
+    #     "GCMC_Skewness",
 
-        "DFT_Centroid",
-        "DFT_CompetitionIndex",
-        "DFT_Skewness",
-        ]
-    # ##################### 同时计算两个kernal的数据##############
+    #     "DFT_Centroid",
+    #     "DFT_CompetitionIndex",
+    #     "DFT_Skewness",
+    #     ]
+    # # ##################### 同时计算两个kernal的数据##############
 
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
@@ -497,18 +497,18 @@ def main(file_path=None):
     # ##################### 单独计算孔体积用##############
 
 
-    # ##################### 保存数据到excel##############
-    fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
-    fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
-    fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
-    # ##################### 保存数据到excel##############
+    # # ##################### 保存数据到excel##############
+    # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
+    # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
+    # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
+    # # ##################### 保存数据到excel##############
 
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
     # myPlt.plotBar(metrics.index, metrics["CompetitionIndex"], xlabel="Sample",ylabel="CompetitionIndex", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-CompetitionIndex")
     # myPlt.plotBar(metrics.index, metrics["Skewness"], xlabel="Sample",ylabel="Skewness", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-Skewness")
-    # myPlt.plotBar(metrics.index, metrics["Centroid"], xlabel="Sample",ylabel="Centroid", figsize=(4.5, 3.5),gradientFlag=True,showValue=True,valueRotation=90, valueInside=True, valuePosition=0.88, savepath="DFT-Centroid")
+    myPlt.plotBar(metrics.index, metrics["Centroid"], xlabel="Sample",ylabel="Centroid (nm)", figsize=(4.5, 3.5),gradientFlag=True,showValue=True,valueRotation=90, valueInside=True, valuePosition=0.88, savepath="DFT-Centroid260907")
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
