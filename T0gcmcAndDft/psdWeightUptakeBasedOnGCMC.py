@@ -21,10 +21,7 @@ def select_folder():
         raise ValueError("No file selected!")
     print("Selected file:", file_path)
     return file_path
-def debugPredictionResults(
-        predictionResults,
-        expDataCheck,
-        printflag=True):
+def debugPredictionResults( predictionResults, expDataCheck, printflag=True):
     """
     Debug prediction results by combining simulation,
     experimental, fitted parameters, and predicted uptake.
@@ -66,24 +63,15 @@ def debugPredictionResults(
         # --------------------------------------------------
         # Match experimental uptake at pressure
         # --------------------------------------------------
-        exp_interp = np.interp(
-            pressure,
-            pressure_exp,
-            uptake_exp
-        )
+        exp_interp = np.interp( pressure, pressure_exp, uptake_exp )
         df_sample["exp"] = exp_interp
         # Difference between predicted and experimental
-        df_sample["Diff_q"] = (
-            df_sample["q_pred"] - df_sample["exp"]
-        )
+        df_sample["Diff_q"] = ( df_sample["q_pred"] - df_sample["exp"] )
         debug_all.append(df_sample)
     # ======================================================
     # Combine all samples
     # ======================================================
-    df_debug = pd.concat(
-        debug_all,
-        ignore_index=True
-    )
+    df_debug = pd.concat( debug_all, ignore_index=True )
     # Reorder columns
     df_debug = df_debug[
         [
@@ -252,9 +240,7 @@ def filterByMinimumPressure( data, pressure_min=None, pressure_col="Pressure (kP
     # ======================================================
     if isinstance(data, pd.DataFrame):
         if pressure_col not in data.columns:
-            raise KeyError(
-                f"Pressure column '{pressure_col}' not found."
-            )
+            raise KeyError( f"Pressure column '{pressure_col}' not found." )
         return data[ data[pressure_col] >= pressure_min ].copy()
     # ======================================================
     # numpy array / list
@@ -404,16 +390,12 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
         # 6. Plot data
         #    Dense common grid
         # ======================================================
-        for p, exp_q, pred_q in zip(
-                pressure_all,
-                uptake_exp_all,
-                uptake_pred_all):
+        for p, exp_q, pred_q in zip( pressure_all, uptake_exp_all, uptake_pred_all):
             plot_data_all.append({
                 "Sample": sample,
                 "Pressure (kPa)": p,
                 "Experimental": exp_q,
-                "Predicted": pred_q,
-            })
+                "Predicted": pred_q, })
         # ======================================================
         # 7. Original prediction points
         #    Keep explicitly so they can be plotted as markers.
@@ -428,10 +410,8 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
         if modelfit is not None:
             fit_result = modelfit.get(sample, {})
             if isinstance(fit_result, dict):
-                record = {
-                    "Sample": sample,
-                    "Validation type": validation_type,
-                }
+                record = { "Sample": sample,
+                            "Validation type": validation_type, }
                 record.update(fit_result)
                 fit_details_all.append(record)
     # ==========================================================
@@ -518,15 +498,6 @@ def buildBoundary(simPore,bdPore,bdLower,bdUpper):
         "lower": np.array(lower),
         "upper": np.array(upper)
     }
-# def calculateWeight( psdLower, psdUpper, psdVolume, simLower, simUpper):
-#     weight=np.zeros(len(simLower))
-#     for j in range(len(psdVolume)):
-#         width=psdUpper[j]-psdLower[j]
-#         for i in range(len(simLower)):
-#             ov=overlap( psdLower[j], psdUpper[j], simLower[i], simUpper[i] )
-#             if ov > 0:
-#                 weight[i] += ( psdVolume[j] * ov / width )
-#     return weight
 def calculateUptakeByWeight(weight, adsorpUptake):
     contribution = weight[:, None] * adsorpUptake
     totalUptake = np.sum( contribution, axis=0 )   # mol/kg = mmol/g
@@ -641,17 +612,9 @@ def extractUptakeAtAllPressures( sampleResults, expData, pressures):
     else:
         df = pd.DataFrame()
     return df
-def fitParameterBySingleModel(
-        df_parameter,
-        parameter_col,
-        parameter_name,
-        pressure_col="Pressure (kPa)",
-        fit_method="nonlinear",
-        model=None,
-        p0=None,
-        bounds=(-np.inf, np.inf),
-        param_names=None,
-        plotflag=False):
+def fitParameterBySingleModel( df_parameter, parameter_col, parameter_name, pressure_col="Pressure (kPa)", 
+                              fit_method="nonlinear", model=None, p0=None, bounds=(-np.inf, np.inf), param_names=None, 
+                              plotflag=False):
     """
     Fit the pressure dependence of a validation parameter
     using a single specified model.
@@ -694,15 +657,9 @@ def fitParameterBySingleModel(
     # 1. Check required columns
     # ==========================================================
     required_columns = [ pressure_col, parameter_col ]
-    missing_columns = [
-        col for col in required_columns
-        if col not in df_parameter.columns
-    ]
+    missing_columns = [ col for col in required_columns if col not in df_parameter.columns ]
     if missing_columns:
-        raise KeyError(
-            f"Missing columns for {parameter_name}: "
-            f"{missing_columns}"
-        )
+        raise KeyError( f"Missing columns for {parameter_name}: " f"{missing_columns}" )
     # ==========================================================
     # 2. Prepare fitting data
     # ==========================================================
@@ -714,16 +671,21 @@ def fitParameterBySingleModel(
     # ==========================================================
     # 3. Perform fitting
     # ==========================================================
+    x = df_fit[pressure_col].to_numpy(dtype=float)
+    y = df_fit[parameter_col].to_numpy(dtype=float)
+    weights = None
+    weights = 0.01 + 0.99 * x / np.max(x)
     fit_result = dop.correlationAnalysis(
-        x=df_fit[pressure_col],
-        y=df_fit[parameter_col],
+        x=x,
+        y=y,
         x_name=pressure_col,
         y_name=parameter_name,
         fit_method=fit_method,
         fit_func=model,
         p0=p0,
         bounds=bounds,
-        param_names=param_names
+        param_names=param_names,
+        weights=weights
     )
     # ==========================================================
     # 4. Plot
@@ -731,13 +693,8 @@ def fitParameterBySingleModel(
     if plotflag:
         myPlt.plotSingleCorrelation( fit_result, xlabel=pressure_col, ylabel=parameter_name )
     return fit_result
-def fitParameterByMultiModel(
-        df_parameter,
-        parameter_col,
-        parameter_name,
-        pressure_col="Pressure (kPa)",
-        models=None,
-        plotflag=False):
+def fitParameterByMultiModel( df_parameter, parameter_col, parameter_name, pressure_col="Pressure (kPa)", 
+                             models=None, plotflag=False):
     """
     Fit the pressure dependence of a validation parameter
     using one or multiple candidate models.
@@ -793,20 +750,14 @@ def fitParameterByMultiModel(
     required_columns = [ pressure_col, parameter_col ]
     missing_columns = [ col for col in required_columns if col not in df_parameter.columns ]
     if missing_columns:
-        raise KeyError(
-            f"Missing columns for {parameter_name}: "
-            f"{missing_columns}"
-        )
+        raise KeyError( f"Missing columns for {parameter_name}: " f"{missing_columns}" )
     df_fit = df_parameter[ required_columns ].copy()
     df_fit = df_fit.replace( [np.inf, -np.inf], np.nan )
     df_fit = df_fit.dropna( subset=required_columns )
     # Sort by pressure
     df_fit = df_fit.sort_values( by=pressure_col ).reset_index(drop=True)
     if len(df_fit) < 3:
-        print(
-            f"Not enough data points to fit "
-            f"{parameter_name}: N={len(df_fit)}"
-        )
+        print( f"Not enough data points to fit " f"{parameter_name}: N={len(df_fit)}" )
         return None
     # ==========================================================
     # 3. Resolve requested models
@@ -821,11 +772,7 @@ def fitParameterByMultiModel(
         # One fixed model
         # ------------------------------------------------------
         if models not in mf.model_library:
-            raise ValueError(
-                f"Unknown model: {models}. "
-                f"Available models: "
-                f"{list(mf.model_library.keys())}"
-            )
+            raise ValueError( f"Unknown model: {models}. " f"Available models: " f"{list(mf.model_library.keys())}" )
         selected_models = { models: mf.model_library[models] }
     elif isinstance(models, (list, tuple)):
         # ------------------------------------------------------
@@ -834,11 +781,7 @@ def fitParameterByMultiModel(
         selected_models = {}
         for model_name in models:
             if model_name not in mf.model_library:
-                raise ValueError(
-                    f"Unknown model: {model_name}. "
-                    f"Available models: "
-                    f"{list(mf.model_library.keys())}"
-                )
+                raise ValueError( f"Unknown model: {model_name}. " f"Available models: " f"{list(mf.model_library.keys())}" )
             selected_models[model_name] = ( mf.model_library[model_name] )
     elif isinstance(models, dict):
         # ------------------------------------------------------
@@ -846,18 +789,9 @@ def fitParameterByMultiModel(
         # ------------------------------------------------------
         selected_models = models
     else:
-        raise TypeError(
-            "`models` must be one of:\n"
-            "  None\n"
-            "  str\n"
-            "  list / tuple\n"
-            "  dict"
-        )
+        raise TypeError( "`models` must be one of:\n" "  None\n" "  str\n" "  list / tuple\n" "  dict" )
     if not selected_models:
-        raise ValueError(
-            f"No models were specified for "
-            f"{parameter_name}."
-        )
+        raise ValueError( f"No models were specified for " f"{parameter_name}." )
     # ==========================================================
     # 4. Fit all selected models
     # ==========================================================
@@ -878,10 +812,7 @@ def fitParameterByMultiModel(
             ]
             missing_config = [ key for key in required_config if key not in config ]
             if missing_config:
-                raise KeyError(
-                    f"Missing model configuration for "
-                    f"{model_name}: {missing_config}"
-                )
+                raise KeyError( f"Missing model configuration for " f"{model_name}: {missing_config}" )
             # --------------------------------------------------
             # Fit model
             # --------------------------------------------------
@@ -911,10 +842,7 @@ def fitParameterByMultiModel(
             else:
                 param_names = config.get( "param_names" )
                 if param_names is None:
-                    raise ValueError(
-                        f"`param_names` is required for "
-                        f"nonlinear model: {model_name}"
-                    )
+                    raise ValueError( f"`param_names` is required for " f"nonlinear model: {model_name}" )
                 k = len(param_names)
             # --------------------------------------------------
             # Calculate SSE
@@ -922,8 +850,7 @@ def fitParameterByMultiModel(
             rmse = record.get( "RMSE", np.nan )
             sse = record.get( "SSE", np.nan )
             model_selection_metrics = mf.calculateModelSelectionMetrics( sse, n=n, k=k )
-            fit_result.update({ "N": n, 
-                               "N_parameters": k })
+            fit_result.update({ "N": n, "N_parameters": k })
             fit_result.update(model_selection_metrics)
             # --------------------------------------------------
             # Store complete fitting result
@@ -963,10 +890,7 @@ def fitParameterByMultiModel(
     # ==========================================================
     df_comparison = pd.DataFrame( comparison_records )
     if df_comparison.empty:
-        print(
-            f"No valid model was fitted for "
-            f"{parameter_name}."
-        )
+        print( f"No valid model was fitted for " f"{parameter_name}." )
         return None
     # ==========================================================
     # 6. Print model comparison
@@ -1007,10 +931,7 @@ def fitParameterByMultiModel(
     # ==========================================================
     # 10. Determine whether model was fixed
     # ==========================================================
-    model_fixed = (
-        isinstance(models, str)
-        or ( isinstance(models, (list, tuple)) and len(models) == 1 )
-    )
+    model_fixed = ( isinstance(models, str) or ( isinstance(models, (list, tuple)) and len(models) == 1 ) )
     # Add selection information
     df_comparison["Selected"] = False
     df_comparison.loc[ best_idx, "Selected" ] = True
@@ -1036,14 +957,8 @@ def fitParameterByMultiModel(
         "fits": fits,
         "model_fixed": model_fixed
     }
-def fitValidationParameters(
-        validation,
-        validation_types=("absolute", "differential"),
-        pressure_col="Pressure (kPa)",
-        pressure_min=10,
-        slope_models=None,
-        intercept_models=None,
-        plotflag=False):
+def fitValidationParameters( validation, validation_types=("absolute", "differential"), pressure_col="Pressure (kPa)", 
+                            pressure_min=10, slope_models=None, intercept_models=None, plotflag=False):
     """
     Fit pressure dependence of validation Slope and Intercept.
     For each validation type:
@@ -1087,15 +1002,9 @@ def fitValidationParameters(
         # 3. Required columns
         # ======================================================
         required_columns = [ pressure_col, "Fit_slope", "Fit_intercept" ]
-        missing_columns = [
-            col for col in required_columns
-            if col not in df_metrics.columns
-        ]
+        missing_columns = [ col for col in required_columns if col not in df_metrics.columns ]
         if missing_columns:
-            raise KeyError(
-                f"Missing columns for {validation_type}: "
-                f"{missing_columns}"
-            )
+            raise KeyError( f"Missing columns for {validation_type}: " f"{missing_columns}" )
         # ======================================================
         # 4. Prepare parameter data
         # ======================================================
@@ -1112,25 +1021,13 @@ def fitValidationParameters(
         # ======================================================
         # 6. Fit Slope using multiple models
         # ======================================================
-        slope_result = fitParameterByMultiModel(
-            df_parameter=df_parameter,
-            parameter_col="Fit_slope",
-            parameter_name="Slope",
-            pressure_col=pressure_col,
-            models=slope_models,
-            plotflag=plotflag
-        )
+        slope_result = fitParameterByMultiModel( df_parameter=df_parameter, parameter_col="Fit_slope", 
+                parameter_name="Slope", pressure_col=pressure_col, models=slope_models, plotflag=plotflag )
         # ======================================================
         # 7. Fit Intercept using multiple models
         # ======================================================
-        intercept_result = fitParameterByMultiModel(
-            df_parameter=df_parameter,
-            parameter_col="Fit_intercept",
-            parameter_name="Intercept",
-            pressure_col=pressure_col,
-            models=intercept_models,
-            plotflag=plotflag
-        )
+        intercept_result = fitParameterByMultiModel( df_parameter=df_parameter, parameter_col="Fit_intercept", 
+                parameter_name="Intercept", pressure_col=pressure_col, models=intercept_models, plotflag=plotflag )
         if slope_result is None:
             continue
         if intercept_result is None:
@@ -1153,18 +1050,12 @@ def fitValidationParameters(
         parameter_fits[validation_type] = {
             "data": df_parameter,
             "metrics": df_fit_metrics,
-            "fits": {
-                "Slope": slope_result["best_fit"],
-                "Intercept": intercept_result["best_fit"]
-            },
-            "model_comparison": {
-                "Slope": slope_result["model_comparison"],
-                "Intercept": intercept_result["model_comparison"]
-            },
-            "all_fits": {
-                "Slope": slope_result["fits"],
-                "Intercept": intercept_result["fits"]
-            }
+            "fits": {"Slope": slope_result["best_fit"],
+                     "Intercept": intercept_result["best_fit"] },
+            "model_comparison": { "Slope": slope_result["model_comparison"],
+                                  "Intercept": intercept_result["model_comparison"] },
+            "all_fits": { "Slope": slope_result["fits"],
+                            "Intercept": intercept_result["fits"] }
         }
     return parameter_fits
 def analyzeNormalizedIsotherm( df, df_uptake_all, plotflag=False):
@@ -1209,15 +1100,7 @@ def analyzeNormalizedIsotherm( df, df_uptake_all, plotflag=False):
     # q_exp,max,i = max_P q_exp,i(P)
     # q_sim,max,i = max_P q_sim,i(P)
     # ==========================================================
-    qmax = (
-        df_uptake_all
-        .groupby("Sample")
-        .agg(
-            q_exp_max=("q_exp", "max"),
-            q_sim_max=("q_sim", "max")
-        )
-        .reset_index()
-    )
+    qmax = ( df_uptake_all .groupby("Sample").agg( q_exp_max=("q_exp", "max"), q_sim_max=("q_sim", "max") ).reset_index() )
     # ==========================================================
     # 2. Merge sample-specific qmax into current-pressure data
     # ==========================================================
@@ -1239,11 +1122,7 @@ def analyzeNormalizedIsotherm( df, df_uptake_all, plotflag=False):
     # ==========================================================
     min_samples = 3
     if len(df_valid) < min_samples:
-        print(
-            "Skip normalized analysis: "
-            f"only {len(df_valid)} valid samples "
-            f"(< {min_samples})."
-        )
+        print( "Skip normalized analysis: " f"only {len(df_valid)} valid samples " f"(< {min_samples})." )
         return df_valid, None
     n_unique_exp = df_valid["q_exp_norm"].nunique()
     n_unique_sim = df_valid["q_sim_norm"].nunique()
@@ -1253,21 +1132,13 @@ def analyzeNormalizedIsotherm( df, df_uptake_all, plotflag=False):
     # ==========================================================
     # 7. Correlation
     # ==========================================================
-    metrics = dop.correlationAnalysis(
-        x=df_valid["q_sim_norm"],
-        y=df_valid["q_exp_norm"],
-        x_name="Simulation q/qmax",
-        y_name="Experimental q/qmax",
-    )
+    metrics = dop.correlationAnalysis( x=df_valid["q_sim_norm"], y=df_valid["q_exp_norm"], 
+                                      x_name="Simulation q/qmax", y_name="Experimental q/qmax", )
     # ==========================================================
     # 8. Plot
     # ==========================================================
     if plotflag:
-        myPlt.plotSingleCorrelation(
-            metrics,
-            xlabel=r"Simulated $q/q_{\max}$",
-            ylabel=r"Experimental $q/q_{\max}$"
-        )
+        myPlt.plotSingleCorrelation( metrics, xlabel=r"Simulated $q/q_{\max}$", ylabel=r"Experimental $q/q_{\max}$" )
     return df_valid, metrics
 def analyzeUptakeResponse( df, pressure_kPa, pair_mode="all", plotflag=False):
     """
@@ -1352,12 +1223,7 @@ def analyzeUptakeResponse( df, pressure_kPa, pair_mode="all", plotflag=False):
     # ==========================================================
     min_pairs = 3
     if len(df_delta) < min_pairs:
-        print(
-            f"Skip differential analysis at "
-            f"{pressure_kPa:.2f} kPa: "
-            f"only {len(df_delta)} valid pairs "
-            f"(< {min_pairs})."
-        )
+        print( f"Skip differential analysis at "f"{pressure_kPa:.2f}kPa:" f"only {len(df_delta)} valid pairs " f"(< {min_pairs})." )
         return df_delta, None
     # ==========================================================
     # Correlation
@@ -1419,20 +1285,9 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False):
     # ==========================================================
     # 2. Prepare result containers
     # ==========================================================
-    results = {
-        "absolute": {
-            "data": [],
-            "metrics": []
-        },
-        "normalized": {
-            "data": [],
-            "metrics": []
-        },
-        "differential": {
-            "data": [],
-            "metrics": []
-        }
-    }
+    results = { "absolute": { "data": [], "metrics": [] },
+                "normalized": { "data": [], "metrics": [] },
+                "differential": { "data": [], "metrics": [] } }
     # ==========================================================
     # 3. Analyze each pressure
     # ==========================================================
@@ -1441,35 +1296,30 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False):
         # 3.1 Absolute uptake
         # q_exp(P) vs q_sim(P)
         # ======================================================
-        ( df_absolute, absolute_metrics ) = analyzeUptakeAtPressure( df=df_uptake, plotflag=plotflag )
+        df_absolute, absolute_metrics = analyzeUptakeAtPressure( df=df_uptake, plotflag=plotflag )
         if not df_absolute.empty:
             results["absolute"]["data"].append( df_absolute )
         if absolute_metrics is not None:
-            results["absolute"]["metrics"].append(
-                mf.fittingResultToRecord( absolute_metrics, extra={ "Pressure (kPa)": pressure } )
-            )
+            results["absolute"]["metrics"].append(mf.fittingResultToRecord( absolute_metrics, extra={"Pressure (kPa)": pressure}))
         # ======================================================
         # 3.2 Normalized uptake
         # q_exp(P) / q_exp,max
         # vs
         # q_sim(P) / q_sim,max
         # ======================================================
-        ( df_normalized, normalized_metrics ) = analyzeNormalizedIsotherm( df=df_uptake, 
-                                                                          df_uptake_all=df_uptake_all, plotflag=plotflag )
+        df_normalized, normalized_metrics = analyzeNormalizedIsotherm( df=df_uptake, 
+                                               df_uptake_all=df_uptake_all, plotflag=plotflag )
         if not df_normalized.empty:
             results["normalized"]["data"].append( df_normalized )
         if normalized_metrics is not None:
-            results["normalized"]["metrics"].append(
-                mf.fittingResultToRecord( normalized_metrics, extra={ "Pressure (kPa)": pressure } )
-            )
+            results["normalized"]["metrics"].append(mf.fittingResultToRecord(normalized_metrics, extra={"Pressure (kPa)": pressure}))
         # ======================================================
         # 3.3 Differential uptake
         # Δq_exp(P) vs Δq_sim(P)
         # ======================================================
         if len(df_uptake) >= 2:
             ( df_differential, differential_metrics ) = analyzeUptakeResponse( df=df_uptake, 
-                                                                              pressure_kPa=pressure, pair_mode="all", 
-                                                                              plotflag=plotflag )
+                                                        pressure_kPa=pressure, pair_mode="all", plotflag=plotflag )
             if not df_differential.empty:
                 results["differential"]["data"].append( df_differential )
             if differential_metrics is not None:
@@ -1684,9 +1534,7 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
         df_plot = predictionAnalysis["data_pred"]
         line = False
     else:
-        raise ValueError(
-            "pressure_type must be either 'merge' or 'sim'."
-        )
+        raise ValueError( "pressure_type must be either 'merge' or 'sim'." )
     if sample is None:
         samples = df_plot["Sample"].unique()
     else:
@@ -1702,8 +1550,7 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
             fit_label=fit_label,
             marker=True,
             line=line,
-            legendPosition=legendPosition
-        )
+            legendPosition=legendPosition )
     plt.show(block=False)
 def processPerturbationPlotIndex( plotIndex, operation, simPore, sample, defaultAdditionIndex=18, defaultTransferPair=(0, 18)):
     if operation not in ["addition", "transfer"]:
@@ -1924,7 +1771,6 @@ def plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred"):
         title = "Predicted Experimental Sensitivity"
     else:
         raise ValueError( "sensitivity_type must be 'sim' or 'pred'." )
-
     pressures = np.asarray( perturbationResults["pressure"], dtype=float )
     poreResults = perturbationResults["pore_results"]
     simPore = np.array([ result["target_pore"] for result in poreResults ])
@@ -2013,10 +1859,8 @@ def exportParameterFittingToExcel( analysis, filename, prefix=None):
             for model_name, fit_result in model_fits.items():
                 if not isinstance(fit_result, dict):
                     continue
-                record = {
-                    "Parameter": parameter_name,
-                    "Model": model_name
-                }
+                record = { "Parameter": parameter_name,
+                            "Model": model_name }
                 # --------------------------------------------------
                 # Add fitting results
                 # --------------------------------------------------
@@ -2785,11 +2629,8 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
         # 9.4 Prepare one-sample prediction input
         # ======================================================
         modifiedSampleResults = {
-            sample: {
-                "pressure": pressures.copy(),
-                "simUptake": modifiedSim.copy()
-            }
-        }
+            sample: { "pressure": pressures.copy(),
+                      "simUptake": modifiedSim.copy() } }
         # ======================================================
         # 9.5 Predict experimental uptake
         # ======================================================
@@ -2808,11 +2649,9 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
             label = f"+{target_pore:g} nm"
         else:
             label = f"{source_pore:g} → {target_pore:g} nm"
-
         plotData[label] = pd.DataFrame({
             "Pressure": pressures,
-            "Delta q": deltaSim
-        })
+            "Delta q": deltaSim })
         # ======================================================
         # Print Δq(P)
         # ======================================================
@@ -2820,11 +2659,9 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
         # print(f"    source pore = {source_pore}")
         # print(f"    target pore = {target_pore}")
         # print(f"    delta volume = {delta_volume:+.6g}")
-
         # print("    Δq_sim(P):")
         # for P, dq in zip(pressures, deltaSim):
         #     print(f"        P = {P:10.4g} kPa : Δq = {dq:+.8g}")
-
         # print("    Δq_pred(P):")
         # for P, dq in zip(pressures, deltaPred):
         #     print(f"        P = {P:10.4g} kPa : Δq = {dq:+.8g}")
@@ -2922,7 +2759,7 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
 def main(file_path=None):
     # ==== 输入参数 ====
     flagUsingDensity = False
-    pressure_min = 0.07 #kPa
+    pressure_min = 0.03 #kPa
     ########### 读取数据 ###########
     file_path = select_folder()   # 改成你的文件路径
     HeliumFraction, ModelVolumeAcc = readVolumeAndHeliumVoidFraction(file_path,sheet_name="volume")
@@ -2949,7 +2786,7 @@ def main(file_path=None):
     modelfixed = None
     modelfit = fitValidationParameters(validation,plotflag=True,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
-    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit")
+    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")

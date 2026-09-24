@@ -234,23 +234,11 @@ def computeGlobalFitMetrics( exp_y, fit_y):
         fit_y : array-like
             与 exp_y 一一对应的拟合数据
     """
-    exp_y = np.asarray(
-        exp_y,
-        dtype=float
-    )
-    fit_y = np.asarray(
-        fit_y,
-        dtype=float
-    )
+    exp_y = np.asarray( exp_y, dtype=float )
+    fit_y = np.asarray( fit_y, dtype=float )
     if exp_y.shape != fit_y.shape:
-        raise ValueError(
-            "exp_y and fit_y must "
-            "have the same shape."
-        )
-    return calculateFitMetrics(
-        y_true=exp_y,
-        y_pred=fit_y
-    )
+        raise ValueError( "exp_y and fit_y must have the same shape." )
+    return calculateFitMetrics( y_true=exp_y, y_pred=fit_y )
 def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
     """
     Build interpolation function.
@@ -265,28 +253,12 @@ def buildInterpolationFunction( x, y, method="pchip", extrapolate=False):
     if method.lower() == "pchip":
         return PchipInterpolator(x, y, extrapolate=extrapolate)
     elif method.lower() == "linear":
-        return interp1d(
-            x,
-            y,
-            kind="linear",
-            bounds_error=False,
-            fill_value=np.nan
-        )
+        return interp1d( x, y, kind="linear", bounds_error=False, fill_value=np.nan )
     elif method.lower() == "cubic":
-        return CubicSpline(
-            x,
-            y,
-            extrapolate=extrapolate
-        )
+        return CubicSpline( x, y, extrapolate=extrapolate )
     else:
         raise ValueError(f"Unknown interpolation method: {method}")
-def interpolateData(
-        x,
-        y,
-        x_interp=None,
-        n_points=50,
-        method="pchip",
-        extrapolate=False):
+def interpolateData( x, y, x_interp=None, n_points=50, method="pchip", extrapolate=False):
     """
     Interpolate one dataset.
     Parameters
@@ -311,25 +283,11 @@ def interpolateData(
         Interpolation function.
     """
     if x_interp is None:
-        x_interp = np.linspace(
-            np.min(x),
-            np.max(x),
-            n_points
-        )
-    interp_func = buildInterpolationFunction(
-        x,
-        y,
-        method=method,
-        extrapolate=extrapolate
-    )
+        x_interp = np.linspace( np.min(x), np.max(x), n_points )
+    interp_func = buildInterpolationFunction( x, y, method=method, extrapolate=extrapolate )
     y_interp = interp_func(x_interp)
     return x_interp, y_interp, interp_func
-def multiDataInterpolation(
-        x_data,
-        y_data,
-        x_common=None,
-        n_points=50,
-        method="pchip"):
+def multiDataInterpolation( x_data, y_data, x_common=None, n_points=50, method="pchip"):
     """
     Interpolate multiple datasets onto a common x grid.
     Parameters
@@ -355,31 +313,16 @@ def multiDataInterpolation(
     if x_data.keys() != y_data.keys():
         raise ValueError("x_data and y_data must have identical keys.")
     if x_common is None:
-        x_common = dop.generateCommonX(
-            x_data,
-            n_points=n_points
-        )
-    result = {
-        "x_common": x_common
-    }
+        x_common = dop.generateCommonX( x_data, n_points=n_points )
+    result = { "x_common": x_common }
     interp_funcs = {}
     for key in x_data:
-        _, y_interp, interp_func = interpolateData(
-            x=x_data[key],
-            y=y_data[key],
-            x_interp=x_common,
-            method=method
-        )
+        _, y_interp, interp_func = interpolateData( x=x_data[key], y=y_data[key], x_interp=x_common, method=method )
         result[key] = y_interp
         interp_funcs[key] = interp_func
     df_interp = pd.DataFrame(result)
     return df_interp, interp_funcs
-def fitLinear(
-        x,
-        y,
-        x_name="x",
-        y_name="y",
-        dropna=True):
+def fitLinear( x, y, x_name="x", y_name="y", dropna=True):
     """
     Perform simple linear regression.
     Model
@@ -389,35 +332,21 @@ def fitLinear(
     # ======================================================
     # 1. Convert to numpy arrays
     # ======================================================
-    x = np.asarray(
-        x,
-        dtype=float
-    )
-    y = np.asarray(
-        y,
-        dtype=float
-    )
+    x = np.asarray( x, dtype=float )
+    y = np.asarray( y, dtype=float )
     # ======================================================
     # 2. Remove invalid values
     # ======================================================
     if dropna:
-        mask = (
-            np.isfinite(x) &
-            np.isfinite(y)
-        )
+        mask = ( np.isfinite(x) & np.isfinite(y) )
         x = x[mask]
         y = y[mask]
     if len(x) < 2:
-        raise ValueError(
-            "Not enough valid data."
-        )
+        raise ValueError( "Not enough valid data." )
     # ======================================================
     # 3. Linear regression
     # ======================================================
-    reg = linregress(
-        x,
-        y
-    )
+    reg = linregress( x, y )
     # ======================================================
     # 4. Parameters
     # ======================================================
@@ -427,27 +356,16 @@ def fitLinear(
     }
     parameter_stderr = {
         "slope": reg.stderr,
-        "intercept": getattr(
-            reg,
-            "intercept_stderr",
-            np.nan
-        )
+        "intercept": getattr( reg, "intercept_stderr", np.nan )
     }
     # ======================================================
     # 5. Fitted values
     # ======================================================
-    y_fit = linearModel(
-        x,
-        slope=reg.slope,
-        intercept=reg.intercept
-    )
+    y_fit = linearModel( x, slope=reg.slope, intercept=reg.intercept )
     # ======================================================
     # 6. Common fit metrics
     # ======================================================
-    fit_metrics = calculateFitMetrics(
-        y_true=y,
-        y_pred=y_fit
-    )
+    fit_metrics = calculateFitMetrics( y_true=y, y_pred=y_fit )
     # ======================================================
     # 7. Return
     # ======================================================
@@ -467,10 +385,8 @@ def fitLinear(
         # ==================================================
         # Parameters
         # ==================================================
-        "ParameterNames": [
-            "slope",
-            "intercept"
-        ],
+        "ParameterNames": [ "slope",
+            "intercept" ],
         "Parameters": parameters,
         "ParameterStdErr": parameter_stderr,
         "ParameterCovariance": None,
@@ -479,19 +395,10 @@ def fitLinear(
         # ==================================================
         **fit_metrics,
     }
-def fitNonlinear(
-        x,
-        y,
-        func,
-        p0=None,
-        bounds=(-np.inf, np.inf),
-        param_names=None,
-        x_name="x",
-        y_name="y",
-        dropna=True,
-        maxfev=10000):
+def fitNonlinear( x, y, func, p0=None, bounds=(-np.inf, np.inf), param_names=None, x_name="x", 
+                 y_name="y", dropna=True, maxfev=10000, weights=None):
     """
-    Perform nonlinear curve fitting.
+    Perform nonlinear curve fitting, optionally using weighted least squares.
     Parameters
     ----------
     x, y : array-like
@@ -510,38 +417,54 @@ def fitNonlinear(
         Remove NaN and Inf values.
     maxfev : int
         Maximum number of function evaluations.
+    weights : array-like or None
+        Optional positive weights for weighted least squares.
+        The objective function is sum(weights * residual**2).
+        If None, ordinary nonlinear least squares is performed.
     """
     # ======================================================
     # 1. Convert to numpy arrays
     # ======================================================
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
+    if len(x) != len(y):
+        raise ValueError("x and y must have the same length.")
     # ======================================================
-    # 2. Remove invalid values
+    # 2. Process weights
+    # ======================================================
+    if weights is not None:
+        weights = np.asarray(weights, dtype=float).ravel()
+        if len(weights) != len(x):
+            raise ValueError("weights must have the same length as x and y.")
+    # ======================================================
+    # 3. Remove invalid values
     # ======================================================
     if dropna:
-        mask = ( np.isfinite(x) & np.isfinite(y) )
+        mask = np.isfinite(x) & np.isfinite(y)
+        if weights is not None:
+            mask &= np.isfinite(weights) & (weights > 0)
         x = x[mask]
         y = y[mask]
+        if weights is not None:
+            weights = weights[mask]
+    # ======================================================
+    # 4. Validate data
+    # ======================================================
     if len(x) < 2:
-        raise ValueError( "Not enough valid data." )
+        raise ValueError("Not enough valid data.")
+    if weights is not None:
+        if not np.all(np.isfinite(weights) & (weights > 0)):
+            raise ValueError("All weights must be finite and positive.")
     # ======================================================
-    # 3. Debug information
+    # 5. Nonlinear fitting
     # ======================================================
-    # print("\n" + "=" * 70)
-    # print("Nonlinear fitting")
-    # print("=" * 70)
-    # print(f"N       : {len(x)}")
-    # print(f"x range : {x.min()} ~ {x.max()}")
-    # print(f"y range : {y.min()} ~ {y.max()}")
-    # print(f"p0      : {p0}")
-    # print(f"bounds  : {bounds}")
+    if weights is not None:
+        sigma = 1.0 / np.sqrt(weights)
+    else:
+        sigma = None
+    popt, pcov = curve_fit( func, x, y, p0=p0, bounds=bounds, sigma=sigma, absolute_sigma=False, maxfev=maxfev )
     # ======================================================
-    # 4. Nonlinear fitting
-    # ======================================================
-    popt, pcov = curve_fit( func, x, y, p0=p0, bounds=bounds, maxfev=maxfev )
-    # ======================================================
-    # 5. Parameter names
+    # 6. Parameter names
     # ======================================================
     n_parameters = len(popt)
     if param_names is None:
@@ -549,27 +472,35 @@ def fitNonlinear(
     if len(param_names) != n_parameters:
         raise ValueError( "Length of param_names must match the number of fitted parameters." )
     # ======================================================
-    # 6. Parameters
+    # 7. Parameters
     # ======================================================
-    parameters = dict( zip(param_names, popt) )
+    parameters = dict(zip(param_names, popt))
     # ======================================================
-    # 7. Parameter uncertainty
+    # 8. Parameter uncertainty
     # ======================================================
     if pcov is not None:
-        parameter_stderr = np.sqrt( np.diag(pcov) )
+        parameter_stderr = np.sqrt(np.diag(pcov))
     else:
-        parameter_stderr = np.full( n_parameters, np.nan )
-    parameter_stderr_dict = dict( zip( param_names, parameter_stderr ) )
+        parameter_stderr = np.full(n_parameters, np.nan)
+    parameter_stderr_dict = dict( zip(param_names, parameter_stderr) )
     # ======================================================
-    # 8. Fitted values
+    # 9. Fitted values
     # ======================================================
-    y_fit = func( x, *popt )
+    y_fit = func(x, *popt)
+    residual = y - y_fit
     # ======================================================
-    # 9. Common fit metrics
+    # 10. Common fit metrics (unweighted)
     # ======================================================
     fit_metrics = calculateFitMetrics( y_true=y, y_pred=y_fit )
     # ======================================================
-    # 10. Return
+    # 11. Weighted SSE
+    # ======================================================
+    if weights is not None:
+        weighted_sse = np.sum(weights * residual**2)
+    else:
+        weighted_sse = None
+    # ======================================================
+    # 12. Return
     # ======================================================
     return {
         "x_name": x_name,
@@ -578,24 +509,18 @@ def fitNonlinear(
         "X": x,
         "Y": y,
         "Y_fit": y_fit,
-        # ==================================================
         # Model
-        # ==================================================
         "FitFunc": func,
-        # Backward compatibility
         "FitFunction": func,
-        # ==================================================
         # Parameters
-        # ==================================================
         "ParameterNames": param_names,
         "Parameters": parameters,
-        "ParameterStdErr":
-            parameter_stderr_dict,
-        "ParameterCovariance":
-            pcov,
-        # ==================================================
-        # Fit metrics
-        # ==================================================
+        "ParameterStdErr": parameter_stderr_dict,
+        "ParameterCovariance": pcov,
+        # Weighting
+        "FitWeights": weights,
+        "WeightedSSE": weighted_sse,
+        # Fit metrics (unweighted)
         **fit_metrics,
     }
 def fittingResultToRecord00( result, parameter_name):
@@ -742,12 +667,7 @@ def fittingResultToRecord( result, parameter_name=None, extra=None, n_name="N"):
     for name, value in parameter_stderr.items():
         record[ f"Fit_{name}_StdErr" ] = value
     return record
-def calculateCorrelation(
-        x,
-        y,
-        x_name="x",
-        y_name="y",
-        dropna=True):
+def calculateCorrelation( x, y, x_name="x", y_name="y", dropna=True):
     """
     Calculate Pearson and Spearman correlations.
     Parameters

@@ -1298,7 +1298,8 @@ def correlationAnalysis(
         fit_func=None,
         p0=None,
         bounds=(-np.inf, np.inf),
-        param_names=None):
+        param_names=None,
+        weights=None):
     # ======================================================
     # Correlation
     # ======================================================
@@ -1335,7 +1336,8 @@ def correlationAnalysis(
             param_names=param_names,
             x_name=x_name,
             y_name=y_name,
-            dropna=dropna
+            dropna=dropna,
+            weights=weights
         )
     elif fit_method is None:
         fitting = {}
