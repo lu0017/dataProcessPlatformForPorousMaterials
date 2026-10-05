@@ -508,25 +508,25 @@ def main(file_path=None):
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
     # myPlt.plotBar(metrics.index, metrics["CompetitionIndex"], xlabel="Sample",ylabel="CompetitionIndex", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-CompetitionIndex")
     # myPlt.plotBar(metrics.index, metrics["Skewness"], xlabel="Sample",ylabel="Skewness", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-Skewness")
-    myPlt.plotBar(metrics.index, metrics["Centroid"], xlabel="Sample",ylabel="Centroid (nm)", figsize=(4.5, 3.5),gradientFlag=True,showValue=True,valueRotation=90, valueInside=True, valuePosition=0.88, savepath="DFT-Centroid260907")
+    # myPlt.plotBar(metrics.index, metrics["Centroid"], xlabel="Sample",ylabel="Centroid (nm)", figsize=(4.5, 3.5),gradientFlag=True,showValue=True,valueRotation=90, valueInside=True, valuePosition=0.88, savepath="DFT-Centroid260907")
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    # myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-    #                             # savepath="E-sele_henry"
-    #                             )
-    # # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["sel_henry"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele_henry")
-    # myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-    #                             # savepath="DFT-E-CI"
-    #                             )
-    # myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
-    #                             # savepath="DFT-E-Centroid"
-    #                             )
-    # myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-    #                             # savepath="DFT-E-Skewness"
-    #                             )
-    # myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
-    # myPlt.plotBatchCorrelation(results, topN=9)
+    myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="E-sele_henry"
+                                )
+    # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["sel_henry"], xlabel="bA", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="bA-sele_henry")
+    myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-CI"
+                                )
+    myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-Centroid"
+                                )
+    myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-Skewness"
+                                )
+    myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
+    myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 输出图片部分##############
     exclude = [
         "Variance",
@@ -563,12 +563,12 @@ def main(file_path=None):
     ]
     order = include
     figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=True, type="png")
-    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-                        #   savePath = figureName
-                          )
-    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
-    #                         #   savePath = figureName
-    #                           )
+    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
+    #                     #   savePath = figureName
+    #                       )
+    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
+                            #   savePath = figureName
+                              )
     plt.show(block=True)
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

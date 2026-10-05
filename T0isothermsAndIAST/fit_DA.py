@@ -384,11 +384,11 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None):
 # ==========================================
 def main(file_path=None):
 
-    singleFile = False
+    singleFile = True
 
     if singleFile:
         # # 选择文件
-        sheet_name = "CC-Hy-550_60_5-650_15_5-1"
+        sheet_name = "CC-20M10-Bi-700-2-1"
         file = fl.getFile()
         listData, out_path, _ = fl.readFileBySheet(file, sheet_name)
         runDAsimu(listData, out_path, plotFlag=True, sheet_name = sheet_name)

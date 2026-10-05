@@ -944,8 +944,8 @@ def fitParameterByMultiModel( df_parameter, parameter_col, parameter_name, press
     # 11. Plot best model
     # ==========================================================
     if plotflag:
-        myPlt.plotSingleCorrelation( best_fit, xlabel=pressure_col, ylabel=parameter_name, 
-                                    # pos="bottom",xscale="log"
+        myPlt.plotSingleCorrelation( best_fit, xlabel=pressure_col, ylabel=parameter_name, text_position=(0.5, 0.95)
+                                    # pos="bottom"
                                     )
     # ==========================================================
     # 12. Return
@@ -1502,6 +1502,85 @@ def plotReconstructedIsotherm(pressures,totalUptake):
     plt.title("Reconstructed Isotherm")
     plt.tight_layout()
     plt.show(block=False)
+def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type="merge", fit_label="pred", legendPosition="upper left"):
+
+    """
+    Plot prediction analysis results for specified samples
+    on the same figure.
+
+    Parameters
+    ----------
+    predictionAnalysis : dict
+        Output from preparePredictionAnalysisData().
+
+    samples : list or tuple
+        Samples to plot together.
+
+    pressure_type : {"merge", "sim"}
+        Pressure grid used for plotting.
+        "merge":
+            Use the common pressure grid from data_all.
+        "sim":
+            Use the original GCMC simulation pressure grid
+            from data_pred.
+
+    fit_label : str
+        Label for prediction curves.
+
+    legendPosition : str
+        Position of the legend.
+    """
+
+    # ======================================================
+    # 1. Select pressure data
+    # ======================================================
+
+    if pressure_type == "merge":
+        df_plot = predictionAnalysis["data_all"]
+        line = True
+    elif pressure_type == "sim":
+        df_plot = predictionAnalysis["data_pred"]
+        line = False
+    else:
+        raise ValueError( "pressure_type must be either 'merge' or 'sim'." )
+
+    # ======================================================
+    # 2. Check samples
+    # ======================================================
+
+    if isinstance(samples, str):
+        samples = [samples]
+
+    available_samples = df_plot["Sample"].unique()
+
+    for sample_name in samples:
+        if sample_name not in available_samples:
+            raise ValueError( f"Sample '{sample_name}' not found in the data." )
+
+    # ======================================================
+    # 3. Prepare data for all selected samples
+    # ======================================================
+
+    data = {}
+    fit = {}
+
+    for sample_name in samples:
+
+        df_sample = df_plot[ df_plot["Sample"] == sample_name ]
+
+        data[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
+                                df_sample["Experimental"].to_numpy() )
+
+        fit[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
+                                df_sample["Predicted"].to_numpy() )
+
+    # ======================================================
+    # 4. Plot all samples in one figure
+    # ======================================================
+
+    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition )
+
+    plt.show(block=False)
 def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, 
                            pressure_type="merge", fit_label="exp=f(sim)", legendPosition="upper left"):
     """
@@ -2015,7 +2094,7 @@ def exportPsdWeightSampleDetail( sample, simulationDetails, expData, fitMetrics,
         "Contribution (%)": contributionPercent[:, -1] * 100,
         "Cumulative (%)": cumulative[:, -1] * 100,
     })
-    fl.export_to_excel_auto( df_contribution, filename=out_path, sheet_name="Contribution", )
+    fl.export_to_excel_auto( df_contribution, filename=out_path, sheet_name="ContributionH", )
     # ======================================================
     # 3. Isotherm
     # ======================================================
@@ -2032,7 +2111,7 @@ def exportPsdWeightSampleDetail( sample, simulationDetails, expData, fitMetrics,
     heatmap = pd.DataFrame( contribution, index=simPore, 
                            columns=detail["pressures"])
     heatmap.index.name = "Pore Size"
-    fl.export_to_excel_auto( heatmap, filename=out_path, sheet_name="Heatmap", index=True, )
+    fl.export_to_excel_auto( heatmap, filename=out_path, sheet_name="ContributionP-H", index=True, )
     # ======================================================
     # 5. Fit metrics
     # ======================================================
@@ -2073,7 +2152,8 @@ def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_pa
         # data_pred
         for col in current_pred.columns:
             if col != "Sample":
-                analysis_data[f"Pred {col}"] = pd.Series( current_pred[col].values )
+                # analysis_data[f"Pred {col}"] = pd.Series( current_pred[col].values )
+                analysis_data[f"{col}"] = pd.Series( current_pred[col].values )
         # data_all
         for col in current_all.columns:
             if col != "Sample":
@@ -2302,8 +2382,7 @@ def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore,
         # ======================================================
         if export:
             exportPsdWeightedSimulationResult( file_path=file_path, sample=sample, 
-                                              simulationDetails=simulationDetails, expData=expData, 
-                                              fitMetrics=fitMetrics )
+                        simulationDetails=simulationDetails, expData=expData, fitMetrics=fitMetrics )
     return sampleResults, simulationDetails, fitMetrics
 def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type="absolute"):
     """
@@ -2774,19 +2853,21 @@ def main(file_path=None):
     sampleAll = readPSD(file_path)
     expData =readExpUptake(file_path)
     ########### 读取数据 ###########
+    #############训练模型###################
     sampleResults, simulationDetails, fitMetrics = \
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
                                          simData_density=simData_density, debug=False, export=False )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
-    out_path2 = fl.get_expanded_name(file_path, fileName="sim2expP3", expandPos=True, type="xlsx")
-    exportAnalysisToExcel(validation,out_path2)
+    out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
+    # exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
     modelfit = fitValidationParameters(validation,plotflag=True,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
-    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
+    # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
+    #############训练模型###################
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")
@@ -2794,16 +2875,19 @@ def main(file_path=None):
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
             expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, 
             ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
-            simData_density=simData_density, debug=False, export=False )
+            simData_density=simData_density, debug=False, export=True )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
+    samples=["CC-Hy-800-2-1", "CC-Hy-800-0.5-1"]
+    plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type="sim" )
     #############使用新的样品验证模型拟合是否合适###################
+    #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
         perturbationResult = calculatePerturbation(
             sample=sample,
@@ -2822,6 +2906,7 @@ def main(file_path=None):
             debug=True
             )
         # break
+    #############应用：修改指定pore的体积###################
     plt.show(block=True)
 if __name__ == "__main__": 
     f = sys.argv[1] if len(sys.argv) > 1 else None
