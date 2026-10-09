@@ -2730,7 +2730,8 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
             label = f"{source_pore:g} → {target_pore:g} nm"
         plotData[label] = pd.DataFrame({
             "Pressure": pressures,
-            "Delta q": deltaSim })
+            "Delta q": deltaSim ,
+            "Mod q": modifiedPred })
         # ======================================================
         # Print Δq(P)
         # ======================================================
@@ -2831,6 +2832,8 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
     plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
     myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", 
                      ylabel=r"$\Delta q$", reverse_x=False, legend=True, linewidth=1.5, textSize=12 )
+    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", 
+                         ylabel=r"$\ Modified q$", reverse_x=False, legend=True, linewidth=1.5, textSize=12 )
     # ==========================================================
     # 11. Return
     # ==========================================================
@@ -2882,7 +2885,7 @@ def main(file_path=None):
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-2-1", "CC-Hy-800-0.5-1"]
     plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type="sim" )
@@ -2890,7 +2893,7 @@ def main(file_path=None):
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
         perturbationResult = calculatePerturbation(
-            sample=sample,
+            sample=samples[1],
             simulationDetails=simulationDetailsCheck,
             predictionResults=predictionResults,
             simData=simData,
@@ -2899,8 +2902,8 @@ def main(file_path=None):
             simData_density=simData_density,
             modelfit=modelfit,
             validation_type="absolute",
-            # operation="transfer",
-            source_index=2,
+            operation="transfer",
+            source_index=9,
             delta_volume=0.02,
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True

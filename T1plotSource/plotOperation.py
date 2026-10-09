@@ -185,27 +185,39 @@ class ColorPalette:
             colors
         )
 USING_COLOR = ColorPalette.PAPER1 
+
 def sampleColors(colors, n):
     """
-    Sample n colors uniformly from a color list.
-    Parameters
-    ----------
-    colors : list
-        Color palette.
-    n : int
-        Number of required colors.
-    Returns
-    -------
-    list
+    Sample n colors uniformly across the full palette,
+    preserving the first and last colors.
     """
-    if len(colors) <= n:
-        return colors
+    if n <= 0:
+        return []
+
+    if n == 1:
+        return [colors[0]]
+
     idx = np.linspace(
         0,
         len(colors) - 1,
         n
-    ).round().astype(int)
-    return [colors[i] for i in idx]
+    )
+
+    # Interpolate between adjacent colors when necessary
+    sampled = []
+
+    for pos in idx:
+        left = int(np.floor(pos))
+        right = min(left + 1, len(colors) - 1)
+        frac = pos - left
+
+        c1 = np.array(to_rgb(colors[left]))
+        c2 = np.array(to_rgb(colors[right]))
+
+        color = (1 - frac) * c1 + frac * c2
+        sampled.append(color)
+
+    return sampled
 def splitXLim( xmin, xmax, xbreak, reverse_x=False, ):
     """
     Split x-axis limits for broken axis.
