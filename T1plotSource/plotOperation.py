@@ -904,8 +904,8 @@ def plotSpectrum(
     for ax_i in axes:
         applyAxisStyle(ax_i)
         # applyTextStyle( ax_i,labelsize=textSize, ticksize=textSize, annotationsize=textSize,)
-        setMajorTicks(ax_i,axis="x", major_step=200,)
-        setMinorTicks(ax_i,axis="x", minor_step=100,)
+        setMajorTicks(ax_i,axis="x", major_step=20,)
+        setMinorTicks(ax_i,axis="x", minor_step=10,)
         if not show_yticks:
             ax_i.set_yticks([])
     # --------------------------------------------------
@@ -929,7 +929,7 @@ def plotSpectrum(
     # ==================================================
     # Legend
     # ==================================================
-    applyLegend( fig, axes, show=legend, fontsize=textSize)
+    applyLegend( fig, axes, show=legend, fontsize=textSize-8)
     # ==================================================
     # Save
     # ==================================================

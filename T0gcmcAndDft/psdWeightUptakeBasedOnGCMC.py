@@ -2805,9 +2805,11 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
         deltaSim = ( modifiedSim - originalSim )
         deltaPred = ( modifiedPred - originalPred )
         if operation == "transfer":
-            label = f"{source_pore:g} → {target_pore:g} nm"
+            # label = f"{source_pore:g} → {target_pore:g} nm"
+            label = f"{target_pore:g} nm"
         elif operation == "addition":
-            label = f"+{target_pore:g} nm"
+            # label = f"+{target_pore:g} nm"
+            label = f"{target_pore:g} nm"
         else:
             label = f"{source_pore:g} → {target_pore:g} nm"
         plotData[label] = pd.DataFrame({
@@ -2912,10 +2914,16 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
                 )
     # 10. Sensitivity heatmap
     plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
-    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", 
-                     ylabel=r"$\Delta q$", reverse_x=False, legend=True, linewidth=1.5, textSize=12 )
-    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", 
-                         ylabel=r"$\ Modified q$", reverse_x=False, legend=True, linewidth=1.5, textSize=12 )
+    figsize=(5, 4)
+    textSize=18
+    savepath1="Delta05.png"
+    savepath2="Modified05.png"
+    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", figsize=figsize,
+                     ylabel=r"Delta uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
+                     textSize=textSize,savepath= savepath1)
+    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", figsize=figsize,
+                         ylabel=r"Modified uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
+                         textSize=textSize, savepath= savepath2 )
     # ==========================================================
     # 11. Return
     # ==========================================================
@@ -2949,7 +2957,7 @@ def main(file_path=None):
     # exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
-    modelfit = fitValidationParameters(validation,plotflag=True,slope_models=modelfixed, pressure_min=pressure_min,
+    modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
     # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############训练模型###################
@@ -2974,8 +2982,9 @@ def main(file_path=None):
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
+        sample=samples[1]
         perturbationResult = calculatePerturbation(
-            sample=samples[1],
+            sample=sample,
             simulationDetails=simulationDetailsCheck,
             predictionResults=predictionResults,
             simData=simData,
@@ -2985,14 +2994,14 @@ def main(file_path=None):
             modelfit=modelfit,
             validation_type="absolute",
             operation="transfer",
-            source_index=9,
+            source_index=2,
             delta_volume=0.02,
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
             )
         out_path3 = fl.get_expanded_name(file_path, fileName=sample, expand="Modf", expandPos=True, type="xlsx")
         exportPerturbationResults( perturbationResult, out_path=out_path3)
-        # break
+        break
     #############应用：修改指定pore的体积###################
     plt.show(block=True)
 if __name__ == "__main__": 
