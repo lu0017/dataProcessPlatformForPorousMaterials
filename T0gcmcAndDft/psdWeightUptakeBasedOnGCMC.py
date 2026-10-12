@@ -1503,19 +1503,15 @@ def plotReconstructedIsotherm(pressures,totalUptake):
     plt.tight_layout()
     plt.show(block=False)
 def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type="merge", fit_label="pred", legendPosition="upper left"):
-
     """
     Plot prediction analysis results for specified samples
     on the same figure.
-
     Parameters
     ----------
     predictionAnalysis : dict
         Output from preparePredictionAnalysisData().
-
     samples : list or tuple
         Samples to plot together.
-
     pressure_type : {"merge", "sim"}
         Pressure grid used for plotting.
         "merge":
@@ -1523,18 +1519,14 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
         "sim":
             Use the original GCMC simulation pressure grid
             from data_pred.
-
     fit_label : str
         Label for prediction curves.
-
     legendPosition : str
         Position of the legend.
     """
-
     # ======================================================
     # 1. Select pressure data
     # ======================================================
-
     if pressure_type == "merge":
         df_plot = predictionAnalysis["data_all"]
         line = True
@@ -1543,43 +1535,30 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
         line = False
     else:
         raise ValueError( "pressure_type must be either 'merge' or 'sim'." )
-
     # ======================================================
     # 2. Check samples
     # ======================================================
-
     if isinstance(samples, str):
         samples = [samples]
-
     available_samples = df_plot["Sample"].unique()
-
     for sample_name in samples:
         if sample_name not in available_samples:
             raise ValueError( f"Sample '{sample_name}' not found in the data." )
-
     # ======================================================
     # 3. Prepare data for all selected samples
     # ======================================================
-
     data = {}
     fit = {}
-
     for sample_name in samples:
-
         df_sample = df_plot[ df_plot["Sample"] == sample_name ]
-
         data[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
                                 df_sample["Experimental"].to_numpy() )
-
         fit[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
                                 df_sample["Predicted"].to_numpy() )
-
     # ======================================================
     # 4. Plot all samples in one figure
     # ======================================================
-
     myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition )
-
     plt.show(block=False)
 def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, 
                            pressure_type="merge", fit_label="exp=f(sim)", legendPosition="upper left"):
@@ -2171,6 +2150,109 @@ def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_pa
 def exportPsdWeightedSimulationResult( file_path, sample, simulationDetails, expData, fitMetrics):
     out_path = fl.get_expanded_name( file_path, sample, expand="PSD_weighted", expandPos=True, type="xlsx" )
     exportPsdWeightSampleDetail( sample, simulationDetails, expData, fitMetrics, out_path )
+def exportPerturbationResults( perturbationResults, out_path, ):
+    result = perturbationResults
+    sample = result["sample"]
+    operation = result["operation"]
+    if operation not in ("addition", "transfer"):
+        raise ValueError(f"Unsupported operation: {operation}")
+    pressure = np.asarray(result["pressure"], dtype=float)
+    simPore = np.asarray(result["simPore"], dtype=float)
+    original_volume = np.asarray( result["original_volume"], dtype=float )
+    original_sim = np.asarray( result["original_simUptake"], dtype=float )
+    original_pred = np.asarray( result["original_predicted"], dtype=float )
+    pore_results = result["pore_results"]
+    slope = np.asarray(pore_results[0]["slope"], dtype=float)
+    intercept = np.asarray(pore_results[0]["intercept"], dtype=float)
+    # --------------------------------------------------
+    # 1. PerturbationSummary
+    # --------------------------------------------------
+    summary_rows = []
+    for pr in pore_results:
+        source_pore = pr["source_pore"]
+        target_pore = pr["target_pore"]
+        if operation == "addition":
+            pore_operation = f"Addition to {target_pore:g} nm"
+        else:
+            pore_operation = ( f"{source_pore:g} -> {target_pore:g} nm" )
+        summary_rows.append({
+            "sample": sample,
+            "operation": operation,
+            "delta_volume": pr["delta_volume"],
+            "source_index": pr["source_index"],
+            "source_pore_nm": source_pore,
+            "target_index": pr["target_index"],
+            "target_pore_nm": target_pore,
+            "pore_operation": pore_operation,
+            "original_total_volume": pr["original_total_volume"],
+            "modified_total_volume": pr["modified_total_volume"],
+            "volume_change": pr["volume_change"],
+            "volume_conserved": pr["volume_conserved"],
+        })
+    df_summary = pd.DataFrame(summary_rows)
+    fl.export_to_excel_auto( df_summary, filename=out_path, sheet_name="PerturbationSummary", )
+    # --------------------------------------------------
+    # 2. PressureResults_pred (wide format)
+    # --------------------------------------------------
+    pred_data = {
+        "Pressure(kPa)": pressure,
+        "slope": slope,
+        "intercept": intercept,
+        "Orig q(mml/g)": original_pred, }
+    # First: Modified predicted uptake for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        pred_data[f"Modi q({pore_label})"] = np.asarray( pr["modified_predicted"], dtype=float )
+    # Second: Delta predicted uptake for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        pred_data[f"Delta q({pore_label})"] = np.asarray( pr["delta_predicted"], dtype=float )
+    # Third: Sensitivity for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        pred_data[f"Sensitivity({pore_label})"] = np.asarray( pr["sensitivity_pred"], dtype=float )
+    df_pred = pd.DataFrame(pred_data)
+    fl.export_to_excel_auto( df_pred, filename=out_path, sheet_name="PressureResults_pred", )
+        # --------------------------------------------------
+    # 3. PressureResults_sim (wide format)
+    # --------------------------------------------------
+    sim_data = {
+        "Pressure (kPa)": pressure,
+        "Orig q(mml/g)": original_sim, }
+    # First: Modified simulated uptake for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        sim_data[f"Modi q({pore_label})"] = np.asarray( pr["modified_simUptake"], dtype=float )
+    # Second: Delta simulated uptake for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        sim_data[f"Delta q({pore_label})"] = np.asarray( pr["delta_simUptake"], dtype=float )
+    # Third: Sensitivity for all pore sizes
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        sim_data[f"Sensitivity({pore_label})"] = np.asarray( pr["sensitivity_sim"], dtype=float )
+    df_sim = pd.DataFrame(sim_data)
+    fl.export_to_excel_auto( df_sim, filename=out_path, sheet_name="PressureResults_sim", )
+    # --------------------------------------------------
+    # 4. PoreVolumes (wide format)
+    # --------------------------------------------------
+    volume_data = {
+        "Pore size (nm)": simPore,
+        "Original pore volume (cm3/g)": original_volume, }
+    for pr in pore_results:
+        target_pore = pr["target_pore"]
+        pore_label = f"{target_pore:g}"
+        modified_vol = np.asarray( pr["modified_volume"], dtype=float )
+        volume_data[ f"Modified volume ({pore_label})" ] = modified_vol
+        volume_data[ f"volume change ({pore_label})" ] = modified_vol - original_volume
+    df_volumes = pd.DataFrame(volume_data)
+    fl.export_to_excel_auto( df_volumes, filename=out_path, sheet_name="PoreVolumes", )
 def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None, 
                                expData=None, uptake_density=None, flagUsingDensity=False):
     """
@@ -2908,6 +2990,8 @@ def main(file_path=None):
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
             )
+        out_path3 = fl.get_expanded_name(file_path, fileName=sample, expand="Modf", expandPos=True, type="xlsx")
+        exportPerturbationResults( perturbationResult, out_path=out_path3)
         # break
     #############应用：修改指定pore的体积###################
     plt.show(block=True)
