@@ -2916,12 +2916,17 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
     plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
     figsize=(5, 4)
     textSize=18
-    savepath1="Delta05.png"
-    savepath2="Modified05.png"
+    savepath1="Delta14.png"
+    savepath2="Modified14.png"
+    ax=None,
+    originalData = {
+    "Original": pd.DataFrame({ "Pressure": np.asarray( perturbationResults["pressure"], dtype=float ),
+                                "Uptake": np.asarray( perturbationResults["original_predicted"], dtype=float ), }) }
+    ax = myPlt.plotCurve( data=originalData, x="Pressure", y="Uptake", marker=True, line=None, colors="VIRIDIS", legend=False, )
     myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", figsize=figsize,
                      ylabel=r"Delta uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
                      textSize=textSize,savepath= savepath1)
-    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", figsize=figsize,
+    myPlt.plotSpectrum( data=plotData,ax = ax, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", figsize=figsize,
                          ylabel=r"Modified uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
                          textSize=textSize, savepath= savepath2 )
     # ==========================================================
@@ -2994,7 +2999,7 @@ def main(file_path=None):
             modelfit=modelfit,
             validation_type="absolute",
             operation="transfer",
-            source_index=2,
+            source_index=9,
             delta_volume=0.02,
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
