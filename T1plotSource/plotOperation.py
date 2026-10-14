@@ -833,6 +833,8 @@ def plotSpectrum(
     y="Transmittance (%)",
     xlabel=None,
     ylabel=None,
+    xRange=None,
+    yRange=None,
     show_yticks=True,
     reverse_x=True,
     offset=0,
@@ -868,6 +870,9 @@ def plotSpectrum(
     # ==================================================
     # Figure
     # ==================================================
+    if xRange is not None:
+        xmin = xRange[0]
+        xmax = xRange[1]
     fig, axes = createAxes( ax=ax, figsize=figsize, xbreak=xbreak, xrange=(xmin, xmax),reverse_x=reverse_x)
     # ==================================================
     # Color
@@ -926,10 +931,16 @@ def plotSpectrum(
     xlims = splitXLim( xmin, xmax, xbreak=xbreak, reverse_x=reverse_x, )
     for ax_i, xlim in zip(axes, xlims):
         ax_i.set_xlim(*xlim)
+    # --------------------------------------------------
+    # Y Limit
+    # --------------------------------------------------
+    if yRange is not None:
+        for ax_i in axes:
+            ax_i.set_ylim(*yRange)
     # ==================================================
     # Legend
     # ==================================================
-    applyLegend( fig, axes, show=legend, fontsize=textSize-8)
+    applyLegend( fig, axes, show=legend, fontsize=textSize-5)
     # ==================================================
     # Save
     # ==================================================

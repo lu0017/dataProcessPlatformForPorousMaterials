@@ -1756,22 +1756,22 @@ def plotPerturbation( sample, perturbationResults, poreResult):
         line=True,
         legendPosition="upper left",
     )
-    # ======================================================
-    # 4. PSD-weighted simulation uptake
-    # ======================================================
-    myPlt.plotCurve(
-        data={ "Original": ( pressures, original_sim ), },
-        fit={ "Original": ( pressures, modified_sim ), },
-        fit_label="Modified",
-        x="Pressure",
-        y="Uptake",
-        xlabel="Pressure (kPa)",
-        ylabel="CO$_2$ uptake",
-        title=title,
-        marker=True,
-        line=True,
-        legendPosition="upper left",
-    )
+    # # ======================================================
+    # # 4. PSD-weighted simulation uptake
+    # # ======================================================
+    # myPlt.plotCurve(
+    #     data={ "Original": ( pressures, original_sim ), },
+    #     fit={ "Original": ( pressures, modified_sim ), },
+    #     fit_label="Modified",
+    #     x="Pressure",
+    #     y="Uptake",
+    #     xlabel="Pressure (kPa)",
+    #     ylabel="CO$_2$ uptake",
+    #     title=title,
+    #     marker=True,
+    #     line=True,
+    #     legendPosition="upper left",
+    # )
     # ======================================================
     # 5. Predicted experimental uptake
     # ======================================================
@@ -2812,10 +2812,12 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
             label = f"{target_pore:g} nm"
         else:
             label = f"{source_pore:g} → {target_pore:g} nm"
-        plotData[label] = pd.DataFrame({
-            "Pressure": pressures,
-            "Delta q": deltaSim ,
-            "Mod q": modifiedPred })
+
+        if target_index <= 11:
+            plotData[label] = pd.DataFrame({
+                "Pressure": pressures,
+                "Delta q": deltaPred ,
+                "Mod q": modifiedPred })
         # ======================================================
         # Print Δq(P)
         # ======================================================
@@ -2913,22 +2915,25 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
                     f"{modifiedTotalVolume:.8g}"
                 )
     # 10. Sensitivity heatmap
-    plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
+    # plotSensitivityHeatmap( perturbationResults, sensitivity_type="pred" )
+
     figsize=(5, 4)
     textSize=18
-    savepath1="Delta14.png"
-    savepath2="Modified14.png"
+    savepath1 = r"F:\0_Academic\3_experiment\3\Delta05.png"
+    savepath2 = r"F:\0_Academic\3_experiment\3\Modified05.png"
     ax=None,
     originalData = {
     "Original": pd.DataFrame({ "Pressure": np.asarray( perturbationResults["pressure"], dtype=float ),
                                 "Uptake": np.asarray( perturbationResults["original_predicted"], dtype=float ), }) }
     ax = myPlt.plotCurve( data=originalData, x="Pressure", y="Uptake", marker=True, line=None, colors="VIRIDIS", legend=False, )
-    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", figsize=figsize,
-                     ylabel=r"Delta uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
-                     textSize=textSize,savepath= savepath1)
-    myPlt.plotSpectrum( data=plotData,ax = ax, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", figsize=figsize,
-                         ylabel=r"Modified uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, 
-                         textSize=textSize, savepath= savepath2 )
+    myPlt.plotSpectrum( data=plotData, x="Pressure", y="Delta q", xlabel="Pressure (kPa)", yRange=[-0.43,0.78], figsize=figsize,
+                     ylabel=r"Delta uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, textSize=textSize,
+                    #  savepath= savepath1
+                     )
+    myPlt.plotSpectrum( data=plotData,ax = ax, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", yRange=[0,4.0],figsize=figsize,
+                         ylabel=r"Modified uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, textSize=textSize, 
+                        #  savepath= savepath2 
+                         )
     # ==========================================================
     # 11. Return
     # ==========================================================
@@ -2936,7 +2941,7 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
 def main(file_path=None):
     # ==== 输入参数 ====
     flagUsingDensity = False
-    pressure_min = 0.03 #kPa
+    pressure_min = 0.01 #kPa
     ########### 读取数据 ###########
     file_path = select_folder()   # 改成你的文件路径
     HeliumFraction, ModelVolumeAcc = readVolumeAndHeliumVoidFraction(file_path,sheet_name="volume")
@@ -2959,12 +2964,12 @@ def main(file_path=None):
                                          simData_density=simData_density, debug=False, export=False )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
-    # exportAnalysisToExcel(validation,out_path2)
+    exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
     modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
-    # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
+    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############训练模型###################
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
@@ -2980,14 +2985,14 @@ def main(file_path=None):
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
-    samples=["CC-Hy-800-2-1", "CC-Hy-800-0.5-1"]
+    samples=["CC-Hy-800-0.5-1", "CC-Hy-800-2-1"]
     plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type="sim" )
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
-        sample=samples[1]
+        sample=samples[0]
         perturbationResult = calculatePerturbation(
             sample=sample,
             simulationDetails=simulationDetailsCheck,
@@ -2999,13 +3004,13 @@ def main(file_path=None):
             modelfit=modelfit,
             validation_type="absolute",
             operation="transfer",
-            source_index=9,
+            source_index=2,
             delta_volume=0.02,
             plotIndex=[1], #plotIndex="all", plotIndex=[0, 3, 7, 12]
             debug=True
             )
         out_path3 = fl.get_expanded_name(file_path, fileName=sample, expand="Modf", expandPos=True, type="xlsx")
-        exportPerturbationResults( perturbationResult, out_path=out_path3)
+        # exportPerturbationResults( perturbationResult, out_path=out_path3)
         break
     #############应用：修改指定pore的体积###################
     plt.show(block=True)
