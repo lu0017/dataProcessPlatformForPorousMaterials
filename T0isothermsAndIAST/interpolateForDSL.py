@@ -154,7 +154,7 @@ def runInterpolateDsl0(df, pressureUnit="kPa", plotFlag=True):
     return df_interp
 
 def main(file_path=None):
-    singleFile = True
+    singleFile = None
 
     if singleFile:
         # # 选择文件
@@ -184,7 +184,7 @@ def main(file_path=None):
                 continue
 
             df_interp = runInterpolateDsl(listData, plotFlag=False)
-            # fl.export_to_excel_auto(df_interp, filename=out_path, sheet_name=sheet)
+            fl.export_to_excel_auto(df_interp, filename=out_path, sheet_name=sheet)
     y=0
 
 if __name__ == "__main__":

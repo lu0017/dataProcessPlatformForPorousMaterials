@@ -13,6 +13,7 @@ LABEL_MAP = {
     "Pressure": "Pressure (kPa)",
     "Relative Pressure": r"Relative pressure ($P/P_0$)",
     "Uptake": r"CO$_2$ uptake (mmol g$^{-1}$)",
+    "Adsorption Density": r"CO$_2$ loading (mmol cm$^{-3}$)",
     # -------- Pore --------
     "Pore Size": "Pore size (nm)",
     "Pore Volume": r"Pore volume (cm$^3$ g$^{-1}$)",
@@ -489,9 +490,11 @@ def buildCurveLegend(
     fit_linestyle="--",
     markersize=70,
     markeredgecolor="black",
+    original_labels=None,
 ):
     """
     Build legend handles for curve plots.
+
     Parameters
     ----------
     sample_names : list[str]
@@ -504,15 +507,23 @@ def buildCurveLegend(
     fit : bool
         Whether fitted curves are shown.
     fit_label : str
+    original_labels : dict or None
+        Optional mapping from sample names to original-data legend labels.
+
     Returns
     -------
     list
         Legend handles.
     """
     handles = []
+    original_labels = original_labels or {}
+
     # scatter() 的 s 是面积，Line2D 的 markersize 是直径（pt）
     ms = np.sqrt(markersize)
+
     for name, color in zip(sample_names, color_list):
+        display_name = original_labels.get(name, name)
+
         # --------------------------
         # Experimental data
         # --------------------------
@@ -527,9 +538,10 @@ def buildCurveLegend(
                 markersize=ms if marker else 0,
                 markerfacecolor=color,
                 markeredgecolor=markeredgecolor,
-                label=name,
+                label=display_name,
             )
         )
+
         # --------------------------
         # Fitted curve
         # --------------------------
@@ -541,9 +553,9 @@ def buildCurveLegend(
                     color=color,
                     linestyle=fit_linestyle,
                     linewidth=fit_linewidth,
-                    label=f"{name} {fit_label}",
-                )
+                    label=( fit_label if original_labels and name in original_labels else f"{name} {fit_label}" ), )
             )
+
     return handles
 def removeDuplicateLegend(handles):
     """
@@ -940,7 +952,7 @@ def plotSpectrum(
     # ==================================================
     # Legend
     # ==================================================
-    applyLegend( fig, axes, show=legend, fontsize=textSize-5)
+    applyLegend( fig, axes, show=legend, fontsize=textSize-4)
     # ==================================================
     # Save
     # ==================================================
@@ -958,6 +970,7 @@ def plotCurve(
     marker=True,
     line=True,
     fit=None,
+    original_labels=None,
     fit_label="Fit",
     colors="PAPER1",
     linewidth=2,
@@ -966,6 +979,7 @@ def plotCurve(
     fit_linestyle="--",
     markersize=70,
     legend=True,
+    textSize=12,
     legendPosition="outside right",
     title=None,
     savepath=None,
@@ -1006,6 +1020,7 @@ def plotCurve(
         except (AttributeError, RuntimeError):
             pass
     sample_names = list(data.keys())
+    original_labels = original_labels or {}
     color_list = ColorPalette.get(colors, len(sample_names))
     def _extract_xy(curve):
         """Extract x and y from DataFrame or tuple/list."""
@@ -1031,7 +1046,7 @@ def plotCurve(
                 color=color,
                 linewidth=linewidth,
                 linestyle=linestyle,
-                label=name if fit is None else None,
+                label=original_labels.get(name, name) if fit is None else None,
                 zorder=2,
             )
         # Experimental markers
@@ -1042,7 +1057,7 @@ def plotCurve(
                 yy,
                 color=color,
                 s=markersize,
-                label=name if not line else None,
+                label=original_labels.get(name, name) if not line else None,
                 zorder=3,
             )
         # Fit
@@ -1054,11 +1069,13 @@ def plotCurve(
                 color=color,
                 linewidth=fit_linewidth,
                 linestyle=fit_linestyle,
-                label=f"{name} {fit_label}",
+                label=f"{original_labels.get(name, name)} {fit_label}",
                 zorder=1,
             )
-    ax.set_xlabel(xlabel or x)
-    ax.set_ylabel(ylabel or y)
+    # ax.set_xlabel(xlabel or x)
+    # ax.set_ylabel(ylabel or y)
+    ax.set_xlabel( applyLabel(x, xlabel) )
+    ax.set_ylabel( applyLabel(y, ylabel) )
     if legend:
         handles = buildCurveLegend(
             sample_names=sample_names,
@@ -1072,6 +1089,7 @@ def plotCurve(
             fit_linewidth=fit_linewidth,
             fit_linestyle=fit_linestyle,
             markersize=markersize,
+            original_labels=original_labels,
         )
         applyLegend(
             fig=ax.figure,
@@ -1079,6 +1097,7 @@ def plotCurve(
             handles=handles,
             position=legendPosition
         )
+    applyTextStyle( ax=ax, fig=fig, labelsize=textSize, ticksize=textSize, annotationsize=textSize, )
     if savepath is not None:
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300)
     return ax

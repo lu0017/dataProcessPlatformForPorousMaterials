@@ -1455,6 +1455,58 @@ def calculateSimByAddition( volume, target_index, delta_volume, simPore, simData
         simData_density=simData_density,
         source_index=None
     )
+def plotGCMCDatabase(pressures, poreSize, loading, xlabel="Pressure (kPa)", ylabel="Adsorption Density"):
+    """
+    Read and plot pore-size-dependent simulation density
+    at different pressures.
+
+    Parameters
+    ----------
+    xlabel, ylabel : str
+        Axis labels.
+    xRange, yRange : tuple or None
+        Axis limits.
+    kwargs : dict
+        Additional arguments passed to plotSpectrum.
+
+    Returns
+    -------
+    axes
+        Matplotlib axes returned by plotSpectrum.
+    """
+    # ==================================================
+    # Convert density matrix to the format required
+    # by plotSpectrum
+    # Each curve corresponds to one pressure
+    # ==================================================
+    data = {}
+    savepath = r"F:\0_Academic\3_experiment\3\GCMCresult.png"
+    if ylabel == "Adsorption Density": 
+        STP_MOLAR_VOLUME = 22.414  # cm3(STP)/mmol
+        loading = loading / STP_MOLAR_VOLUME
+    for i, pore in enumerate(poreSize):
+        label = f"{pore:g} nm"
+        data[label] = pd.DataFrame({ "Pressure": pressures,
+                                     "loading": loading[i, :], })
+    # ==================================================
+    # Plot
+    # ==================================================
+    axes = myPlt.plotSpectrum(
+        data=data,
+        x="Pressure",
+        y="loading",
+        xlabel=xlabel,
+        ylabel=ylabel,
+        figsize=(5, 4),
+        # xRange=xRange,
+        # yRange=yRange,
+        reverse_x=False,
+        linewidth=1.5,
+        textSize=12,
+        savepath=savepath,
+        dpi=600,
+    )
+    plt.show(block=False)
 def plotContribution(simPore,contributionPercent,pressureIndex=-1):
     plt.figure(figsize=(6,4))
     plt.plot(simPore,contributionPercent[:,pressureIndex]*100,marker="o")
@@ -2097,7 +2149,7 @@ def exportPsdWeightSampleDetail( sample, simulationDetails, expData, fitMetrics,
     if sample in fitMetrics:
         current_metrics = fitMetrics[sample]
         exportPredictionMetrics( sample, current_metrics, out_path, sheet_name="Metrics-simVSexp" )
-def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path):
+def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path, expand="PSD_check"):
     df_data_pred = predictionAnalysis["data_pred"]
     df_data_all = predictionAnalysis["data_all"]
     df_fit_details = predictionAnalysis["fit_details"]
@@ -2106,7 +2158,7 @@ def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_pa
         # ==================================================
         # 1. Output path
         # ==================================================
-        out_path = fl.get_expanded_name( file_path, sample, expand="PSD_weighted", expandPos=True, type="xlsx" )
+        out_path = fl.get_expanded_name( file_path, sample, expand=expand, expandPos=True, type="xlsx" )
         result = predictionResults[sample]
         # ==================================================
         # 2. Prediction
@@ -2147,8 +2199,8 @@ def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_pa
         # 4. Metrics
         # ==================================================
         exportPredictionMetrics( sample, df_fit_metrics, out_path )
-def exportPsdWeightedSimulationResult( file_path, sample, simulationDetails, expData, fitMetrics):
-    out_path = fl.get_expanded_name( file_path, sample, expand="PSD_weighted", expandPos=True, type="xlsx" )
+def exportPsdWeightedSimulationResult( file_path,  sample, simulationDetails, expData, fitMetrics, expand="PSD_training"):
+    out_path = fl.get_expanded_name( file_path, sample, expand=expand, expandPos=True, type="xlsx" )
     exportPsdWeightSampleDetail( sample, simulationDetails, expData, fitMetrics, out_path )
 def exportPerturbationResults( perturbationResults, out_path, ):
     result = perturbationResults
@@ -2335,6 +2387,7 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
     # 9. Experimental vs simulation
     # ======================================================
     if expData is not None and sample in expData:
+        savepath = rf"F:\0_Academic\3_experiment\3\{sample}.png"
         plt.ion()
         # --------------------------------------------------
         # 9.1 Experimental vs PSD-weighted simulation
@@ -2342,10 +2395,15 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
         myPlt.plotCurve(
             data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
             fit={ sample: ( pressures, uptake["total"] ), },
+            original_labels={sample: "experimental"},
             fit_label="simulated",
+            xlabel="Pressure",
+            ylabel="Uptake",
             marker=True,
             line=True,
-            legendPosition="upper left"
+            textSize=18,
+            legendPosition="upper left",
+            savepath=savepath,
         )
         # --------------------------------------------------
         # 9.2 Experimental vs density-based simulation
@@ -2394,7 +2452,7 @@ def calculateWeightedSimulationFromVolume( volume, simData, ModelVolumeAcc,
     }
 def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore, 
                                    pressures, simData, ModelVolumeAcc, flagUsingDensity=False, 
-                                   simData_density=None, debug=False, export=False):
+                                   simData_density=None, debug=False,debug_samples=None, export=False, expand="PSD_training"):
     boundary = gcmcBoundary(simPore)
     sampleResults = {}
     simulationDetails = {}
@@ -2451,20 +2509,17 @@ def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore,
         # ======================================================
         # 7. Debug
         # ======================================================
-        k += 1
-        if k % 2 == 0:
-            debug_done = False
-        if debug and not debug_done:
+        
+        if debug and sample in debug_samples:
             debugPsdWeightedSimulation( sample=sample, simPore=simPore, pressures=pressures, 
                                        uptake=uptake, weight=weight, expData=expData, 
                                        uptake_density=uptake_density, flagUsingDensity=flagUsingDensity )
-            debug_done = True
         # ======================================================
         # 8. Export
         # ======================================================
         if export:
             exportPsdWeightedSimulationResult( file_path=file_path, sample=sample, 
-                        simulationDetails=simulationDetails, expData=expData, fitMetrics=fitMetrics )
+                        simulationDetails=simulationDetails, expData=expData, fitMetrics=fitMetrics,expand=expand)
     return sampleResults, simulationDetails, fitMetrics
 def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type="absolute"):
     """
@@ -2930,6 +2985,7 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
                      ylabel=r"Delta uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, textSize=textSize,
                     #  savepath= savepath1
                      )
+    # applyLegend( fig, axes, show=legend, fontsize=textSize-5)
     myPlt.plotSpectrum( data=plotData,ax = ax, x="Pressure", y="Mod q", xlabel="Pressure (kPa)", yRange=[0,4.0],figsize=figsize,
                          ylabel=r"Modified uptake (mmol/g)", reverse_x=False, legend=True, linewidth=1.5, textSize=textSize, 
                         #  savepath= savepath2 
@@ -2955,13 +3011,22 @@ def main(file_path=None):
         simData_density = density_simu_acc
     sampleAll = readPSD(file_path)
     expData =readExpUptake(file_path)
+
+    plotGCMCDatabase(pressures, simPore, simData_density)
+    # plotGCMCDatabase(pressures, simPore, simData,ylabel="Uptake")
     ########### 读取数据 ###########
     #############训练模型###################
+    debug_samples = {
+        "CC-Hy-600-1-1",
+        "CC-Hy-800-1-1",
+        "CC-Hy-900-1-1",
+        "CC-Bi-800-2-1(5)",
+    }
     sampleResults, simulationDetails, fitMetrics = \
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
-                                         simData_density=simData_density, debug=False, export=False )
+                                         simData_density=simData_density, debug=True, debug_samples=debug_samples, export=False )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
     exportAnalysisToExcel(validation,out_path2)
@@ -2978,7 +3043,7 @@ def main(file_path=None):
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
             expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, 
             ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
-            simData_density=simData_density, debug=False, export=True )
+            simData_density=simData_density, debug=False, export=True, expand="PSD_check" )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
@@ -2988,7 +3053,7 @@ def main(file_path=None):
     exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-0.5-1", "CC-Hy-800-2-1"]
-    plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type="sim" )
+    plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
