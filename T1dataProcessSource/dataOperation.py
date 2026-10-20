@@ -731,7 +731,6 @@ def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
         )
         result[sample] = newdf
     return result
-
 def generateCommonX(x_data, n_points=50):
     """
     Generate common x coordinates for multiple datasets.
@@ -761,7 +760,6 @@ def generateCommonX(x_data, n_points=50):
             "No overlapping x range exists among the datasets."
         )
     return np.linspace(x_min, x_max, n_points)
-
 def cropX(data, xmin=None, xmax=None):
     """
     根据 X 范围截取数据。
@@ -1287,7 +1285,676 @@ def convert_units(rawData):
     df_new["T_unit"] = "K"
     df_new["q_unit"] = "mmol/g"
     return df_new
+# =========================================================
+# 1. Shared utility: validate and clean a 1D numeric array
+# =========================================================
+def _validateNumericArray( data, *, name: str = "data", nan_policy: str = "raise", ) -> tuple[np.ndarray, int]:
+    """Validate a one-dimensional numeric array.
+    Returns
+    -------
+    array : np.ndarray
+        Valid finite values.
+    n_excluded : int
+        Number of non-finite values excluded.
+    """
+    if nan_policy not in {"raise", "omit"}:
+        raise ValueError("nan_policy must be 'raise' or 'omit'.")
+    if data is None:
+        raise ValueError(f"{name} is required.")
+    try:
+        array = np.asarray(data, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError( f"{name} must contain numeric values." ) from exc
+    if array.ndim != 1:
+        raise ValueError( f"{name} must be a one-dimensional array." )
+    if array.size == 0:
+        raise ValueError(f"{name} must not be empty.")
+    finite_mask = np.isfinite(array)
+    n_excluded = int(np.sum(~finite_mask))
+    if n_excluded > 0:
+        if nan_policy == "raise":
+            raise ValueError( f"{name} contains {n_excluded} non-finite value(s)." )
+        array = array[finite_mask]
+    if array.size == 0:
+        raise ValueError( f"{name} contains no finite values after filtering." )
+    return array, n_excluded
+# =========================================================
+# 2. Calculate Student's t confidence interval for a mean
+# =========================================================
+def calculateTConfidenceInterval( data, *, confidence_level: float = 0.95, nan_policy: str = "raise", ) -> Dict[str, Any]:
+    """Calculate a one-sample Student's t CI for the population mean."""
+    _validateConfidenceLevel(confidence_level)
+    x, n_excluded = _validateNumericArray( data, name="data", nan_policy=nan_policy, )
+    n = x.size
+    if n < 2:
+        raise ValueError( "At least two observations are required for a t interval." )
+    estimate = float(np.mean(x))
+    standard_error = float(stats.sem(x, ddof=1))
+    degrees_of_freedom = n - 1
+    alpha = 1.0 - confidence_level
+    critical_value = float( stats.t.ppf( 1.0 - alpha / 2.0, df=degrees_of_freedom, ) )
+    margin = critical_value * standard_error
+    return {
+        "method": "t",
+        "confidence_level": float(confidence_level),
+        "estimate": estimate,
+        "lower_bound": estimate - margin,
+        "upper_bound": estimate + margin,
+        "interval_width": 2.0 * margin,
+        "standard_error": standard_error,
+        "sample_size": int(n),
+        "degrees_of_freedom": int(degrees_of_freedom),
+        "diagnostics": {
+            "status": "success",
+            "warnings": [],
+            "n_excluded": n_excluded,
+        },
+    }
+# =========================================================
+# 3. Calculate normal-approximation confidence interval
+# =========================================================
+def calculateNormalConfidenceInterval( estimate: float, standard_error: float, *, confidence_level: float = 0.95, ) -> Dict[str, Any]:
+    """Calculate a normal-approximation CI from estimate and SE."""
+    _validateConfidenceLevel(confidence_level)
+    estimate = _validateFiniteScalar(estimate, "estimate")
+    standard_error = _validateFiniteScalar( standard_error, "standard_error", )
+    if standard_error < 0:
+        raise ValueError("standard_error must be non-negative.")
+    alpha = 1.0 - confidence_level
+    critical_value = float( stats.norm.ppf(1.0 - alpha / 2.0) )
+    margin = critical_value * standard_error
+    warnings = []
+    if standard_error == 0:
+        warnings.append( "The standard error is zero; the interval collapses to the point estimate." )
+    return {
+        "method": "normal",
+        "confidence_level": float(confidence_level),
+        "estimate": estimate,
+        "lower_bound": estimate - margin,
+        "upper_bound": estimate + margin,
+        "interval_width": 2.0 * margin,
+        "standard_error": standard_error,
+        "sample_size": None,
+        "degrees_of_freedom": None,
+        "diagnostics": {
+            "status": "success",
+            "warnings": warnings,
+            "n_excluded": 0,
+        },
+    }
+# =========================================================
+# 4. Calculate percentile confidence interval
+# =========================================================
+def calculatePercentileConfidenceInterval(
+    sampling_distribution,
+    *,
+    confidence_level: float = 0.95,
+    estimate: Optional[float] = None,
+    nan_policy: str = "raise",
+) -> Dict[str, Any]:
+    """Calculate a percentile CI from an existing sampling distribution.
+    This function does not generate bootstrap samples.
+    """
+    _validateConfidenceLevel(confidence_level)
+    distribution, n_excluded = _validateNumericArray( sampling_distribution, name="sampling_distribution", nan_policy=nan_policy, )
+    n = distribution.size
+    if n < 2:
+        raise ValueError( "At least two finite estimates are required for a percentile interval." )
+    if estimate is None:
+        point_estimate = float(np.mean(distribution))
+    else:
+        point_estimate = _validateFiniteScalar( estimate, "estimate", )
+    alpha = 1.0 - confidence_level
+    lower, upper = np.quantile( distribution, [alpha / 2.0, 1.0 - alpha / 2.0], )
+    return {
+        "method": "percentile",
+        "confidence_level": float(confidence_level),
+        "estimate": point_estimate,
+        "lower_bound": float(lower),
+        "upper_bound": float(upper),
+        "interval_width": float(upper - lower),
+        "standard_error": (
+            float(np.std(distribution, ddof=1))
+            if n >= 2
+            else None
+        ),
+        "sample_size": int(n),
+        "degrees_of_freedom": None,
+        "diagnostics": {
+            "status": "success",
+            "warnings": [ "The percentile interval does not apply bias correction or acceleration correction." ],
+            "n_excluded": n_excluded,
+        },
+    }
+# =========================================================
+# 5. Shared scalar and confidence-level validation
+# =========================================================
+def _validateConfidenceLevel(confidence_level: float) -> None:
+    """Validate the confidence level."""
+    try:
+        confidence_level = float(confidence_level)
+    except (TypeError, ValueError) as exc:
+        raise TypeError( "confidence_level must be a numeric scalar." ) from exc
+    if not np.isfinite(confidence_level) or not ( 0.0 < confidence_level < 1.0 ):
+        raise ValueError( "confidence_level must be strictly between 0 and 1." )
+def _validateFiniteScalar(value, name: str) -> float:
+    """Validate a finite numeric scalar."""
+    if not np.isscalar(value):
+        raise TypeError(f"{name} must be a scalar.")
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError( f"{name} must be numeric." ) from exc
+    if not np.isfinite(value):
+        raise ValueError(f"{name} must be finite.")
+    return value
+# =========================================================
+# 6. Unified public entry point
+# =========================================================
+def runConfidenceIntervalAnalysis(
+    data=None,
+    *,
+    method: str = "t",
+    confidence_level: float = 0.95,
+    estimate: Optional[float] = None,
+    standard_error: Optional[float] = None,
+    bootstrap_distribution=None,
+    nan_policy: str = "raise",
+) -> Dict[str, Any]:
+    """Unified entry point for confidence interval calculations.
+    Supported methods
+    -----------------
+    t:
+        data -> one-sample t interval for the mean.
+    normal:
+        estimate + standard_error -> normal-approximation interval.
+    percentile:
+        bootstrap_distribution -> percentile interval.
+    """
+    _validateConfidenceLevel(confidence_level)
+    if method not in {"t", "normal", "percentile"}:
+        raise ValueError( "method must be 't', 'normal', or 'percentile'." )
+    if nan_policy not in {"raise", "omit"}:
+        raise ValueError("nan_policy must be 'raise' or 'omit'.")
+    if method == "t":
+        if ( estimate is not None
+            or standard_error is not None
+            or bootstrap_distribution is not None ):
+            raise ValueError( "method='t' accepts data and confidence_level only." )
+        return calculateTConfidenceInterval( data, confidence_level=confidence_level, nan_policy=nan_policy, )
+    if method == "normal":
+        if ( data is not None
+            or bootstrap_distribution is not None ):
+            raise ValueError( "method='normal' accepts estimate, standard_error, and confidence_level only." )
+        if estimate is None or standard_error is None:
+            raise ValueError( "Both estimate and standard_error are required for method='normal'." )
+        return calculateNormalConfidenceInterval( estimate, standard_error, confidence_level=confidence_level, )
+    # method == "percentile"
+    if data is not None or standard_error is not None:
+        raise ValueError( "method='percentile' accepts bootstrap_distribution, optional estimate, and confidence_level only." )
+    if bootstrap_distribution is None:
+        raise ValueError( "bootstrap_distribution is required for method='percentile'." )
+    return calculatePercentileConfidenceInterval(
+        bootstrap_distribution,
+        confidence_level=confidence_level,
+        estimate=estimate,
+        nan_policy=nan_policy,
+    )
+def _validatePairedBootstrapData( data, nan_policy: str = "raise", ) -> np.ndarray:
+    """Validate paired observations stored in rows."""
+    if nan_policy not in {"raise", "omit"}:
+        raise ValueError(
+            "nan_policy must be 'raise' or 'omit'."
+        )
+    try:
+        data = np.asarray(data, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "data must contain numeric values."
+        ) from exc
+    if data.ndim != 2:
+        raise ValueError(
+            "data must be a two-dimensional array."
+        )
+    if data.shape[0] < 2:
+        raise ValueError(
+            "At least two observations are required."
+        )
+    if data.shape[1] < 2:
+        raise ValueError(
+            "data must contain at least two variables."
+        )
+    valid_rows = np.isfinite(data).all(axis=1)
+    if not valid_rows.all():
+        if nan_policy == "raise":
+            raise ValueError(
+                "data contains NaN or infinite values."
+            )
+        data = data[valid_rows]
+    if data.shape[0] < 2:
+        raise ValueError(
+            "At least two complete observations are required."
+        )
+    return data
+def _calculatePairedBootstrapDistributions(
+    data: np.ndarray,
+    indices: np.ndarray,
+    statistic_func: Callable,
+) -> Dict[str, np.ndarray]:
+    """
+    Calculate multiple scalar statistics for paired bootstrap samples.
+    statistic_func must return a dictionary of scalar statistics.
+    Non-finite bootstrap estimates are recorded as NaN.
+    """
+    n_bootstrap = indices.shape[0]
+    distributions = None
+    expected_keys = None
+    for i, sample_indices in enumerate(indices):
+        bootstrap_sample = data[sample_indices]
+        try:
+            result = statistic_func(bootstrap_sample)
+        except Exception as exc:
+            raise ValueError(
+                f"statistic_func failed during "
+                f"bootstrap iteration {i + 1}."
+            ) from exc
+        if not isinstance(result, dict) or not result:
+            raise TypeError(
+                "statistic_func must return a non-empty dictionary."
+            )
+        if expected_keys is None:
+            expected_keys = tuple(result.keys())
+            distributions = {
+                key: np.full(n_bootstrap, np.nan, dtype=float)
+                for key in expected_keys
+            }
+        elif set(result.keys()) != set(expected_keys):
+            raise ValueError(
+                f"Inconsistent statistic keys during "
+                f"bootstrap iteration {i + 1}."
+            )
+        for key in expected_keys:
+            try:
+                value = float(result[key])
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"Statistic '{key}' must be scalar and numeric."
+                ) from exc
+            if np.isfinite(value):
+                distributions[key][i] = value
+    return distributions
+def calculatePairedCorrelationStatistics(
+    data,
+    metric_names,
+    target_names,
+    statistic_names=("Pearson_r", "Spearman_r"),
+):
+    """
+    Calculate selected correlation statistics between two groups
+    of variables.
+    Parameters
+    ----------
+    data : array-like, shape (n_samples, n_variables)
+        Data matrix. Each row represents one sample.
+    metric_names : dict
+        Variable names and column indices for the first group.
+        Example: {"Centroid": 0, "Skewness": 1}
+    target_names : dict
+        Variable names and column indices for the second group.
+        Example: {"E": 3}
+    statistic_names : sequence of str
+        Statistics to retain from calculateCorrelation().
+        Available:
+        "Pearson_r", "Pearson_p", "Spearman_r", "Spearman_p".
+    Returns
+    -------
+    dict
+        Flat dictionary containing the selected statistics
+        for each variable pair.
+    """
+    data = np.asarray(data, dtype=float)
+    if data.ndim != 2:
+        raise ValueError("data must be a two-dimensional array.")
+    available_statistics = {
+        "Pearson_r",
+        "Pearson_p",
+        "Spearman_r",
+        "Spearman_p",
+    }
+    statistic_names = tuple(statistic_names)
+    if not statistic_names:
+        raise ValueError("statistic_names must not be empty.")
+    invalid_statistics = (
+        set(statistic_names) - available_statistics
+    )
+    if invalid_statistics:
+        raise ValueError(
+            f"Unsupported statistics: {sorted(invalid_statistics)}"
+        )
+    result = {}
+    for group in (metric_names, target_names):
+        for name, index in group.items():
+            if (
+                isinstance(index, (bool, np.bool_))
+                or not isinstance(index, (int, np.integer))
+                or not 0 <= index < data.shape[1]
+            ):
+                raise ValueError(
+                    f"Invalid column index for '{name}': {index}"
+                )
+    for x_name, x_idx in metric_names.items():
+        for y_name, y_idx in target_names.items():
+            correlation = mf.calculateCorrelation(
+                x=data[:, x_idx],
+                y=data[:, y_idx],
+                x_name=x_name,
+                y_name=y_name,
+                dropna=False,
+            )
+            pair_name = f"{x_name}_vs_{y_name}"
+            for statistic_name in statistic_names:
+                result[
+                    f"{pair_name}_{statistic_name}"
+                ] = correlation[statistic_name]
+    return result
+def runPairedBootstrapAnalysis(
+    data,
+    statistic_func: Callable,
+    *,
+    n_bootstrap: int = 10000,
+    confidence_level: float = 0.95,
+    random_state: Optional[int] = None,
+    nan_policy: str = "raise",
+) -> Dict[str, Any]:
+    """
+    Run paired bootstrap analysis for multiple scalar statistics.
+    Each row represents one observation. All columns are resampled
+    together to preserve the pairing between variables.
+    statistic_func receives a two-dimensional sample and must return
+    a dictionary of scalar statistics.
+    one excample of Callable is def calculatePairedCorrelationStatistics()
+    """
+    if not callable(statistic_func):
+        raise TypeError(
+            "statistic_func must be callable."
+        )
+    if (
+        isinstance(n_bootstrap, (bool, np.bool_))
+        or not isinstance(n_bootstrap, (int, np.integer))
+        or n_bootstrap < 2
+    ):
+        raise ValueError(
+            "n_bootstrap must be an integer >= 2."
+        )
+    if (
+        isinstance(confidence_level, (bool, np.bool_))
+        or not isinstance(
+            confidence_level,
+            (int, float, np.integer, np.floating),
+        )
+        or not np.isfinite(confidence_level)
+        or not 0.0 < confidence_level < 1.0
+    ):
+        raise ValueError(
+            "confidence_level must be between 0 and 1."
+        )
+    # 1. Validate data
+    data = _validatePairedBootstrapData(
+        data=data,
+        nan_policy=nan_policy,
+    )
+    # 2. Calculate statistics from the original data
+    try:
+        original_result = statistic_func(data)
+    except Exception as exc:
+        raise ValueError(
+            "statistic_func failed on the original data."
+        ) from exc
+    if not isinstance(original_result, dict) or not original_result:
+        raise TypeError(
+            "statistic_func must return a non-empty dictionary."
+        )
+    estimates = {}
+    for key, value in original_result.items():
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"Statistic '{key}' must be scalar and numeric."
+            ) from exc
+        if not np.isfinite(value):
+            raise ValueError(
+                f"Statistic '{key}' is non-finite on original data."
+            )
+        estimates[key] = value
+    # 3. Generate one shared set of bootstrap indices
+    indices = _generateBootstrapIndices(
+        n_samples=data.shape[0],
+        n_bootstrap=n_bootstrap,
+        random_state=random_state,
+    )
+    # 4. Calculate all statistics using the same resamples
+    distributions = _calculatePairedBootstrapDistributions(
+        data=data,
+        indices=indices,
+        statistic_func=statistic_func,
+    )
+    if set(distributions) != set(estimates):
+        raise ValueError(
+            "Statistics returned for bootstrap samples do not match "
+            "those returned for the original data."
+        )
+    # 5. Summarize each statistic and calculate its confidence interval
+    statistics = {}
+    for key, distribution in distributions.items():
+        valid_distribution = distribution[
+            np.isfinite(distribution)
+        ]
+        n_valid = len(valid_distribution)
+        n_invalid = n_bootstrap - n_valid
+        if n_valid < 2:
+            raise ValueError(
+                f"Statistic '{key}' has fewer than two valid "
+                "bootstrap estimates; its uncertainty cannot "
+                "be estimated reliably."
+            )
+        ci_result = runConfidenceIntervalAnalysis(
+            method="percentile",
+            confidence_level=confidence_level,
+            estimate=estimates[key],
+            bootstrap_distribution=valid_distribution,
+        )
+        # print("ci_result:", ci_result)
+        statistics[key] = {
+            "estimate": estimates[key],
+            "bootstrap_distribution": distribution,
+            "bootstrap_standard_error": float(
+                np.std(valid_distribution, ddof=1)
+            ),
+            "confidence_interval": (
+                ci_result["lower_bound"],
+                ci_result["upper_bound"],
+            ),
+            "confidence_level": confidence_level,
+            "n_valid": n_valid,
+            "n_invalid": n_invalid,
+            "invalid_fraction": n_invalid / n_bootstrap,
+        }
+    return {
+        "statistics": statistics,
+        "n_samples": int(data.shape[0]),
+        "n_variables": int(data.shape[1]),
+        "n_bootstrap": int(n_bootstrap),
+        "confidence_level": confidence_level,
+        "random_state": random_state,
+        "method": "paired_bootstrap_percentile",
+    }
 
+def _validateBootstrapData(
+    data,
+    nan_policy: str = "raise",
+) -> np.ndarray:
+    """Validate and prepare one-dimensional bootstrap data."""
+    if nan_policy not in {"raise", "omit"}:
+        raise ValueError("nan_policy must be 'raise' or 'omit'.")
+    try:
+        x = np.asarray(data, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "data must contain numeric values."
+        ) from exc
+    if x.ndim != 1:
+        raise ValueError(
+            "data must be a one-dimensional array."
+        )
+    if x.size == 0:
+        raise ValueError("data must not be empty.")
+    finite_mask = np.isfinite(x)
+    if not finite_mask.all():
+        if nan_policy == "raise":
+            raise ValueError(
+                "data contains NaN or infinite values."
+            )
+        x = x[finite_mask]
+    if x.size < 2:
+        raise ValueError(
+            "At least two finite observations are required."
+        )
+    return x
+def _generateBootstrapIndices(
+    n_samples: int,
+    n_bootstrap: int,
+    random_state: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Generate bootstrap indices by sampling with replacement.
+    Returns
+    -------
+    np.ndarray
+        Array with shape (n_bootstrap, n_samples).
+    """
+    rng = np.random.default_rng(random_state)
+    return rng.integers(
+        low=0,
+        high=n_samples,
+        size=(n_bootstrap, n_samples),
+    )
+def _calculateBootstrapDistribution(
+    data: np.ndarray,
+    indices: np.ndarray,
+    statistic_func: Callable,
+) -> np.ndarray:
+    """
+    Calculate a scalar statistic for each bootstrap resample.
+    Parameters
+    ----------
+    data : np.ndarray
+        Original data.
+    indices : np.ndarray
+        Bootstrap indices with shape (n_bootstrap, n_samples).
+    statistic_func : callable
+        Function that accepts one resampled dataset and returns
+        a scalar statistic.
+    Returns
+    -------
+    np.ndarray
+        Bootstrap estimates with shape (n_bootstrap,).
+    """
+    bootstrap_estimates = np.empty(
+        indices.shape[0],
+        dtype=float,
+    )
+    for i, sample_indices in enumerate(indices):
+        bootstrap_sample = data[sample_indices]
+        try:
+            estimate = float(statistic_func(bootstrap_sample))
+        except Exception as exc:
+            raise ValueError(
+                f"statistic_func failed during bootstrap iteration {i + 1}."
+            ) from exc
+        if not np.isfinite(estimate):
+            raise ValueError(
+                f"statistic_func returned a non-finite estimate "
+                f"during bootstrap iteration {i + 1}."
+            )
+        bootstrap_estimates[i] = estimate
+    return bootstrap_estimates
+def runBootstrapAnalysis(
+    data,
+    statistic_func: Callable,
+    *,
+    n_bootstrap: int = 10000,
+    confidence_level: float = 0.95,
+    random_state: Optional[int] = None,
+    nan_policy: str = "raise",
+) -> Dict[str, Any]:
+    """
+    Run bootstrap analysis for a scalar statistic.
+    Parameters
+    ----------
+    data : array-like
+        One-dimensional observations.
+    statistic_func : callable
+        Function that accepts a bootstrap sample and returns
+        one scalar statistic.
+    n_bootstrap : int, default=10000
+        Number of bootstrap replicates.
+    confidence_level : float, default=0.95
+        Confidence level.
+    random_state : int or None, default=None
+        Random seed.
+    nan_policy : {"raise", "omit"}, default="raise"
+        Handling of NaN and infinite input values.
+    Returns
+    -------
+    dict
+        Original estimate, bootstrap distribution, standard
+        error, confidence interval, and analysis metadata.
+    """
+    if not callable(statistic_func):
+        raise TypeError( "statistic_func must be callable." )
+    if (
+        isinstance(n_bootstrap, (bool, np.bool_))
+        or not isinstance(n_bootstrap, (int, np.integer))
+        or n_bootstrap < 1
+    ):
+        raise ValueError( "n_bootstrap must be a positive integer." )
+    if (
+        isinstance(confidence_level, (bool, np.bool_))
+        or not isinstance( confidence_level, (int, float, np.integer, np.floating), )
+        or not np.isfinite(confidence_level)
+        or not 0.0 < confidence_level < 1.0
+    ):
+        raise ValueError( "confidence_level must be between 0 and 1." )
+    # 1. Validate and prepare the input data
+    x = _validateBootstrapData( data=data, nan_policy=nan_policy, )
+    # 2. Calculate the original-data estimate
+    try:
+        estimate = float(statistic_func(x))
+    except Exception as exc:
+        raise ValueError( "statistic_func failed on the original data." ) from exc
+    if not np.isfinite(estimate):
+        raise ValueError( "statistic_func returned a non-finite estimate for the original data." )
+    # 3. Generate the bootstrap distribution
+    indices = _generateBootstrapIndices( n_samples=x.size, n_bootstrap=n_bootstrap, random_state=random_state, )
+    bootstrap_estimates = _calculateBootstrapDistribution( data=x, indices=indices, statistic_func=statistic_func, )
+    # 4. Calculate the bootstrap standard error
+    bootstrap_standard_error = float( np.std(bootstrap_estimates, ddof=1) )
+    # 5. Calculate the percentile confidence interval
+    ci_result = runConfidenceIntervalAnalysis( method="percentile", confidence_level=confidence_level, 
+                                              estimate=estimate, bootstrap_distribution=bootstrap_estimates, )
+    # 6. Assemble the results
+    return {
+        "estimate": estimate,
+        "bootstrap_distribution": bootstrap_estimates,
+        "bootstrap_standard_error": bootstrap_standard_error,
+        "confidence_interval": ci_result["confidence_interval"],
+        "confidence_level": confidence_level,
+        "n_samples": int(x.size),
+        "n_bootstrap": int(n_bootstrap),
+        "method": "bootstrap_percentile",
+        "random_state": random_state,
+    }
 def correlationAnalysis(
         x,
         y,

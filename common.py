@@ -22,6 +22,7 @@ from pathlib import Path
 import pyiast 
 import natsort
 from copy import deepcopy
+from typing import Any, Callable, Dict, Optional
 
 # ======================
 # Scientific Computing
@@ -47,11 +48,7 @@ from matplotlib.lines import Line2D
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import MultipleLocator
-from matplotlib.colors import (
-    ListedColormap,
-    to_hex,
-    to_rgb,
-)
+from matplotlib.colors import  ListedColormap, to_hex, to_rgb
 import random
 from itertools import cycle
 
@@ -69,6 +66,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import spearmanr
 from scipy.stats import pearsonr
+from scipy import stats
 
 # ======================
 # Fitting

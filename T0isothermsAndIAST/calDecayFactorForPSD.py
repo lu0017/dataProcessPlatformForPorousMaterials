@@ -269,99 +269,80 @@ def calculatePSDMetrics( psdData, regions, prefix=None ):
 def selectSamples(data, samples, sampleColumn="sample", axis=None):
     """
     Select specified samples from a DataFrame.
-
     Supports:
     1. Sample names stored in MultiIndex columns
     2. Sample names stored in a normal column
     3. Sample names stored in DataFrame index
-
     Parameters
     ----------
     data : pandas.DataFrame
         Input data.
-
     samples : list or None
         Samples to select.
         If None, all samples are retained.
-
     sampleColumn : str, optional
         Name of the sample column when samples are stored
         as a normal column.
-
     axis : int or None, optional
         None : automatically detect data structure
         0    : sample names are stored in rows/index
         1    : sample names are stored in MultiIndex columns
-
     Returns
     -------
     pandas.DataFrame
         Selected data.
     """
-
     # ==========================================
     # Select all samples
     # ==========================================
     if samples is None:
         return data.copy()
-
     # ==========================================
     # Case 1: MultiIndex columns
     # ==========================================
     if isinstance(data.columns, pd.MultiIndex):
-
         availableSamples = (
             data.columns
             .get_level_values(0)
             .unique()
         )
-
         missingSamples = [
             sample
             for sample in samples
             if sample not in availableSamples
         ]
-
         if missingSamples:
             print(
                 f"Warning: samples not found: "
                 f"{missingSamples}"
             )
-
         validSamples = [
             sample
             for sample in samples
             if sample in availableSamples
         ]
-
         return data.loc[
             :,
             validSamples
         ].copy()
-
     # ==========================================
     # Case 2: sample stored in a normal column
     # ==========================================
     if sampleColumn in data.columns:
-
         return data[
             data[sampleColumn].isin(samples)
         ].copy()
-
     # ==========================================
     # Case 3: sample stored in index
     # ==========================================
     if data.index.name == sampleColumn:
-
         return data.loc[
             data.index.isin(samples)
         ].copy()
-
     # ==========================================
     # Case 4: automatically detect sample index
     # ==========================================
     indexValues = data.index.astype(str)
-
     if all(
         str(sample) in indexValues
         for sample in samples
@@ -371,7 +352,6 @@ def selectSamples(data, samples, sampleColumn="sample", axis=None):
                 [str(sample) for sample in samples]
             )
         ].copy()
-
     # ==========================================
     # Cannot identify sample structure
     # ==========================================
@@ -381,6 +361,203 @@ def selectSamples(data, samples, sampleColumn="sample", axis=None):
         f"Index name: {data.index.name}\n"
         f"Available columns: {list(data.columns)}"
     )
+def staristicAnalysisForPSDdecay(
+    psdData=None,
+    metrics=None,
+    kineticdata=None,
+    metric_names=None,
+    target_names=None,
+    regions=None,
+    statistic_names=("Pearson_r", "Spearman_r"),
+    n_bootstrap=1000,
+    confidence_level=0.95,
+    random_state=42,
+    target_data=None,
+    check_rank=False,
+):
+    """
+    Perform paired bootstrap correlation analysis between two groups
+    of variables.
+    Parameters
+    ----------
+    psdData : DataFrame or None
+        PSD data used to calculate metrics when metrics is None.
+    metrics : DataFrame or None
+        DataFrame containing the first group of variables.
+        If None, calculate PSD metrics from psdData.
+    kineticdata : DataFrame or None
+        DataFrame containing the target variables in the original
+        two-DataFrame workflow. Used when target_data is None and
+        metrics and kineticdata are separate DataFrames.
+    metric_names : list, tuple, str, or None
+        Column names of the first variable group.
+        If None, use all columns in metrics.
+    target_names : list, tuple, str, or None
+        Column names of the second variable group.
+        If None, use ["E (J/mol)"] when kineticdata is provided;
+        otherwise, all columns in the selected target DataFrame
+        must be specified explicitly or inferred as appropriate.
+    regions : dict or None
+        PSD regions used by calculatePSDMetrics when metrics is None.
+    target_data : DataFrame or None
+        Optional DataFrame containing the second variable group.
+        If None, use kineticdata when provided; otherwise, use metrics.
+        Set target_data=metrics to select both groups from the same
+        DataFrame explicitly.
+    check_rank : bool
+        If True, print the ranks of selected variables for inspection.
+    """
+    # --------------------------------------------------
+    # 1. Calculate PSD metrics if not already supplied
+    # --------------------------------------------------
+    if metrics is None:
+        if psdData is None:
+            raise ValueError(
+                "Provide either metrics or psdData."
+            )
+        if regions is None:
+            regions = {
+                "High": (0.30, 0.50),
+                "Middle": (0.50, 0.65),
+                "Low": (0.65, 0.80),
+            }
+        metrics = calculatePSDMetrics(
+            psdData,
+            regions,
+        )
+    if not isinstance(metrics, pd.DataFrame):
+        raise TypeError("metrics must be a pandas DataFrame.")
+    # --------------------------------------------------
+    # 2. Determine the source of target variables
+    # --------------------------------------------------
+    if target_data is not None:
+        target_df = target_data
+    elif kineticdata is not None:
+        target_df = kineticdata
+    else:
+        target_df = metrics
+    if not isinstance(target_df, pd.DataFrame):
+        raise TypeError( "kineticdata or target_data must be a pandas DataFrame." )
+    # --------------------------------------------------
+    # 3. Normalize sample identifiers
+    # --------------------------------------------------
+    metrics = metrics.copy()
+    target_df = target_df.copy()
+    if "sample" in metrics.columns:
+        metrics = metrics.set_index("sample")
+    if "sample" in target_df.columns:
+        target_df = target_df.set_index("sample")
+    if not metrics.index.is_unique:
+        raise ValueError( "metrics contains duplicate sample indices." )
+    if not target_df.index.is_unique:
+        raise ValueError( "The target DataFrame contains duplicate sample indices." )
+    # Sort only when using the existing project's sorting function.
+    metrics = dop.naturalSortData(metrics)
+    target_df = dop.naturalSortData(target_df)
+    # --------------------------------------------------
+    # 4. Select variable names
+    # --------------------------------------------------
+    if metric_names is None:
+        metric_names = list(metrics.columns)
+    elif isinstance(metric_names, str):
+        metric_names = [metric_names]
+    else:
+        metric_names = list(metric_names)
+    if target_names is None:
+        if "E (J/mol)" in target_df.columns:
+            target_names = ["E (J/mol)"]
+        elif target_df is metrics:
+            raise ValueError( "Specify target_names when using the same DataFrame without an 'E (J/mol)' column." )
+        else:
+            raise ValueError( "Specify target_names to identify the target variables." )
+    elif isinstance(target_names, str):
+        target_names = [target_names]
+    else:
+        target_names = list(target_names)
+    if not metric_names:
+        raise ValueError("metric_names cannot be empty.")
+    if not target_names:
+        raise ValueError("target_names cannot be empty.")
+    missing_metrics = [ name for name in metric_names if name not in metrics.columns ]
+    missing_targets = [ name for name in target_names if name not in target_df.columns ]
+    if missing_metrics:
+        raise KeyError( f"Metric columns not found: {missing_metrics}" )
+    if missing_targets:
+        raise KeyError( f"Target columns not found: {missing_targets}" )
+    # --------------------------------------------------
+    # 5. Align observations by sample index
+    # --------------------------------------------------
+    common_samples = metrics.index[ metrics.index.isin(target_df.index) ]
+    if len(common_samples) < 2:
+        raise ValueError( "Fewer than two matching samples between the two variable groups." )
+    selected_metrics = metrics.loc[ common_samples, metric_names ].copy()
+    selected_targets = target_df.loc[ common_samples, target_names ].copy()
+    # --------------------------------------------------
+    # 6. Combine data into a DataFrame and numeric matrix
+    # --------------------------------------------------
+    duplicate_names = set(metric_names).intersection(target_names)
+    if duplicate_names:
+        raise ValueError(
+            "The two variable groups contain overlapping column names: "
+            f"{sorted(duplicate_names)}. Rename one group before analysis."
+        )
+    combined_df = pd.concat( [selected_metrics, selected_targets], axis=1, )
+    try:
+        combined_data = combined_df.to_numpy(dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError( "All selected variables must contain numeric data." ) from exc
+    # --------------------------------------------------
+    # 7. Map variable names to combined matrix column indices
+    # --------------------------------------------------
+    n_metrics = len(metric_names)
+    combined_metric_names = { name: i for i, name in enumerate(metric_names) }
+    combined_target_names = { name: n_metrics + i for i, name in enumerate(target_names) }
+    # --------------------------------------------------
+    # 8. Run the existing paired bootstrap analysis
+    # --------------------------------------------------
+    bootstrap_result = dop.runPairedBootstrapAnalysis(
+        data=combined_data,
+        statistic_func=lambda sample: (
+            dop.calculatePairedCorrelationStatistics(
+                data=sample,
+                metric_names=combined_metric_names,
+                target_names=combined_target_names,
+                statistic_names=statistic_names,
+            )
+        ),
+        n_bootstrap=n_bootstrap,
+        confidence_level=confidence_level,
+        random_state=random_state,
+    )
+    # --------------------------------------------------
+    # 9. Optional rank inspection
+    # --------------------------------------------------
+    if check_rank:
+        print("\nVariable ranks:")
+        print( combined_df.rank(method="average").to_string() )
+    # --------------------------------------------------
+    # 10. Print statistics
+    # --------------------------------------------------
+    for name, stats in bootstrap_result["statistics"].items():
+        print(f"\n{name}")
+        print(f"  Estimate: {stats['estimate']:.4f}")
+        print(
+            f"  {confidence_level:.0%} CI: "
+            f"{stats['confidence_interval']}"
+        )
+        print(
+            "  Bootstrap SE: "
+            f"{stats['bootstrap_standard_error']:.4f}"
+        )
+        print(f"  Valid: {stats['n_valid']}")
+        print(f"  Invalid: {stats['n_invalid']}")
+    return {
+        "samples": list(common_samples),
+        "metrics": selected_metrics,
+        "kineticdata": selected_targets,
+        "combined_data": combined_df,
+        "bootstrap_result": bootstrap_result,
+    }
 ##########################################################################
 def main(file_path=None):
     # # 选择文件
@@ -405,11 +582,9 @@ def main(file_path=None):
         "SELE pyIAST",
         "E (J/mol)"
     ]
-
     file = fl.getFile()
     psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
-
     # # # ##################### 用于分析指定样品##############
     # # =========================
     # # Select samples
@@ -423,9 +598,7 @@ def main(file_path=None):
     # psdData = selectSamples( psdData, samples, axis=1 )
     # kineticdata = selectSamples( kineticdata, samples, sampleColumn="Sample", axis=0 )
     # # # ##################### 用于分析指定样品##############
-
     psdData = dop.naturalSortData(psdData,axis=1)
-
     # plotData = {}
     # samples = psdData.columns.get_level_values(0).unique()
     # plotData = { sample: psdData[sample].copy() for sample in samples }
@@ -440,10 +613,8 @@ def main(file_path=None):
     #     fit_label="PSD",
     #     # savepath="psd-DFT.png",
     # )
-
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
-
     # # ##################### 同时计算两个kernal的数据##############
     # psd_sheet_dft = "PSD-DFT-CO2"
     # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
@@ -456,16 +627,13 @@ def main(file_path=None):
     #     "GCMC_Centroid",
     #     "GCMC_CompetitionIndex",
     #     "GCMC_Skewness",
-
     #     "DFT_Centroid",
     #     "DFT_CompetitionIndex",
     #     "DFT_Skewness",
     #     ]
-    # # ##################### 同时计算两个kernal的数据##############
-
+    # # ##################### 结束同时计算两个kernal的数据##############
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
-
     # # ##################### 出传统porosity指标##############
     # porosity_sheet = "porosity"
     # include = ["BET", "Vultra (0.7)", "Vultra (1)", "Vmic(2)", "Vme", "Vt", "SELE pyIAST", "sel_henry"]
@@ -477,9 +645,7 @@ def main(file_path=None):
     # myPlt.plotCorrelogram(results = results_metrix_porspsity, order=order, include=include, cmap="RdBu_r",decimals=2, dpi=900, 
     #                       savePath = figureName
     #                       )
-    # # ##################### 出传统porosity指标##############
-
-
+    # # ##################### 结束出传统porosity指标##############
     # ##################### 单独计算孔体积用##############
     # # X_metrix_po, Y_metrix_po, summary_metrix_po, results_metrix_po = dop.matrixCorrelationAnalysis( kineticdata)
     # # 不再使用3FLEX导出的累计体积
@@ -494,15 +660,17 @@ def main(file_path=None):
     # myPlt.plotCorrelogram(results = results_metrix_po,textValue="R2", exclude=exclude, cmap="RdBu_r",decimals=2, dpi=900, 
     #                     #   savePath = figureName
     #                       )
-    # ##################### 单独计算孔体积用##############
-
-
+    # ##################### 结束单独计算孔体积用##############
     # # ##################### 保存数据到excel##############
     # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
     # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
-    # # ##################### 保存数据到excel##############
-
+    # # ##################### 结束保存数据到excel##############
+    ########################进行bootstrap leave-one-out PCA VIF分析###################################
+    staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
+            target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r","Spearman_r"), 
+            n_bootstrap=10000, confidence_level=0.95, random_state=42, )
+    ########################结束进行bootstrap leave-one-out PCA VIF分析###################################
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
@@ -527,7 +695,7 @@ def main(file_path=None):
                                 )
     myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
     myPlt.plotBatchCorrelation(results, topN=9)
-    # # ##################### 输出图片部分##############
+    # # ##################### 结束输出图片部分##############
     exclude = [
         "Variance",
         "Std"
@@ -535,26 +703,21 @@ def main(file_path=None):
     include = [
         "O-EDS",
         "ID/IG",
-
-
         # "GCMC_High",
         # # "GCMC_HighLowRatio",
         # "GCMC_Centroid",
         # "GCMC_CompetitionIndex",
         # "GCMC_Skewness",
-
         # "DFT_High",
         # # "DFT_HighLowRatio",
         # "DFT_Centroid",
         # "DFT_CompetitionIndex",
         # "DFT_Skewness",
-
         "High",
         "HighLowRatio",
         "Centroid",
         "CompetitionIndex",
         "Skewness",
-
         "bA-T25",
         "E (J/mol)",
         "Eave (J/mol)",
