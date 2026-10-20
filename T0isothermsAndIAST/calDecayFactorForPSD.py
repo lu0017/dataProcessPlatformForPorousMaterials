@@ -537,38 +537,39 @@ def main(file_path=None):
         "ID/IG",
 
 
-        "GCMC_High",
-        # "GCMC_HighLowRatio",
-        "GCMC_Centroid",
-        "GCMC_CompetitionIndex",
-        "GCMC_Skewness",
+        # "GCMC_High",
+        # # "GCMC_HighLowRatio",
+        # "GCMC_Centroid",
+        # "GCMC_CompetitionIndex",
+        # "GCMC_Skewness",
 
-        "DFT_High",
-        # "DFT_HighLowRatio",
-        "DFT_Centroid",
-        "DFT_CompetitionIndex",
-        "DFT_Skewness",
+        # "DFT_High",
+        # # "DFT_HighLowRatio",
+        # "DFT_Centroid",
+        # "DFT_CompetitionIndex",
+        # "DFT_Skewness",
 
-        # "High",
-        # "HighLowRatio",
-        # "Centroid",
-        # "CompetitionIndex",
-        # "Skewness",
+        "High",
+        "HighLowRatio",
+        "Centroid",
+        "CompetitionIndex",
+        "Skewness",
 
         "bA-T25",
         "E (J/mol)",
+        "Eave (J/mol)",
         "SELE pyIAST",
         "sel_henry",
         #"sel_henry_numer",
     ]
     order = include
     figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=True, type="png")
-    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-    #                     #   savePath = figureName
-    #                       )
-    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
-                            #   savePath = figureName
-                              )
+    myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
+                        #   savePath = figureName
+                          )
+    # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
+    #                         #   savePath = figureName
+    #                           )
     plt.show(block=True)
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

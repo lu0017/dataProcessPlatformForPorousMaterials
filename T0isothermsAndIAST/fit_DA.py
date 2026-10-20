@@ -388,7 +388,7 @@ def main(file_path=None):
 
     if singleFile:
         # # 选择文件
-        sheet_name = "CC-20M10-Bi-700-2-1"
+        sheet_name = "CC-Bi-800-2-1"
         file = fl.getFile()
         listData, out_path, _ = fl.readFileBySheet(file, sheet_name)
         runDAsimu(listData, out_path, plotFlag=True, sheet_name = sheet_name)
