@@ -1610,7 +1610,8 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # ======================================================
     # 4. Plot all samples in one figure
     # ======================================================
-    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition )
+    savepath = r"F:\0_Academic\3_experiment\3\compare2samples.png"
+    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,savepath=savepath )
     plt.show(block=False)
 def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, 
                            pressure_type="merge", fit_label="exp=f(sim)", legendPosition="upper left"):
@@ -3052,7 +3053,7 @@ def main(file_path=None):
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
     exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
-    samples=["CC-Hy-800-0.5-1", "CC-Hy-800-2-1"]
+    samples=["CC-Hy-800-2-1","CC-Hy-800-0.5-1"]
     plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################

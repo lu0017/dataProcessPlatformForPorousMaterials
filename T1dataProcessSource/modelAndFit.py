@@ -667,6 +667,136 @@ def fittingResultToRecord( result, parameter_name=None, extra=None, n_name="N"):
     for name, value in parameter_stderr.items():
         record[ f"Fit_{name}_StdErr" ] = value
     return record
+def calculatePartialCorrelation(
+    x,
+    y,
+    controls,
+    x_name="x",
+    y_name="y",
+    control_names=None,
+    dropna=True,
+):
+    """
+    Calculate the partial Pearson correlation between x and y,
+    controlling for one or more variables.
+    Parameters
+    ----------
+    x, y : array-like
+        Variables to correlate.
+    controls : array-like, shape (n_samples, n_controls)
+        Control variables.
+    x_name, y_name : str
+        Names of x and y.
+    control_names : sequence of str, optional
+        Names of control variables.
+    dropna : bool
+        Remove rows containing NaN or infinite values.
+    Returns
+    -------
+    dict
+        Partial correlation results.
+    """
+    import numpy as np
+    from scipy.stats import t as student_t
+    x = np.asarray(x, dtype=float).reshape(-1)
+    y = np.asarray(y, dtype=float).reshape(-1)
+    controls = np.asarray(controls, dtype=float)
+    if controls.ndim == 1:
+        controls = controls.reshape(-1, 1)
+    if controls.ndim != 2:
+        raise ValueError("controls must be a 1D or 2D array.")
+    if not (len(x) == len(y) == controls.shape[0]):
+        raise ValueError(
+            "x, y, and controls must have the same number of samples."
+        )
+    n_original = len(x)
+    if control_names is None:
+        control_names = [
+            f"control_{i + 1}"
+            for i in range(controls.shape[1])
+        ]
+    else:
+        control_names = list(control_names)
+    if len(control_names) != controls.shape[1]:
+        raise ValueError(
+            "The number of control_names must match "
+            "the number of control variables."
+        )
+    # ------------------------------------------------------
+    # Remove invalid rows consistently across all variables
+    # ------------------------------------------------------
+    valid = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.all(np.isfinite(controls), axis=1)
+    )
+    if dropna:
+        x = x[valid]
+        y = y[valid]
+        controls = controls[valid]
+    elif not np.all(valid):
+        raise ValueError(
+            "Input contains NaN or infinite values while dropna=False."
+        )
+    n = len(x)
+    if n < 3:
+        raise ValueError(
+            "Not enough valid samples for partial correlation."
+        )
+    # ------------------------------------------------------
+    # Construct the regression design matrix
+    # ------------------------------------------------------
+    design = np.column_stack([
+        np.ones(n),
+        controls,
+    ])
+    rank = np.linalg.matrix_rank(design)
+    df = n - rank - 1
+    if df <= 0:
+        raise ValueError(
+            "Insufficient degrees of freedom for partial correlation."
+        )
+    # ------------------------------------------------------
+    # Residualize x and y against the control variables
+    # ------------------------------------------------------
+    beta_x = np.linalg.lstsq(design, x, rcond=None)[0]
+    beta_y = np.linalg.lstsq(design, y, rcond=None)[0]
+    residual_x = x - design @ beta_x
+    residual_y = y - design @ beta_y
+    if (
+        np.std(residual_x) == 0
+        or np.std(residual_y) == 0
+    ):
+        raise ValueError(
+            "Partial correlation is undefined because "
+            "one residual has zero variance."
+        )
+    partial_r = np.corrcoef(residual_x, residual_y)[0, 1]
+    # ------------------------------------------------------
+    # Two-sided significance test
+    # ------------------------------------------------------
+    if np.isclose(abs(partial_r), 1.0):
+        partial_p = 0.0
+    else:
+        t_stat = partial_r * np.sqrt(
+            df / (1.0 - partial_r ** 2)
+        )
+        partial_p = 2.0 * student_t.sf(
+            abs(t_stat), df
+        )
+    return {
+        "x_name": x_name,
+        "y_name": y_name,
+        "control_names": control_names,
+        "N": n,
+        "N_original": n_original,
+        "DF": df,
+        "Partial_r": partial_r,
+        "Partial_p": partial_p,
+        "X": x,
+        "Y": y,
+        "Controls": controls,
+    }
 def calculateCorrelation( x, y, x_name="x", y_name="y", dropna=True):
     """
     Calculate Pearson and Spearman correlations.

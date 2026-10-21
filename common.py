@@ -51,7 +51,7 @@ from matplotlib.ticker import MultipleLocator
 from matplotlib.colors import  ListedColormap, to_hex, to_rgb
 import random
 from itertools import cycle
-
+from itertools import product
 # ======================
 # Scipy
 # ======================

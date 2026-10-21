@@ -9,6 +9,296 @@ import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
+import T1dataProcessSource.modelAndFit as mf
+def savePSDAnalysisResults(
+    statisticAnalysis,
+    ci_sensitivity_result,
+    filename,
+    kineticdata=None,  
+    metrics=None,
+    correlation_export=None,
+):
+    """
+    Export PSD statistical analysis and CI boundary sensitivity
+    results to a single Excel workbook.
+    Parameters
+    ----------
+    statisticAnalysis : dict
+        Results returned by staristicAnalysisForPSDdecay().
+    ci_sensitivity_result : dict
+        Results returned by runCompetitionIndexSensitivityAnalysis().
+    filename : str
+        Output Excel file path.
+    metrics : DataFrame, optional
+        Original PSD metrics DataFrame.
+    correlation_export : dict, optional
+        Keyword arguments for fl.exportCorrelationExcel().
+        Supported keys include X, Y, summary, X_matrix,
+        Y_matrix, summary_matrix and summary_matrix_SHHET.
+    """
+    used_sheets = set()
+    # --------------------------------------------------
+    # 1. Safe Excel sheet names
+    # --------------------------------------------------
+    def _sheetName(name):
+        name = re.sub(r"[\[\]:*?/\\]", "_", str(name))
+        name = name.strip("'") or "Sheet"
+        name = name[:31]
+        base = name
+        counter = 1
+        while name.lower() in used_sheets:
+            suffix = f"_{counter}"
+            name = f"{base[:31 - len(suffix)]}{suffix}"
+            counter += 1
+        used_sheets.add(name.lower())
+        return name
+    # --------------------------------------------------
+    # 2. Export one DataFrame
+    # --------------------------------------------------
+    def _exportDataFrame(df, sheet_name, index=True):
+        if df is None:
+            return
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+        fl.export_to_excel_auto(
+            df,
+            filename=filename,
+            sheet_name=_sheetName(sheet_name),
+            index=index,
+        )
+    # --------------------------------------------------
+    # 3. Convert Bootstrap results
+    # --------------------------------------------------
+    def _bootstrapToDataFrame(result):
+        rows = []
+        for name, stats in result["statistics"].items():
+            ci = stats["confidence_interval"]
+            rows.append({
+                "Statistic": name,
+                "Estimate": stats["estimate"],
+                "CI_lower": ci[0],
+                "CI_upper": ci[1],
+                "Bootstrap_SE": stats["bootstrap_standard_error"],
+                "Valid": stats["n_valid"],
+                "Invalid": stats["n_invalid"],
+            })
+        return pd.DataFrame(rows)
+    # --------------------------------------------------
+    # 4. Convert LOO results
+    # --------------------------------------------------
+    def _looToDataFrame(result):
+        rows = []
+        for name, stats in result["summary"].items():
+            absolute = stats["absolute_changes"]
+            relative = stats["relative_changes"] or {}
+            rows.append({
+                "Statistic": name,
+                "Baseline": stats["baseline"],
+                "Valid_LOO": stats["valid_count"],
+                "Invalid_LOO": stats["invalid_count"],
+                "LOO_min": stats["min"],
+                "LOO_max": stats["max"],
+                "Max_abs_change": absolute["max"],
+                "Mean_abs_change": absolute["mean"],
+                "Max_relative_change": relative.get("max"),
+                "Mean_relative_change": relative.get("mean"),
+                "Sign_consistency": stats["sign_consistency"],
+            })
+        return pd.DataFrame(rows)
+    # --------------------------------------------------
+    # 5. Export nested PCA results
+    # --------------------------------------------------
+    def _exportNestedResult(obj, prefix):
+        if obj is None:
+            return
+        if isinstance(obj, pd.DataFrame):
+            _exportDataFrame(obj, prefix, index=True)
+            return
+        if isinstance(obj, pd.Series):
+            _exportDataFrame(
+                obj.to_frame(name=obj.name or "Value"),
+                prefix,
+                index=True,
+            )
+            return
+        if isinstance(obj, dict):
+            scalar_items = {}
+            nested_items = {}
+            for key, value in obj.items():
+                if (
+                    value is None
+                    or np.isscalar(value)
+                ):
+                    scalar_items[key] = value
+                else:
+                    nested_items[key] = value
+            if scalar_items:
+                _exportDataFrame(
+                    pd.DataFrame(
+                        list(scalar_items.items()),
+                        columns=["Item", "Value"],
+                    ),
+                    f"{prefix}_values",
+                    index=False,
+                )
+            for key, value in nested_items.items():
+                _exportNestedResult(
+                    value,
+                    f"{prefix}_{key}",
+                )
+            return
+        if isinstance(obj, (list, tuple)):
+            # Export numeric arrays directly when possible.
+            try:
+                arr = np.asarray(obj)
+                if arr.ndim == 1 and arr.dtype != object:
+                    _exportDataFrame(
+                        pd.DataFrame({"Value": arr}),
+                        prefix,
+                        index=False,
+                    )
+                    return
+                if arr.ndim >= 2 and arr.dtype != object:
+                    _exportDataFrame(
+                        pd.DataFrame(
+                            arr.reshape(arr.shape[0], -1)
+                        ),
+                        prefix,
+                        index=False,
+                    )
+                    return
+            except (ValueError, TypeError):
+                pass
+            for i, value in enumerate(obj):
+                _exportNestedResult(
+                    value,
+                    f"{prefix}_{i + 1}",
+                )
+            return
+        if isinstance(obj, np.ndarray):
+            arr = np.asarray(obj)
+            if arr.ndim == 0:
+                _exportDataFrame(
+                    pd.DataFrame({
+                        "Value": [arr.item()]
+                    }),
+                    prefix,
+                    index=False,
+                )
+            else:
+                _exportNestedResult(
+                    arr.tolist(),
+                    prefix,
+                )
+            return
+        # Export a single scalar as a one-row table.
+        if np.isscalar(obj):
+            _exportDataFrame(
+                pd.DataFrame({"Value": [obj]}),
+                prefix,
+                index=False,
+            )
+    # ==================================================
+    # A. Original PSD metrics
+    # ==================================================
+    if kineticdata is not None:
+        _exportDataFrame(
+            kineticdata,
+            "kineticdata",
+            index=True,
+        )
+    if metrics is not None:
+        _exportDataFrame(
+            metrics,
+            "metrics",
+            index=True,
+        )
+    # ==================================================
+    # B. Actual data used in statistical analysis
+    # ==================================================
+    combined_data = statisticAnalysis.get("combined_data")
+    if combined_data is not None:
+        _exportDataFrame(
+            combined_data,
+            "analysis_data",
+            index=True,
+        )
+    # ==================================================
+    # C. Bootstrap
+    # ==================================================
+    bootstrap_result = statisticAnalysis.get("bootstrap_result")
+    if bootstrap_result is not None:
+        _exportDataFrame(
+            _bootstrapToDataFrame(bootstrap_result),
+            "bootstrap_summary",
+            index=False,
+        )
+    # ==================================================
+    # D. Leave-one-out analysis
+    # ==================================================
+    loo_result = statisticAnalysis.get("loo_result")
+    if loo_result is not None:
+        _exportDataFrame(
+            _looToDataFrame(loo_result),
+            "loo_summary",
+            index=False,
+        )
+    # ==================================================
+    # E. PCA
+    # ==================================================
+    pca_result = statisticAnalysis.get("pca_result")
+    if pca_result is not None:
+        _exportNestedResult(pca_result, "PCA")
+    # ==================================================
+    # F. VIF
+    # ==================================================
+    vif_result = statisticAnalysis.get("vif_result")
+    if vif_result is not None:
+        _exportNestedResult(vif_result, "VIF")
+    # ==================================================
+    # G. Partial correlation
+    # ==================================================
+    partial_result = statisticAnalysis.get(
+        "partial_correlation_result"
+    )
+    if partial_result is not None:
+        _exportDataFrame(
+            pd.DataFrame(
+                list(partial_result.items()),
+                columns=["Statistic", "Value"],
+            ),
+            "partial_corr",
+            index=False,
+        )
+    # ==================================================
+    # H. CI boundary sensitivity
+    # ==================================================
+    if ci_sensitivity_result is not None:
+        ci_summary = ci_sensitivity_result.get("summary")
+        ci_details = ci_sensitivity_result.get(
+            "boundary_results"
+        )
+        if ci_summary is not None:
+            _exportDataFrame(
+                ci_summary,
+                "CI_sensitivity",
+                index=False,
+            )
+        if ci_details is not None:
+            _exportDataFrame(
+                ci_details,
+                "CI_boundary_data",
+                index=False,
+            )
+    # ==================================================
+    # I. Existing correlation analysis (optional)
+    # ==================================================
+    if correlation_export is not None:
+        fl.exportCorrelationExcel(
+            filename=filename,
+            **correlation_export,
+        )
+    print(f"\nAll analysis results exported to: {filename}")
 def organizePSDCorrelation(metrics, kineticdata, xColumns, yColumns):
     """
     Organize X/Y variables and perform batch correlation analysis.
@@ -361,6 +651,94 @@ def selectSamples(data, samples, sampleColumn="sample", axis=None):
         f"Index name: {data.index.name}\n"
         f"Available columns: {list(data.columns)}"
     )
+def _runLOOAnalysis( data, metric_names, target_names, statistic_names=("Pearson_r", "R2"), ):
+    loo_result = dop.runPairedLeaveOneOutAnalysis(
+        data=data,
+        statistic_func=lambda sample: (
+            dop.calculatePairedCorrelationStatistics(
+                data=sample,
+                metric_names=metric_names,
+                target_names=target_names,
+                statistic_names=statistic_names, ) ),
+        nan_policy="raise", )
+    # Print LOO results
+    for name, stats in loo_result["summary"].items():
+        print(f"\n{name}")
+        print(f"  Baseline estimate: {stats['baseline']:.4f}")
+        print(f"  Valid LOO runs: {stats['valid_count']}")
+        print(f"  Invalid LOO runs: {stats['invalid_count']}")
+        print( f"  LOO estimate range: [{stats['min']:.4f}, {stats['max']:.4f}]" )
+        print( f"  Maximum absolute change: {stats['absolute_changes']['max']:.4f}" )
+        print( f"  Mean absolute change: {stats['absolute_changes']['mean']:.4f}" )
+        if stats["relative_changes"]["max"] is not None:
+            print( f"  Maximum relative change: {stats['relative_changes']['max']:.2%}" )
+        if stats["sign_consistency"] is not None:
+            print( f"  Sign consistency: {stats['sign_consistency']:.1%}" )
+    return loo_result
+def _runBootstrapAnalysis(
+    data,
+    metric_names,
+    target_names,
+    statistic_names=("Pearson_r", "R2"),
+    n_bootstrap=1000,
+    confidence_level=0.95,
+    random_state=42,
+):
+    """
+    Run paired bootstrap analysis for Pearson correlation
+    and selected goodness-of-fit statistics.
+    Returns
+    -------
+    dict
+        Original result returned by dop.runPairedBootstrapAnalysis().
+    """
+    # --------------------------------------------------
+    # 1. Run Bootstrap
+    # --------------------------------------------------
+    bootstrap_result = dop.runPairedBootstrapAnalysis(
+        data=data,
+        statistic_func=lambda sample: (
+            dop.calculatePairedCorrelationStatistics(
+                data=sample,
+                metric_names=metric_names,
+                target_names=target_names,
+                statistic_names=statistic_names,
+            )
+        ),
+        n_bootstrap=n_bootstrap,
+        confidence_level=confidence_level,
+        random_state=random_state,
+    )
+    # --------------------------------------------------
+    # 2. Print Bootstrap results
+    # --------------------------------------------------
+    for name, stats in bootstrap_result["statistics"].items():
+        print(f"\n{name}")
+        print(f"  Estimate: {stats['estimate']:.4f}")
+        print(
+            f"  {confidence_level:.0%} CI: "
+            f"{stats['confidence_interval']}"
+        )
+        print(
+            f"  Bootstrap SE: "
+            f"{stats['bootstrap_standard_error']:.4f}"
+        )
+        print(f"  Valid: {stats['n_valid']}")
+        print(f"  Invalid: {stats['n_invalid']}")
+    # --------------------------------------------------
+    # 3. Return the complete result
+    # --------------------------------------------------
+    return bootstrap_result
+def _runPartialCorrelationAnalysis( data, metric_names, target_names, ):
+    partial_result = dop.calculatePairedPartialCorrelationStatistics(
+        data=data,
+        metric_names=metric_names,
+        target_names=target_names, )
+    print("\nPartial Correlation Analysis")
+    print("-" * 70)
+    for name, value in partial_result.items():
+        print(f"{name}: {value}")
+    return partial_result
 def staristicAnalysisForPSDdecay(
     psdData=None,
     metrics=None,
@@ -368,7 +746,7 @@ def staristicAnalysisForPSDdecay(
     metric_names=None,
     target_names=None,
     regions=None,
-    statistic_names=("Pearson_r", "Spearman_r"),
+    statistic_names=("Pearson_r", "R2"),
     n_bootstrap=1000,
     confidence_level=0.95,
     random_state=42,
@@ -412,19 +790,14 @@ def staristicAnalysisForPSDdecay(
     # --------------------------------------------------
     if metrics is None:
         if psdData is None:
-            raise ValueError(
-                "Provide either metrics or psdData."
-            )
+            raise ValueError( "Provide either metrics or psdData." )
         if regions is None:
             regions = {
                 "High": (0.30, 0.50),
                 "Middle": (0.50, 0.65),
                 "Low": (0.65, 0.80),
             }
-        metrics = calculatePSDMetrics(
-            psdData,
-            regions,
-        )
+        metrics = calculatePSDMetrics( psdData, regions, )
     if not isinstance(metrics, pd.DataFrame):
         raise TypeError("metrics must be a pandas DataFrame.")
     # --------------------------------------------------
@@ -513,50 +886,483 @@ def staristicAnalysisForPSDdecay(
     combined_metric_names = { name: i for i, name in enumerate(metric_names) }
     combined_target_names = { name: n_metrics + i for i, name in enumerate(target_names) }
     # --------------------------------------------------
-    # 8. Run the existing paired bootstrap analysis
+    # 8. Run Bootstrap analysis
     # --------------------------------------------------
-    bootstrap_result = dop.runPairedBootstrapAnalysis(
-        data=combined_data,
-        statistic_func=lambda sample: (
-            dop.calculatePairedCorrelationStatistics(
-                data=sample,
-                metric_names=combined_metric_names,
-                target_names=combined_target_names,
-                statistic_names=statistic_names,
-            )
-        ),
-        n_bootstrap=n_bootstrap,
-        confidence_level=confidence_level,
-        random_state=random_state,
-    )
+    bootstrap_result = _runBootstrapAnalysis( data=combined_data, metric_names=combined_metric_names, 
+            target_names=combined_target_names, statistic_names=statistic_names, n_bootstrap=n_bootstrap, 
+            confidence_level=confidence_level, random_state=random_state, )
     # --------------------------------------------------
-    # 9. Optional rank inspection
+    # 9. Run Leave-One-Out analysis
     # --------------------------------------------------
-    if check_rank:
-        print("\nVariable ranks:")
-        print( combined_df.rank(method="average").to_string() )
+    loo_result = _runLOOAnalysis( data=combined_data, metric_names=combined_metric_names, 
+            target_names=combined_target_names, statistic_names=statistic_names, )
     # --------------------------------------------------
-    # 10. Print statistics
+    # 10. Run PCA analysis
     # --------------------------------------------------
-    for name, stats in bootstrap_result["statistics"].items():
-        print(f"\n{name}")
-        print(f"  Estimate: {stats['estimate']:.4f}")
-        print(
-            f"  {confidence_level:.0%} CI: "
-            f"{stats['confidence_interval']}"
-        )
-        print(
-            "  Bootstrap SE: "
-            f"{stats['bootstrap_standard_error']:.4f}"
-        )
-        print(f"  Valid: {stats['n_valid']}")
-        print(f"  Invalid: {stats['n_invalid']}")
+    pca_result = dop.runPCAAnalysis( data=selected_metrics, )
+    # --------------------------------------------------
+    # 11. Run VIF analysis
+    # --------------------------------------------------
+    vif_result = dop.runVIFAnalysis( data=selected_metrics, )
+    # --------------------------------------------------
+    # 12. Run Partial Correlation analysis
+    # --------------------------------------------------
+    partial_correlation_result = _runPartialCorrelationAnalysis( data=combined_data, 
+            metric_names=combined_metric_names, target_names=combined_target_names, )
     return {
         "samples": list(common_samples),
         "metrics": selected_metrics,
         "kineticdata": selected_targets,
         "combined_data": combined_df,
         "bootstrap_result": bootstrap_result,
+        "loo_result": loo_result,
+        "pca_result": pca_result,
+        "vif_result": vif_result,
+        "partial_correlation_result": partial_correlation_result,
+    }
+def _prepareOrderedRegionLayout(regions):
+    """
+    Validate regions and return their pore-width-ordered layout.
+    Returns
+    -------
+    region_names : list
+        Region names ordered by increasing pore width.
+    base_boundaries : numpy.ndarray
+        Outer boundaries and all internal boundaries.
+    """
+    if not isinstance(regions, dict) or len(regions) < 2:
+        raise ValueError(
+            "regions must be a dictionary containing at least "
+            "two contiguous pore-width regions."
+        )
+    region_items = []
+    for name, bounds in regions.items():
+        if len(bounds) != 2:
+            raise ValueError(
+                f"Region '{name}' must contain exactly two boundaries."
+            )
+        lower, upper = map(float, bounds)
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            raise ValueError(
+                f"Region '{name}' contains non-finite boundaries."
+            )
+        if lower >= upper:
+            raise ValueError(
+                f"Invalid boundaries for region '{name}': {bounds}"
+            )
+        region_items.append((name, lower, upper))
+    # Sort by increasing pore width, independent of dict insertion order.
+    region_items.sort(key=lambda item: item[1])
+    for i in range(1, len(region_items)):
+        previous_upper = region_items[i - 1][2]
+        current_lower = region_items[i][1]
+        if not np.isclose(
+            previous_upper,
+            current_lower,
+            atol=1e-8,
+            rtol=0,
+        ):
+            raise ValueError(
+                "Regions must be contiguous and non-overlapping. "
+                f"Gap or overlap detected between "
+                f"'{region_items[i - 1][0]}' and "
+                f"'{region_items[i][0]}'."
+            )
+    region_names = [item[0] for item in region_items]
+    base_boundaries = np.array(
+        [region_items[0][1]]
+        + [item[2] for item in region_items],
+        dtype=float,
+    )
+    return region_names, base_boundaries
+def _buildRegionsFromBoundaries(region_names, boundaries):
+    """Reconstruct contiguous regions while preserving their names."""
+    return {
+        name: (
+            float(boundaries[i]),
+            float(boundaries[i + 1]),
+        )
+        for i, name in enumerate(region_names)
+    }
+def _resolveCompetitionIndexColumn(metrics, ci_column=None):
+    """
+    Identify the CompetitionIndex column in calculatePSDMetrics output.
+    """
+    columns = list(metrics.columns)
+    if ci_column is not None:
+        if ci_column in columns:
+            return ci_column
+        # Permit a prefixed column such as GCMC_CompetitionIndex.
+        requested = re.sub(
+            r"[^a-z0-9]", "", str(ci_column).lower()
+        )
+        matches = [
+            col for col in columns
+            if re.sub(
+                r"[^a-z0-9]", "", str(col).lower()
+            ).endswith(requested)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        raise KeyError(
+            f"Cannot uniquely identify CI column '{ci_column}'. "
+            f"Available columns: {columns}"
+        )
+    normalized = {
+        col: re.sub(r"[^a-z0-9]", "", str(col).lower())
+        for col in columns
+    }
+    matches = [
+        col for col, name in normalized.items()
+        if "competitionindex" in name
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(
+            "Multiple CompetitionIndex columns were found. "
+            "Specify ci_column explicitly."
+        )
+    # Fallback for a function that names the output simply "CI".
+    matches = [
+        col for col, name in normalized.items()
+        if name == "ci"
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    raise KeyError(
+        "Could not identify the CompetitionIndex column. "
+        "Specify ci_column explicitly. "
+        f"Available columns: {columns}"
+    )
+def _prepareSensitivityTargets(
+    target_data,
+    target_names,
+    sample_index,
+):
+    """
+    Align target data to the sample index of calculatePSDMetrics.
+    """
+    if isinstance(target_names, dict):
+        names = list(target_names.keys())
+    elif target_names is None:
+        if isinstance(target_data, pd.DataFrame):
+            names = list(target_data.columns)
+        elif isinstance(target_data, pd.Series):
+            names = [target_data.name or "Target"]
+        else:
+            raise ValueError(
+                "target_names must be provided when target_data "
+                "is not a DataFrame or Series."
+            )
+    elif isinstance(target_names, str):
+        names = [target_names]
+    else:
+        names = list(target_names)
+    if not names:
+        raise ValueError("At least one target variable is required.")
+    aligned = {}
+    if isinstance(target_data, pd.DataFrame):
+        for name in names:
+            if name not in target_data.columns:
+                raise KeyError(
+                    f"Target '{name}' not found in target_data. "
+                    f"Available columns: {list(target_data.columns)}"
+                )
+            aligned[name] = target_data[name].reindex(sample_index)
+    elif isinstance(target_data, pd.Series):
+        if len(names) != 1:
+            raise ValueError(
+                "A Series can be used with only one target name."
+            )
+        aligned[names[0]] = target_data.reindex(sample_index)
+    elif isinstance(target_data, dict):
+        for name in names:
+            if name not in target_data:
+                raise KeyError(
+                    f"Target '{name}' not found in target_data."
+                )
+            values = target_data[name]
+            if isinstance(values, pd.Series):
+                aligned[name] = values.reindex(sample_index)
+            else:
+                values = np.asarray(values, dtype=float).reshape(-1)
+                if len(values) != len(sample_index):
+                    raise ValueError(
+                        f"Target '{name}' has {len(values)} values, "
+                        f"but {len(sample_index)} samples are expected."
+                    )
+                aligned[name] = pd.Series(
+                    values, index=sample_index
+                )
+    else:
+        values = np.asarray(target_data, dtype=float)
+        if values.ndim == 1:
+            values = values.reshape(-1, 1)
+        if values.ndim != 2:
+            raise ValueError(
+                "target_data must be a 1D or 2D array, "
+                "Series, DataFrame, or dictionary."
+            )
+        if values.shape != (len(sample_index), len(names)):
+            raise ValueError(
+                "Array target_data must have shape "
+                "(n_samples, n_targets), with rows in the same "
+                "order as the sample index of calculatePSDMetrics."
+            )
+        for j, name in enumerate(names):
+            aligned[name] = pd.Series(
+                values[:, j], index=sample_index
+            )
+    return aligned
+def runCompetitionIndexSensitivityAnalysis(
+    psdData,
+    target_data,
+    regions,
+    target_names=None,
+    boundary_offsets=(-0.05, -0.025, 0.0, 0.025, 0.05),
+    prefix=None,
+    ci_column=None,
+):
+    """
+    Evaluate the sensitivity of CI-target correlations to changes
+    in internal pore-size boundaries.
+    Outer pore-width boundaries remain fixed. All valid combinations
+    of the specified offsets are evaluated.
+    Parameters
+    ----------
+    psdData : DataFrame
+        PSD data with MultiIndex columns, as used by
+        calculatePSDMetrics().
+    target_data : DataFrame, Series, dict, or array-like
+        Target data, e.g., D-A characteristic energy E.
+    regions : dict
+        Original contiguous pore-width regions.
+    target_names : sequence of str, dict, or str, optional
+        Target variable names.
+    boundary_offsets : sequence of float
+        Offsets in nm applied independently to each internal boundary.
+        Must include zero to evaluate the original boundaries.
+    prefix : str, optional
+        Prefix passed to calculatePSDMetrics().
+    ci_column : str, optional
+        Explicit CompetitionIndex column name, if required.
+    Returns
+    -------
+    dict
+        boundary_results : DataFrame
+            Pearson correlation and R2 for each boundary combination.
+        summary : DataFrame
+            Summary of boundary sensitivity.
+        base_regions : dict
+            Original region definitions.
+    """
+    # --------------------------------------------------
+    # 1. Validate inputs
+    # --------------------------------------------------
+    if psdData is None:
+        raise ValueError("psdData must not be None.")
+    if target_data is None:
+        raise ValueError("target_data must not be None.")
+    region_names, base_boundaries = (
+        _prepareOrderedRegionLayout(regions)
+    )
+    offsets = np.asarray(boundary_offsets, dtype=float)
+    # Accept 1D arrays and single-row/single-column arrays.
+    if offsets.ndim == 2 and 1 in offsets.shape:
+        offsets = offsets.ravel()
+    if offsets.ndim != 1 or offsets.size == 0:
+        raise ValueError(
+            "boundary_offsets must be a non-empty 1D sequence "
+            "or a single-row/single-column array."
+        )
+    if not np.all(np.isfinite(offsets)):
+        raise ValueError(
+            "boundary_offsets must contain only finite values."
+        )
+    offsets = np.unique(offsets)
+    if not np.any(np.isclose(offsets, 0.0)):
+        raise ValueError(
+            "boundary_offsets must include 0.0 so the original "
+            "boundary configuration can be evaluated."
+        )
+    # --------------------------------------------------
+    # 2. Store original and fixed outer boundaries
+    # --------------------------------------------------
+    outer_lower = base_boundaries[0]
+    outer_upper = base_boundaries[-1]
+    base_internal = base_boundaries[1:-1]
+    base_regions = _buildRegionsFromBoundaries(
+        region_names,
+        base_boundaries,
+    )
+    # Calculate the original metrics to obtain the sample index.
+    base_metrics = calculatePSDMetrics(
+        psdData=psdData,
+        regions=base_regions,
+        prefix=prefix,
+    )
+    target_series = _prepareSensitivityTargets(
+        target_data=target_data,
+        target_names=target_names,
+        sample_index=base_metrics.index,
+    )
+    # --------------------------------------------------
+    # 3. Generate valid boundary combinations
+    # --------------------------------------------------
+    cutoff_combinations = {}
+    n_internal = len(base_internal)
+    for shifts in product(offsets, repeat=n_internal):
+        candidate_internal = base_internal + np.asarray(
+            shifts,
+            dtype=float,
+        )
+        candidate_boundaries = np.concatenate([
+            [outer_lower],
+            candidate_internal,
+            [outer_upper],
+        ])
+        # Skip invalid or overlapping regions.
+        if np.any(np.diff(candidate_boundaries) <= 0):
+            continue
+        key = tuple(np.round(candidate_internal, 10))
+        cutoff_combinations[key] = candidate_internal
+    # Ensure that the original configuration is included.
+    baseline_key = tuple(np.round(base_internal, 10))
+    if baseline_key not in cutoff_combinations:
+        cutoff_combinations[baseline_key] = (
+            base_internal.copy()
+        )
+    # --------------------------------------------------
+    # 4. Recalculate CI and evaluate each target
+    # --------------------------------------------------
+    records = []
+    for candidate_internal in cutoff_combinations.values():
+        candidate_boundaries = np.concatenate([
+            [outer_lower],
+            candidate_internal,
+            [outer_upper],
+        ])
+        candidate_regions = _buildRegionsFromBoundaries(
+            region_names,
+            candidate_boundaries,
+        )
+        candidate_metrics = calculatePSDMetrics(
+            psdData=psdData,
+            regions=candidate_regions,
+            prefix=prefix,
+        )
+        resolved_ci_column = _resolveCompetitionIndexColumn(
+            candidate_metrics,
+            ci_column=ci_column,
+        )
+        ci_values = candidate_metrics[
+            resolved_ci_column
+        ].reindex(base_metrics.index)
+        is_baseline = np.allclose(
+            candidate_internal,
+            base_internal,
+            atol=1e-9,
+            rtol=0,
+        )
+        for target_name, target_series_i in target_series.items():
+            y_values = target_series_i.reindex(
+                candidate_metrics.index
+            )
+            # Use the existing correlation and linear-fitting workflow.
+            analysis_result = dop.correlationAnalysis(
+                x=ci_values.to_numpy(dtype=float),
+                y=y_values.to_numpy(dtype=float),
+                x_name=str(resolved_ci_column),
+                y_name=str(target_name),
+                dropna=True,
+                fit_method="linear",
+            )
+            row = {
+                "Target": target_name,
+                "CI_column": resolved_ci_column,
+                "IsBaseline": bool(is_baseline),
+                "N": analysis_result["N"],
+                "Pearson_r": analysis_result["Pearson_r"],
+                "R2": analysis_result["R2"],
+            }
+            for i, boundary in enumerate(
+                candidate_internal,
+                start=1,
+            ):
+                row[f"Boundary_{i}_nm"] = float(boundary)
+            records.append(row)
+    boundary_results = pd.DataFrame(records)
+    # --------------------------------------------------
+    # 5. Summarize sensitivity relative to original boundaries
+    # --------------------------------------------------
+    summary_records = []
+    for target_name, group in boundary_results.groupby(
+        "Target",
+        sort=False,
+    ):
+        baseline_rows = group[group["IsBaseline"]]
+        if len(baseline_rows) != 1:
+            raise RuntimeError(
+                f"Expected one baseline result for '{target_name}', "
+                f"but found {len(baseline_rows)}."
+            )
+        baseline_row = baseline_rows.iloc[0]
+        r_values = group[
+            "Pearson_r"
+        ].dropna().to_numpy(dtype=float)
+        r2_values = group[
+            "R2"
+        ].dropna().to_numpy(dtype=float)
+        if len(r_values) == 0 or len(r2_values) == 0:
+            raise ValueError(
+                f"No valid Pearson_r or R2 values for target "
+                f"'{target_name}'."
+            )
+        baseline_r = float(baseline_row["Pearson_r"])
+        baseline_r2 = float(baseline_row["R2"])
+        # Pearson correlation sensitivity.
+        summary_row = {
+            "Target": target_name,
+            "N_boundary_combinations": len(group),
+            "N_samples": int(baseline_row["N"]),
+            "Baseline_Pearson_r": baseline_r,
+            "Pearson_r_min": float(np.min(r_values)),
+            "Pearson_r_max": float(np.max(r_values)),
+            "Pearson_r_min_abs": float(
+                np.min(np.abs(r_values))
+            ),
+            "Pearson_r_max_abs_change": float(
+                np.max(np.abs(r_values - baseline_r))
+            ),
+            "Pearson_r_sign_consistency_pct": float(
+                100.0 * np.mean(
+                    np.sign(r_values) == np.sign(baseline_r)
+                )
+            ),
+            # R2 sensitivity.
+            "Baseline_R2": baseline_r2,
+            "R2_min": float(np.min(r2_values)),
+            "R2_max": float(np.max(r2_values)),
+            "R2_max_abs_change": float(
+                np.max(np.abs(r2_values - baseline_r2))
+            ),
+        }
+        summary_records.append(summary_row)
+    summary = pd.DataFrame(summary_records)
+    # --------------------------------------------------
+    # 6. Display results
+    # --------------------------------------------------
+    print("\nCompetitionIndex Boundary Sensitivity Analysis")
+    print("-" * 70)
+    print("\nBoundary sensitivity summary:")
+    print(summary.to_string(index=False))
+    print("\nResults for individual boundary combinations:")
+    print(boundary_results.to_string(index=False))
+    return {
+        "boundary_results": boundary_results,
+        "summary": summary,
+        "base_regions": base_regions,
     }
 ##########################################################################
 def main(file_path=None):
@@ -583,7 +1389,7 @@ def main(file_path=None):
         "E (J/mol)"
     ]
     file = fl.getFile()
-    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC")
+    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC_stati")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
     # # # ##################### 用于分析指定样品##############
     # # =========================
@@ -666,11 +1472,23 @@ def main(file_path=None):
     # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # # ##################### 结束保存数据到excel##############
-    ########################进行bootstrap leave-one-out PCA VIF分析###################################
-    staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
-            target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r","Spearman_r"), 
+    ########################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
+            target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
             n_bootstrap=10000, confidence_level=0.95, random_state=42, )
-    ########################结束进行bootstrap leave-one-out PCA VIF分析###################################
+    # --------------------------------------------------
+    # CompetitionIndex Boundary Sensitivity Analysis
+    # --------------------------------------------------
+    offsets = (-0.05, -0.025, 0.0, 0.025, 0.05)
+    ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
+            regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
+    # --------------------------------------------------
+    # Export all analysis results
+    # --------------------------------------------------
+    savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
+                           metrics=metrics, filename=out_path, correlation_export={ 
+                               "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
+    ########################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
