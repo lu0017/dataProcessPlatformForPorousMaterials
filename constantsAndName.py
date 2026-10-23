@@ -22,7 +22,7 @@ M_CO2 = 44.01 # CO2摩尔质量 Molar mass of CO₂
 Tb_C = -56.558 #CO2 三相界面温度，boiling point
 Tb_K = Tb_C + C2K #CO2 三相界面温度，boiling point
 rho_b = 1178.53 #CO2 三相界面液态密度，kg/m3 ## 来源Thermophysical Properties of Carbon Dioxide and CO2-Rich Mixtures
-alph = 0.0025 #体积膨胀系数 isosteric coefficient of the expansion of the adsorbed volume
+alph = 0.0025 #体积膨胀系数 isosteric coefficient of the expansion of the adsorbed volume,https://doi.org/10.1021/je100973t, 10.1016/0021-9797(76)90149-1
 
 
 P0_kPa = { ##CO2在各温度下的饱和压强
