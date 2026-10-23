@@ -15,11 +15,261 @@ import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 
 import T1dataProcessSource.modelAndFit as mf
-
+import T1dataProcessSource.residualBootstrap as redBoots
 
 # ==========================================
 # 工具函数
 # ==========================================
+def printResidualBootstrapSummary(
+    bootstrap_result: Mapping[str, Any],
+    ci_result: Mapping[str, Any] | None = None,
+    *,
+    group_labels: Mapping[Hashable, str] | None = None,
+    response_unit: str = "mmol/g",
+    digits: int = 4,
+) -> None:
+    """Print a human-readable summary of a residual-bootstrap analysis.
+
+    Parameters
+    ----------
+    bootstrap_result
+        Result returned by ``runResidualBootstrapAnalysis``.
+    ci_result
+        Optional result returned by ``runResidualBootstrapCIAnalysis``.
+    group_labels
+        Optional display labels for group keys, e.g.
+        ``{273.15: "0 °C (273.15 K)"}``.
+    response_unit
+        Unit displayed in the residual-diagnostic table.
+    digits
+        Number of decimal places for residual diagnostics.
+    """
+    def _fmt(value: Any, ndigits: int = digits) -> str:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if not np.isfinite(value):
+            return "NA"
+        return f"{value:.{ndigits}f}"
+
+    def _group_label(key: Any) -> str:
+        labels = group_labels or {}
+        if key in labels:
+            return str(labels[key])
+        # Some diagnostic counters store group keys as strings.
+        if str(key) in labels:
+            return str(labels[str(key)])
+        return str(key)
+
+    n_bootstrap = int(bootstrap_result.get("n_bootstrap", 0))
+    n_successful = int(bootstrap_result.get("n_successful_fits", 0))
+    n_failed = int(bootstrap_result.get("n_failed_fits", max(0, n_bootstrap - n_successful)))
+    success_rate = 100.0 * n_successful / n_bootstrap if n_bootstrap else float("nan")
+
+    print("=" * 88)
+    print("RESIDUAL BOOTSTRAP SUMMARY")
+    print("=" * 88)
+    print(f"Method                 : {bootstrap_result.get('method', 'NA')}")
+    print(f"Bootstrap iterations   : {n_bootstrap:,}")
+    print(f"Successful refits      : {n_successful:,} ({_fmt(success_rate, 2)}%)")
+    print(f"Failed refits          : {n_failed:,}")
+    print(f"Residual centering     : {bootstrap_result.get('residual_centering', 'NA')}")
+    print(f"Random seed            : {bootstrap_result.get('random_state', 'NA')}")
+
+    failure_reasons = bootstrap_result.get("failure_reasons", {}) or {}
+    if failure_reasons:
+        print("\nFailure reasons:")
+        for reason, count in sorted(failure_reasons.items()):
+            print(f"  - {reason}: {count}")
+    elif n_failed == 0:
+        print("Failure reasons        : none")
+
+    # Residual diagnostics: display group-specific offsets before centering.
+    residual_diagnostics = bootstrap_result.get("residual_diagnostics", {}) or {}
+    if residual_diagnostics:
+        print("\nResidual diagnostics by group")
+        print(f"Residual unit: {response_unit}; SD uses ddof=1")
+        headers = [
+            "Group", "N", "Mean before", "Center applied", "Mean after",
+            "SD before", "SD after", "Min centered", "Max centered",
+        ]
+        rows = []
+        for key, d in residual_diagnostics.items():
+            label = _group_label(key)
+            rows.append([
+                label,
+                str(d.get("n_points", "NA")),
+                _fmt(d.get("mean_residual_before_centering")),
+                _fmt(d.get("centering_value")),
+                _fmt(d.get("mean_residual_after_centering")),
+                _fmt(d.get("residual_sd_before_centering")),
+                _fmt(d.get("residual_sd_after_centering")),
+                _fmt(d.get("residual_min_after_centering")),
+                _fmt(d.get("residual_max_after_centering")),
+            ])
+        widths = [max(len(headers[i]), max(len(row[i]) for row in rows)) for i in range(len(headers))]
+        print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+        print("  ".join("-" * widths[i] for i in range(len(headers))))
+        for row in rows:
+            print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+        print("\nNote: 'Mean before' shows the original group-wise residual bias. 'Mean after' is near zero by construction when within-group centering is used.")
+
+    # Negative simulated responses, if tracked by the engine.
+    negative_by_group = bootstrap_result.get("n_negative_simulated_responses_by_group", {}) or {}
+    if negative_by_group:
+        total_negative = int(sum(negative_by_group.values()))
+        total_points = int(bootstrap_result.get("n_simulated_points", 0))
+        percent_negative = 100.0 * total_negative / total_points if total_points else 0.0
+        print("\nNegative simulated responses")
+        print(f"Total negative responses : {total_negative:,} / {total_points:,} ({_fmt(percent_negative, 3)}%)")
+        for key, count in negative_by_group.items():
+            label = _group_label(key)
+            print(f"  - {label}: {int(count):,}")
+
+    boundary_hits = bootstrap_result.get("boundary_hit_counts", {}) or {}
+    if boundary_hits:
+        print("\nParameter-boundary hits across successful refits")
+        for name, count in sorted(boundary_hits.items()):
+            print(f"  - {name}: {count:,}")
+    else:
+        print("\nParameter-boundary hits : none recorded")
+
+    if ci_result is not None:
+        statistics = ci_result.get("statistics", {}) or {}
+        print("\nParameter uncertainty")
+        print(f"CI method: {ci_result.get('method', 'NA')}; confidence level: {_fmt(100 * ci_result.get('confidence_level', float('nan')), 1)}%")
+        headers = ["Parameter", "Estimate", "Bootstrap SE", "CI lower", "CI upper", "Valid", "Invalid"]
+        rows = []
+        for name, d in statistics.items():
+            ci = d.get("confidence_interval", (float("nan"), float("nan")))
+            rows.append([
+                str(name),
+                _fmt(d.get("estimate"), max(digits, 5)),
+                _fmt(d.get("bootstrap_standard_error"), max(digits, 5)),
+                _fmt(ci[0], max(digits, 5)),
+                _fmt(ci[1], max(digits, 5)),
+                str(d.get("n_valid", "NA")),
+                str(d.get("n_invalid", "NA")),
+            ])
+        if rows:
+            widths = [max(len(headers[i]), max(len(row[i]) for row in rows)) for i in range(len(headers))]
+            print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+            print("  ".join("-" * widths[i] for i in range(len(headers))))
+            for row in rows:
+                print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+
+    print("=" * 88)
+FitPredictFunc = Callable[..., Mapping[str, Any]]
+def makeDAGlobalFitPredictFunc(
+    T_list,
+    *,
+    fit_DA0_func: Callable[..., Any],
+    getParaForDA_func: Callable[..., Any],
+) -> FitPredictFunc:
+    """Build an adapter around the project's global ``fit_DA0`` function.
+
+    ``fit_DA0_func`` must support the keyword arguments ``verbose`` and
+    ``initial_params``. Its existing three-item return convention is retained:
+    ``(da_result, fits_data, valid_sheet)``.
+
+    The fit data must contain ``q_fit_mmol_g`` and ``P_Pa`` columns, and its
+    rows must be concatenated in ``T_list`` order, matching the current
+    implementation of ``fit_DA0``.
+    """
+    temperatures = list(T_list)
+
+    def _fit_predict_func(
+        grouped_data,
+        *,
+        initial_fit=None,
+        verbose=False,
+    ):
+        initial_params = None
+        if initial_fit is not None:
+            native_result = initial_fit.get("fit_result")
+            if native_result is None or not hasattr(native_result, "params"):
+                raise ValueError(
+                    "The initial D-A fit output does not expose optimizer parameters."
+                )
+            initial_params = native_result.params
+
+        da_result, fits_data, valid_sheet = fit_DA0_func(
+            temperatures,
+            grouped_data,
+            verbose=verbose,
+            initial_params=initial_params,
+        )
+
+        fitted_values: dict[Hashable, np.ndarray] = {}
+        cursor = 0
+        for T in temperatures:
+            if T not in grouped_data:
+                raise KeyError(f"Temperature {T!r} is missing from grouped_data.")
+
+            source_df = grouped_data[T]
+            n_rows = len(source_df)
+            fit_group = fits_data.iloc[cursor:cursor + n_rows]
+            cursor += n_rows
+
+            if len(fit_group) != n_rows:
+                raise ValueError(
+                    f"D-A fitting output for temperature {T!r} has an unexpected row count."
+                )
+
+            input_p = source_df["P_Pa"].to_numpy(dtype=float)
+            fit_p = fit_group["P_Pa"].to_numpy(dtype=float)
+            if not np.allclose(input_p, fit_p, rtol=1e-10, atol=0.0):
+                raise ValueError(
+                    f"D-A fitted pressures do not align with input rows for temperature {T!r}."
+                )
+
+            fitted_values[T] = fit_group["q_fit_mmol_g"].to_numpy(dtype=float)
+
+        if cursor != len(fits_data):
+            raise ValueError(
+                "D-A fitting output contains extra rows beyond those in grouped_data."
+            )
+
+        W0, E, n = getParaForDA_func(da_result.params)
+        boundary_hits = []
+        native_params = getattr(da_result, "params", None)
+        if native_params is not None:
+            for name, param in native_params.items():
+                value = float(param.value)
+                tol = 1e-7 * max(1.0, abs(value))
+                at_min = (
+                    np.isfinite(param.min)
+                    and abs(value - float(param.min)) <= tol
+                )
+                at_max = (
+                    np.isfinite(param.max)
+                    and abs(value - float(param.max)) <= tol
+                )
+                if at_min or at_max:
+                    boundary_hits.append(str(name))
+
+        diagnostics = {
+            "message": str(getattr(da_result, "message", "")),
+            "nfev": getattr(da_result, "nfev", None),
+            "chisqr": getattr(da_result, "chisqr", None),
+            "validSheet": valid_sheet,
+            "boundary_hits": boundary_hits,
+        }
+
+        return {
+            "fit_result": da_result,
+            "fitted_values": fitted_values,
+            "parameters": {
+                "W0_cm3_g": float(W0),
+                "E_J_mol": float(E),
+                "n": float(n),
+            },
+            "success": bool(getattr(da_result, "success", False)),
+            "diagnostics": diagnostics,
+        }
+
+    return _fit_predict_func
 
 def poltDA(fits_data, rawData, fixedFlag = False):
 
@@ -255,19 +505,32 @@ def fit_DA01(T_list, grouped_data, sheet=None, file=None):
 
     return all_DA_results, fits_data, validSheet
 
-def fit_DA0(T_list,  grouped_data, sheet = None, file = None):
+def fit_DA0(T_list,  grouped_data, sheet = None, file = None,verbose=True, initial_params=None,):
         # 构建初始拟合参数，全局拟合策略
-    params0 = Parameters()
+    # params0 = Parameters()
+    # validSheet = False
+    # if sheet: ##origin fitting data
+    #     params = build_DAparams(params0)
+    #     #params, validSheet = get_DAparams_from_origin(params1, T_list, sheet, file) #未开发
+    # else: 
+    #     params = build_DAparams(params0)
+
     validSheet = False
-    if sheet: ##origin fitting data
+
+    if initial_params is None:
+        params0 = Parameters()
         params = build_DAparams(params0)
-        #params, validSheet = get_DAparams_from_origin(params1, T_list, sheet, file) #未开发
-    else: 
-        params = build_DAparams(params0)
+    else:
+        # Reuse the original fit's parameter constraints and values
+        # as the starting point for a bootstrap refit.
+        params = initial_params.copy()
 
     # 拟合 D-A
     daPara = minimize(residual_DA, params, args=(grouped_data,), method="leastsq", max_nfev=20000)
-    print(report_fit(daPara))
+    # print(report_fit(daPara))
+
+    if verbose:
+        print(report_fit(daPara))
 
     fits_rows = []
     all_P = []
@@ -353,6 +616,22 @@ def fit_DA(rawData, out_path = None, sheet_name=None):
 
      #全局拟合
     DAPara, fits_data, validSheet = fit_DA0(T_list,  grouped_data, sheet = sheet_name, file = out_path)
+    modelCIcheck = True
+    if modelCIcheck:
+        # 1. Create the adapter for the existing global D-A fitter.
+        da_fit_predict = makeDAGlobalFitPredictFunc( T_list, fit_DA0_func=fit_DA0, getParaForDA_func=getParaForDA, )
+        # 2. Run a small test first.
+        da_bootstrap_test = redBoots.runResidualBootstrapAnalysis( grouped_data, da_fit_predict, response_col="q_mmol_g", 
+                n_bootstrap=100, residual_centering="within_group", random_state=2026, )
+        printResidualBootstrapSummary( da_bootstrap_test, 
+                    group_labels={ 273.15: "0 °C (273.15 K)", 288.15: "15 °C (288.15 K)", 298.15: "25 °C (298.15 K)", }, 
+                    response_unit="mmol/g", )
+        da_ci = redBoots.runResidualBootstrapCIAnalysis( da_bootstrap_test, confidence_interval_func=dop.runConfidenceIntervalAnalysis, 
+                                confidence_level=0.95, )
+
+        printResidualBootstrapSummary( da_bootstrap_test, ci_result=da_ci, 
+                    group_labels={ 273.15: "0 °C (273.15 K)", 288.15: "15 °C (288.15 K)", 298.15: "25 °C (298.15 K)", }, 
+                    response_unit="mmol/g", )
 
     #单独拟合每个温度
     DAPara_single, fits_data_single, validSheet_single = fit_DA01(T_list,  grouped_data, sheet = sheet_name, file = out_path)

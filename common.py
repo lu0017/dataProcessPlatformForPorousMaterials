@@ -95,4 +95,5 @@ from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 
 from zipfile import BadZipFile
-from collections import defaultdict
+from collections import defaultdict, Counter
+from collections.abc import Callable, Hashable, Mapping

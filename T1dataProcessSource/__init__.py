@@ -4,3 +4,4 @@ dataProcessSource模块对外连接文件
 """
 from .dataOperation import *
 from .modelAndFit import *
+from .residualBootstrap import *
