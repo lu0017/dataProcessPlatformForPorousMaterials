@@ -112,96 +112,211 @@ def makeDSLFitPredictFunc(
             "diagnostics": diagnostics,
         }
     return _fit_predict_func
-def compareSampleBootstrapParameters00(
-    all_sample_results,
-    parameter_name,
-    sample_pairs,
+def buildDSLTemperatureContrastCITable(
+    contrast,
+    contrast_ci,
+    ci_result,
+    *,
+    sample_name=None,
+    parameter_key_a,
+    parameter_key_b,
+    metadata=None,
+    unit_scale=1e3,
+    output_unit="1/kPa",
     confidence_level=0.95,
+    ci_method="percentile",
 ):
     """
-    比较不同样品的同一 DSL 参数。
+    整理同一样品不同温度下 DSL 参数差值的 Bootstrap CI。
     Parameters
     ----------
-    all_sample_results : dict
-        {sample_name: runDslSimu() 返回的结果字典}
-    parameter_name : str
-        需要比较的参数名称，例如：
+    contrast : dict
+        runBootstrapContrastAnalysis() 的返回结果。
+    contrast_ci : dict
+        差值的 CI 计算结果，至少包含 lower_bound 和 upper_bound。
+    ci_result : dict
+        runResidualBootstrapCIAnalysis() 的返回结果，
+        用于提取两个温度下各参数的原始拟合估计值。
+    sample_name : str or None
+        样品名称。
+    parameter_key_a, parameter_key_b : str
+        两个需要比较的参数键，例如：
+        "b1_Pa_inv_T273.15K"
         "b1_Pa_inv_T298.15K"
-    sample_pairs : list[tuple[str, str]]
-        需要比较的样品对，例如：
-        [("CC-Hy-600-0.5-1", "CC-Hy-800-4-1")]
+    metadata : dict or None
+        可选的附加信息。
+    unit_scale : float
+        输出单位的换算系数。DSL 的 b 参数从 1/Pa 转为
+        1/kPa 时使用 1000；若保持 1/Pa，则使用 1。
+    output_unit : str
+        输出参数和差值的单位标签。
+    confidence_level : float
+        备用置信水平。当 contrast_ci 和 ci_result 都没有
+        confidence_level 时使用。
+    ci_method : str
+        备用 CI 方法。当 contrast_ci 中没有 method 时使用。
     Returns
     -------
     pd.DataFrame
-        每个样品对的参数差值、bootstrap SE 和 95% CI。
+        单行结果表，包含两个温度的参数估计值、参数差值、
+        Bootstrap SE、95% CI 以及诊断信息。
     """
-    rows = []
-    for sample_a, sample_b in sample_pairs:
-        if sample_a not in all_sample_results:
-            print(f"Skip: sample not found: {sample_a}")
-            continue
-        if sample_b not in all_sample_results:
-            print(f"Skip: sample not found: {sample_b}")
-            continue
-        result_a = all_sample_results[sample_a]
-        result_b = all_sample_results[sample_b]
-        # 获取两个样品的 bootstrap 分布
-        dist_a = result_a["dsl_bootstrap"][
-            "parameter_distributions"
-        ][parameter_name]
-        dist_b = result_b["dsl_bootstrap"][
-            "parameter_distributions"
-        ][parameter_name]
-        # 获取两个样品各自的原始参数估计值
-        estimate_a = result_a["dsl_ci"]["statistics"][
-            parameter_name
-        ]["estimate"]
-        estimate_b = result_b["dsl_ci"]["statistics"][
-            parameter_name
-        ]["estimate"]
-        # 两个独立样品：使用 independent 模式
-        contrast = redBoots.runBootstrapContrastAnalysis(
-            dist_a,
-            dist_b,
-            estimate_a=estimate_a,
-            estimate_b=estimate_b,
-            mode="independent",
+    # ==================================================
+    # 1. 检查输入
+    # ==================================================
+    if not isinstance(contrast, dict):
+        raise TypeError("contrast must be a dictionary.")
+    if not isinstance(contrast_ci, dict):
+        raise TypeError("contrast_ci must be a dictionary.")
+    if not isinstance(ci_result, dict):
+        raise TypeError("ci_result must be a dictionary.")
+    statistics = ci_result.get("statistics")
+    if not isinstance(statistics, dict):
+        raise ValueError(
+            "ci_result must contain a 'statistics' dictionary."
         )
-        # 对参数差值的 bootstrap 分布计算 CI
-        contrast_ci = dop.runConfidenceIntervalAnalysis(
-            method="percentile",
-            confidence_level=confidence_level,
-            estimate=contrast["estimate"],
-            bootstrap_distribution=contrast[
-                "bootstrap_distribution"
-            ],
+    if (
+        parameter_key_a not in statistics
+        or parameter_key_b not in statistics
+    ):
+        raise KeyError(
+            "Parameter keys not found in ci_result['statistics']: "
+            f"{parameter_key_a}, {parameter_key_b}"
         )
-        lower = contrast_ci["lower_bound"]
-        upper = contrast_ci["upper_bound"]
-        row = {
-            "Sample_A": sample_a,
-            "Sample_B": sample_b,
-            "Parameter": parameter_name,
-            "Estimate_A": estimate_a,
-            "Estimate_B": estimate_b,
-            "Difference_A_minus_B": contrast["estimate"],
-            "Bootstrap_SE": contrast[
-                "bootstrap_standard_error"
-            ],
-            "CI_lower": lower,
-            "CI_upper": upper,
-            "CI_excludes_zero": (
-                lower > 0 or upper < 0
-            ),
-        }
-        rows.append(row)
-        print(f"\n{sample_a} vs {sample_b}")
-        print(f"Parameter: {parameter_name}")
-        print( f"Difference: " f"{contrast['estimate']:.6g}" )
-        print( f"95% CI: ({lower:.6g}, {upper:.6g})" )
-        print( f"Bootstrap SE: " f"{contrast['bootstrap_standard_error']:.6g}" )
-        print(f"CI excludes zero: {lower > 0 or upper < 0}")
-    return pd.DataFrame(rows)
+    # ==================================================
+    # 2. 解析参数名称和温度
+    # ==================================================
+    pattern = re.compile(
+        r"^(b\d+)_.*_T([-+]?\d+(?:\.\d+)?)K$"
+    )
+    match_a = pattern.fullmatch(parameter_key_a)
+    match_b = pattern.fullmatch(parameter_key_b)
+    if match_a is None or match_b is None:
+        raise ValueError(
+            "Unable to parse DSL parameter keys. Expected names "
+            "like 'b1_Pa_inv_T273.15K'."
+        )
+    parameter_a = match_a.group(1)
+    parameter_b = match_b.group(1)
+    # 当前函数处理同一位点在不同温度下的比较
+    if parameter_a != parameter_b:
+        raise ValueError(
+            "Temperature contrast must compare the same DSL "
+            f"parameter. Got {parameter_a} and {parameter_b}."
+        )
+    T_a = float(match_a.group(2))
+    T_b = float(match_b.group(2))
+    # ==================================================
+    # 3. 提取原始参数估计值
+    # ==================================================
+    estimate_a = float(
+        statistics[parameter_key_a]["estimate"]
+    )
+    estimate_b = float(
+        statistics[parameter_key_b]["estimate"]
+    )
+    # 原始数据拟合得到的参数差值
+    difference = float(contrast["estimate"])
+    # 检查差值与两个参数估计值是否一致
+    expected_difference = estimate_a - estimate_b
+    if not np.isclose(
+        difference,
+        expected_difference,
+        rtol=1e-6,
+        atol=1e-12,
+    ):
+        raise ValueError(
+            "The contrast estimate is inconsistent with the "
+            "two original parameter estimates. Check the "
+            "contrast calculation and parameter ordering."
+        )
+    # ==================================================
+    # 4. 提取差值 CI 和 Bootstrap SE
+    # ==================================================
+    lower = float(contrast_ci["lower_bound"])
+    upper = float(contrast_ci["upper_bound"])
+    bootstrap_se = float(
+        contrast["bootstrap_standard_error"]
+    )
+    if (
+        not np.isfinite(lower)
+        or not np.isfinite(upper)
+        or lower > upper
+    ):
+        raise ValueError(
+            "Invalid confidence interval bounds."
+        )
+    # ==================================================
+    # 5. 兼容 CI 元数据：优先读取已有结果
+    # ==================================================
+    resolved_confidence_level = contrast_ci.get(
+        "confidence_level",
+        ci_result.get(
+            "confidence_level",
+            confidence_level,
+        ),
+    )
+    resolved_ci_method = contrast_ci.get(
+        "method",
+        ci_method,
+    )
+    # ==================================================
+    # 6. 单位转换
+    # ==================================================
+    unit_scale = float(unit_scale)
+    if not np.isfinite(unit_scale) or unit_scale <= 0:
+        raise ValueError(
+            "unit_scale must be a positive finite number."
+        )
+    estimate_a_out = estimate_a * unit_scale
+    estimate_b_out = estimate_b * unit_scale
+    difference_out = difference * unit_scale
+    bootstrap_se_out = bootstrap_se * unit_scale
+    lower_out = lower * unit_scale
+    upper_out = upper * unit_scale
+    # ==================================================
+    # 7. 整理单行输出
+    # ==================================================
+    row = dict(metadata or {})
+    if sample_name is not None:
+        row["Sample"] = sample_name
+    row.setdefault("Model", "DSL")
+    row.setdefault(
+        "Analysis",
+        "Within-sample temperature contrast",
+    )
+    row.update({
+        "Parameter": parameter_a,
+        "Parameter_Key_A": parameter_key_a,
+        "Parameter_Key_B": parameter_key_b,
+        "Temperature_A_K": T_a,
+        "Temperature_A_C": T_a - 273.15,
+        "Temperature_B_K": T_b,
+        "Temperature_B_C": T_b - 273.15,
+        f"Estimate_A_{output_unit}": estimate_a_out,
+        f"Estimate_B_{output_unit}": estimate_b_out,
+        f"Difference_A_minus_B_{output_unit}": difference_out,
+        f"Bootstrap_SE_{output_unit}": bootstrap_se_out,
+        f"CI_Lower_{output_unit}": lower_out,
+        f"CI_Upper_{output_unit}": upper_out,
+        "Confidence_Level": resolved_confidence_level,
+        "CI_Method": resolved_ci_method,
+        "Bootstrap_Method": ci_result.get("method"),
+        "Contrast_Mode": contrast.get("mode"),
+        "N_Contrast_Resamples": contrast.get("n_valid"),
+        "N_Contrast_Input": contrast.get("n_input"),
+        "Contrast_Random_State": contrast.get("random_state"),
+        "N_Bootstrap_A": statistics[
+            parameter_key_a
+        ].get("n_valid"),
+        "N_Bootstrap_B": statistics[
+            parameter_key_b
+        ].get("n_valid"),
+        "CI_Excludes_Zero": (
+            lower > 0 or upper < 0
+        ),
+    })
+    return pd.DataFrame([row])
 def export_dsl_params_custom(dsl, file_name="results.xlsx", sheet_name="DSL_params"):
     """
     导出 DSL 拟合参数到 Excel，自定义列名和单位：
@@ -641,20 +756,20 @@ def fit_dsl(rawData, out_path = None, sheet_name=None, run_bootstrap=False,n_boo
         # 5. Construct the Bootstrap distribution of the difference.
         # Paired mode preserves iteration-wise correspondence because
         # both parameters came from the same joint DSL Bootstrap run.
-        contrast = redBoots.runBootstrapContrastAnalysis( dist_a, dist_b,
+        b1_contrast = redBoots.runBootstrapContrastAnalysis( dist_a, dist_b,
             estimate_a=dsl_ci["statistics"][name_a]["estimate"],
             estimate_b=dsl_ci["statistics"][name_b]["estimate"],
             mode="paired", 
         )
         # 6. Calculate the 95% CI of the difference.
-        contrast_ci = dop.runConfidenceIntervalAnalysis( method="percentile", confidence_level=0.95,
-                        estimate=contrast["estimate"], bootstrap_distribution=contrast["bootstrap_distribution"], )
-        lower = contrast_ci["lower_bound"]
-        upper = contrast_ci["upper_bound"]
+        b1_contrast_ci = dop.runConfidenceIntervalAnalysis( method="percentile", confidence_level=0.95,
+                        estimate=b1_contrast["estimate"], bootstrap_distribution=b1_contrast["bootstrap_distribution"], )
+        lower = b1_contrast_ci["lower_bound"]
+        upper = b1_contrast_ci["upper_bound"]
         print(f"Contrast: {name_a} - {name_b}")
-        print(f"Difference: {contrast['estimate']:.6g}")
+        print(f"Difference: {b1_contrast['estimate']:.6g}")
         print(f"95% CI: ({lower:.6g}, {upper:.6g})")
-        print( f"Bootstrap SE: {contrast['bootstrap_standard_error']:.6g}" )
+        print( f"Bootstrap SE: {b1_contrast['bootstrap_standard_error']:.6g}" )
         print( "Difference supported:", lower > 0 or upper < 0, )
         for name, result in dsl_ci["statistics"].items():
             lower, upper = result["confidence_interval"]
@@ -670,7 +785,7 @@ def fit_dsl(rawData, out_path = None, sheet_name=None, run_bootstrap=False,n_boo
         print("Failed fits:", dsl_bootstrap["n_failed_fits"])
         print("Failure reasons:", dsl_bootstrap["failure_reasons"])
     if run_bootstrap:
-        return dsl, fits_data, dsl_bootstrap, dsl_ci
+        return dsl, fits_data, dsl_bootstrap, dsl_ci, b1_contrast, b1_contrast_ci
     return dsl, fits_data
 def find_P_for_q(q_target, T, params, P_min=1e-6, P_max=1e9):
     """数值解出 DSL 中给定 q 对应 P"""
@@ -958,11 +1073,13 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
     #拟合DSL
     # 拟合 DSL
     if run_bootstrap:
-        dsl, fits_data, dsl_bootstrap, dsl_ci = fit_dsl( rawData, out_path, sheet_name=sheet_name, run_bootstrap=True, n_bootstrap=n_bootstrap,)
+        dsl, fits_data, dsl_bootstrap, dsl_ci, b1_contrast, b1_contrast_ci = fit_dsl( rawData, out_path, sheet_name=sheet_name, run_bootstrap=True, n_bootstrap=n_bootstrap,)
     else:
         dsl, fits_data = fit_dsl( rawData, out_path, sheet_name=sheet_name, run_bootstrap=False, )
         dsl_bootstrap = None
         dsl_ci = None
+        b1_contrast = None
+        b1_contrast_ci = None
     #单独拟合低压段数据
     # raw_low = dop.preprocess_low_pressure(rawData, P_max_Pa=5000)
     # dsl_low, fits_data_low = fit_dsl(raw_low, out_path, sheet_name)
@@ -994,6 +1111,16 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
     fl.export_to_excel_auto(Qst_simul, newFilePath, sheet_name=const.QST_SIM_SHEET)
     fl.export_to_excel_auto(Qst_exp, newFilePath, sheet_name=const.QST_EXP_SHEET)
     fl.export_to_excel_auto(n2_fit, newFilePath, sheet_name=const.N2_FITS_SHEET)
+    if run_bootstrap:
+        temperature_contrast_df = (
+            buildDSLTemperatureContrastCITable( contrast=b1_contrast, contrast_ci=b1_contrast_ci, ci_result=dsl_ci, sample_name=sheet_name,
+                parameter_key_a="b1_Pa_inv_T273.15K",
+                parameter_key_b="b1_Pa_inv_T298.15K",
+                metadata={ "Model": "DSL", "Analysis": "Within-sample temperature contrast", }, ) )
+        extra_tables = { "DSL_TemperatureContrast_CI": temperature_contrast_df, }
+        redBoots.exportBootstrapAnalysisResults( bootstrap_result=dsl_bootstrap, ci_result=dsl_ci, 
+                file_name=newFilePath, metadata={ "Sample": sheet_name, "Model": "DSL", "Analysis": "Joint fit", }, 
+                extra_tables=extra_tables, )
     if plotFlag:
         # 绘图excel
         plt.figure(figsize=(6,4))
@@ -1050,20 +1177,22 @@ def main(file_path=None):
     # =========================
     singleFile = False
     run_bootstrap = True
-    n_bootstrap=10000
-    file = file_path if file_path is not None else fl.getFile()
-    # 用于收集各样品的拟合和 bootstrap 结果
+    n_bootstrap = 100
+    file = ( file_path if file_path is not None else fl.getFile() )
     all_sample_results = {}
+    # 用于保存样品间比较结果的输出目录
+    comparison_out_path = None
     # =========================
-    # 模式一：单样品
+    # 模式一：单样品拟合
     # =========================
     if singleFile:
         sheet_name = "CC-Hy-900-1-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
-        result = runDslSimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap,)
+        result = runDslSimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
+        # 单样品模式不执行样品间比较
         return result
     # =========================
-    # 模式二：批量处理样品
+    # 模式二：批量处理全部样品
     # =========================
     xls = pd.ExcelFile(file)
     for sheet_name in xls.sheet_names:
@@ -1071,7 +1200,7 @@ def main(file_path=None):
             continue
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
         # -------------------------
-        # 检查数据是否为空
+        # 检查数据
         # -------------------------
         if isinstance(listData, dict):
             if not listData:
@@ -1086,29 +1215,35 @@ def main(file_path=None):
         if listData0.empty:
             print(f"DataFrame is empty: {sheet_name}")
             continue
+        # 记录比较结果的保存目录
+        if comparison_out_path is None:
+            comparison_out_path = out_path
         # -------------------------
         # 拟合当前样品
         # -------------------------
         print(f"\nProcessing sample: {sheet_name}")
-        result = runDslSimu( listData, out_path, plotFlag=False, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap,)
+        result = runDslSimu( listData, out_path, plotFlag=False, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         all_sample_results[sheet_name] = result
     # =========================
-    # 模式三：样品间参数比较
+    # 模式三：不同样品之间的参数 CI
     # =========================
     contrast_df = pd.DataFrame()
+    comparison_file = None
     if run_bootstrap:
-        # ==================================================
-        # 方式 A：仅比较指定的样品对
-        # ==================================================
+        # ----------------------------------
+        # 方式 A：仅比较指定样品对
+        # 使用时保留这部分，注释掉方式 B
+        # ----------------------------------
         sample_pairs = [
-            ("CC-Hy-600-1-1", "CC-Hy-700-1-1"),
-            ("CC-Hy-600-1-1", "CC-Hy-800-1-1"),
+            ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
+            ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
+            ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
             # 按需添加其他样品对
         ]
-        # ==================================================
+        # ----------------------------------
         # 方式 B：全部有效样品两两比较
-        # 使用时注释掉方式 A 的 sample_pairs 定义
-        # ==================================================
+        # 使用时注释掉方式 A，取消下面这部分注释
+        # ----------------------------------
         # sample_names = [
         #     name
         #     for name, result in all_sample_results.items()
@@ -1117,15 +1252,39 @@ def main(file_path=None):
         #         and result.get("dsl_ci") is not None
         #     )
         # ]
-        # sample_pairs = list(combinations(sample_names, 2))
-        # ==================================================
-        # 执行 DSL 参数 b1 的样品间 CI 比较
-        # ==================================================
+        #
+        # sample_pairs = list(
+        #     combinations(sample_names, 2)
+        # )
+        # ----------------------------------
+        # 执行 DSL b1 样品间 CI 比较
+        # ----------------------------------
         contrast_df = redBoots.compareSampleBootstrapParameters( all_sample_results=all_sample_results, 
                 parameter_name="b1_Pa_inv_T298.15K", sample_pairs=sample_pairs, bootstrap_key="dsl_bootstrap", 
                 ci_key="dsl_ci", confidence_level=0.95, )
-        print("\nDSL b1 pairwise contrast results:")
-        print(contrast_df.to_string(index=False))
+        if not contrast_df.empty:
+            # 增加比较任务的元数据
+            contrast_df = contrast_df.copy()
+            contrast_df.insert( 0, "Model", "DSL", )
+            contrast_df.insert( 1, "Analysis", "Between-sample pairwise contrast", )
+            print("\nDSL b1 pairwise contrast results:")
+            print( contrast_df.to_string( index=False, float_format=lambda x: f"{x:.10g}", ) )
+            # ----------------------------------
+            # 保存到独立的 Excel 文件
+            # ----------------------------------
+            if comparison_out_path is None:
+                raise RuntimeError( "Cannot determine output directory for sample-pair comparison results." )
+            comparison_dir = fl.check_or_create_folder( comparison_out_path, sub_folder_name=const.DSL_FOLDER, )
+            comparison_file = os.path.join( comparison_dir, "DSL_SamplePairwise_CI.xlsx", )
+            # 统一保存入口：仅传入需要保存的结果表
+            redBoots.exportBootstrapAnalysisResults( file_name=comparison_file, 
+                                                    extra_tables={ "DSL_b1_Pairwise_CI": contrast_df, }, )
+            print( "\nSample-pair CI results saved to:\n" f"{comparison_file}" )
+        else:
+            print(
+                "No valid sample-pair comparison results "
+                "were generated. Nothing was saved."
+            )
     return all_sample_results, contrast_df
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

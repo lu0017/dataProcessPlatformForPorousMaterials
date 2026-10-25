@@ -596,6 +596,8 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
     export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
     fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
+    redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
+            metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
     if plotFlag:
         poltDA(fits_data, rawData)
         poltDA(fits_data_single, rawData, fixedFlag = True)
@@ -617,17 +619,24 @@ def main(file_path=None):
     # =========================
     singleFile = False
     run_bootstrap = True
-    n_bootstrap=10000
-    file = file_path if file_path is not None else fl.getFile()
-    # 收集各样品结果
+    n_bootstrap = 100
+    file = (
+        file_path
+        if file_path is not None
+        else fl.getFile()
+    )
+    # 收集全部样品的拟合和 bootstrap 结果
     all_sample_results = {}
+    # 样品间比较结果的输出目录
+    comparison_out_path = None
     # =========================
     # 模式一：单样品
     # =========================
     if singleFile:
         sheet_name = "CC-Hy-900-1-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
-        result = runDAsimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap,)
+        result = runDAsimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
+        # 单样品模式不进行样品间比较
         return result
     # =========================
     # 模式二：批量处理所有样品
@@ -637,7 +646,9 @@ def main(file_path=None):
         if fl.should_skip(sheet_name):
             continue
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
+        # -------------------------
         # 检查数据是否为空
+        # -------------------------
         if isinstance(listData, dict):
             if not listData:
                 print(f"Skip empty data: {sheet_name}")
@@ -651,25 +662,34 @@ def main(file_path=None):
         if listData0.empty:
             print(f"DataFrame is empty: {sheet_name}")
             continue
+        # 记录样品间比较结果的输出目录
+        if comparison_out_path is None:
+            comparison_out_path = out_path
+        # -------------------------
+        # 拟合当前样品
+        # -------------------------
         print(f"\nProcessing sample: {sheet_name}")
-        result = runDAsimu( listData, out_path, plotFlag=False, sheet_name=sheet_name, run_bootstrap=run_bootstrap,n_bootstrap=n_bootstrap,)
+        result = runDAsimu( listData, out_path, plotFlag=False, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         all_sample_results[sheet_name] = result
     # =========================
-    # 模式三：样品间参数比较
+    # 模式三：样品间 E 参数比较
     # =========================
     contrast_df = pd.DataFrame()
+    comparison_file = None
     if run_bootstrap:
         # ==================================================
-        # 方式 A：仅比较指定的样品对
+        # 方式 A：仅比较指定样品对
+        # 使用时保留这部分，注释掉方式 B
         # ==================================================
         sample_pairs = [
-            ("CC-Hy-600-1-1", "CC-Hy-700-1-1"),
-            ("CC-Hy-600-1-1", "CC-Hy-800-1-1"),
+            ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
+            ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
+            ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
             # 按需添加其他样品对
         ]
         # ==================================================
         # 方式 B：全部有效样品两两比较
-        # 使用时注释掉方式 A 的 sample_pairs 定义
+        # 使用时注释掉方式 A，取消下面这部分的注释
         # ==================================================
         # sample_names = [
         #     name
@@ -679,20 +699,34 @@ def main(file_path=None):
         #         and result.get("da_ci") is not None
         #     )
         # ]
-        # sample_pairs = list(combinations(sample_names, 2))
+        #
+        # sample_pairs = list(
+        #     combinations(sample_names, 2)
+        # )
         # ==================================================
-        # 执行 D-A 参数 E 的样品间 CI 比较
+        # 1. 计算 D-A 参数 E 的样品间差值 CI
         # ==================================================
-        contrast_df = redBoots.compareSampleBootstrapParameters(
-            all_sample_results=all_sample_results,
-            parameter_name="E_J_mol",
-            sample_pairs=sample_pairs,
-            bootstrap_key="da_bootstrap",
-            ci_key="da_ci",
-            confidence_level=0.95,
-        )
-        print("\nD-A E pairwise contrast results:")
-        print(contrast_df.to_string(index=False))
+        contrast_df = redBoots.compareSampleBootstrapParameters( all_sample_results=all_sample_results, 
+                parameter_name="E_J_mol", sample_pairs=sample_pairs, bootstrap_key="da_bootstrap", ci_key="da_ci", 
+                confidence_level=0.95, )
+        if not contrast_df.empty:
+            contrast_df = contrast_df.copy()
+            contrast_df.insert( 0, "Model", "D-A", )
+            contrast_df.insert( 1, "Analysis", "Between-sample pairwise contrast", )
+            print("\nD-A E pairwise contrast results:")
+            print( contrast_df.to_string( index=False, float_format=lambda x: f"{x:.10g}", ) )
+            # ==================================================
+            # 2. 保存到独立 Excel 文件
+            # ==================================================
+            if comparison_out_path is None:
+                raise RuntimeError( "Cannot determine the output directory for D-A pairwise comparison results." )
+            comparison_dir = fl.check_or_create_folder( comparison_out_path, sub_folder_name=const.DA_FOLDER, )
+            comparison_file = os.path.join( comparison_dir, "DA_SamplePairwise_CI.xlsx", )
+            # 统一保存入口：仅传入样品间比较结果表
+            redBoots.exportBootstrapAnalysisResults( file_name=comparison_file, extra_tables={ "DA_E_Pairwise_CI": contrast_df, }, )
+            print( "\nD-A sample-pair CI results saved to:\n{comparison_file}" )
+        else:
+            print( "No valid D-A sample-pair comparison results were generated. Nothing was saved." )
     return all_sample_results, contrast_df
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

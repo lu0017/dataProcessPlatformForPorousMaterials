@@ -1473,17 +1473,17 @@ def main(file_path=None):
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # # ##################### 结束保存数据到excel##############
     
-    # ########################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
-    # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
-    #         target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
-    #         n_bootstrap=10000, confidence_level=0.95, random_state=42, )
-    # offsets = (-0.05, -0.025, 0.0, 0.025, 0.05)
-    # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
-    #         regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
-    # savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
-    #                        metrics=metrics, filename=out_path, correlation_export={ 
-    #                            "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
-    # ########################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    ########################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
+            target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
+            n_bootstrap=10000, confidence_level=0.95, random_state=42, )
+    offsets = (-0.05, -0.025, 0.0, 0.025, 0.05)
+    ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
+            regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
+    savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
+                           metrics=metrics, filename=out_path, correlation_export={ 
+                               "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
+    ########################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
 
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)

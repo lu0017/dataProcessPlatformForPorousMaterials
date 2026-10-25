@@ -1,5 +1,228 @@
 from common import *
 import T1dataProcessSource.dataOperation as dop
+import T1fileSource.fileOperation as fl
+def getBootstrapDistributions(bootstrap_result):
+    """
+    统一读取不同分析模块的 Bootstrap 分布。
+    优先使用通用字段 quantity_distributions，
+    同时兼容现有模型参数分布字段。
+    """
+    if bootstrap_result is None:
+        return {}
+    if not isinstance(bootstrap_result, Mapping):
+        raise TypeError( "bootstrap_result must be a mapping." )
+    supported_keys = (
+        "quantity_distributions",
+        "statistic_distributions",
+        "parameter_distributions",  # 兼容 D-A / DSL
+        "bootstrap_distributions",
+    )
+    for key in supported_keys:
+        distributions = bootstrap_result.get(key)
+        if isinstance(distributions, Mapping):
+            return distributions
+    return {}
+def resolveBootstrapCIMetadata( ci_result, confidence_level=0.95, ci_method="percentile", ):
+    """
+    优先从 ci_result 读取 CI 元数据；
+    缺失时使用调用者传入的备用值。
+    """
+    if ci_result is None:
+        ci_result = {}
+    # 优先使用分析结果中已记录的值
+    stored_confidence_level = ci_result.get( "confidence_level" )
+    stored_method = ci_result.get("method")
+    resolved_confidence_level = (
+        stored_confidence_level
+        if stored_confidence_level is not None
+        else confidence_level
+    )
+    resolved_method = ( stored_method if stored_method is not None else ci_method )
+    return {
+        "confidence_level": resolved_confidence_level,
+        "ci_method": resolved_method,
+    }
+def buildBootstrapDistributionTable( bootstrap_result, metadata=None, ):
+    """
+    将任意标准化 Bootstrap 参数/统计量分布整理成长表。
+    Expected input
+    --------------
+    bootstrap_result["parameter_distributions"]:
+        {
+            "E_J_mol": [...],
+            "b1_Pa_inv_T298.15K": [...],
+            "K": [...],
+            "g": [...],
+            "corr_K_g": [...],
+        }
+    Parameters
+    ----------
+    bootstrap_result : dict
+        Bootstrap 分析返回的结果。
+    metadata : dict or None
+        任意附加信息，例如 Sample、Model、Analysis。
+    Returns
+    -------
+    pd.DataFrame
+        每行代表一个统计量的一次 Bootstrap 结果。
+    """
+    distributions = getBootstrapDistributions( bootstrap_result )
+    if not distributions:
+        raise ValueError( "No supported Bootstrap distributions found." )
+    if not isinstance(distributions, dict) or not distributions:
+        raise ValueError( "bootstrap_result must contain a non-empty parameter_distributions' dictionary." )
+    metadata = dict(metadata or {})
+    rows = []
+    for quantity_name, values in distributions.items():
+        values = np.asarray(values, dtype=float).reshape(-1)
+        for index, value in enumerate(values, start=1):
+            row = {
+                **metadata,
+                "Quantity": quantity_name,
+                "Distribution_Index": index,
+                "Bootstrap_Value": value,
+                "Is_Finite": bool(np.isfinite(value)),
+            }
+            rows.append(row)
+    return pd.DataFrame(rows)
+def buildBootstrapCISummaryTable( bootstrap_result, ci_result, metadata=None, confidence_level=0.95, ci_method="percentile", ):
+    """
+    整理任意 Bootstrap CI 的估计值、标准误、
+    置信区间与诊断信息。
+    不负责计算 CI，只保存已计算的 CI。
+    """
+    ci_metadata = resolveBootstrapCIMetadata( ci_result, confidence_level=confidence_level, ci_method=ci_method, )
+    confidence_level = ci_metadata["confidence_level"]
+    ci_method = ci_metadata["ci_method"]
+    statistics = ci_result.get("statistics")
+    if not isinstance(statistics, dict) or not statistics:
+        raise ValueError( "ci_result must contain a non-empty 'statistics' dictionary." )
+    distributions = bootstrap_result.get( "parameter_distributions", {} )
+    metadata = dict(metadata or {})
+    n_successful = bootstrap_result.get( "n_successful_fits" )
+    n_failed = bootstrap_result.get( "n_failed_fits" )
+    failure_reasons = bootstrap_result.get( "failure_reasons" )
+    if failure_reasons is not None:
+        failure_reasons = json.dumps( failure_reasons, ensure_ascii=False, default=str, )
+    rows = []
+    for quantity_name, stat in statistics.items():
+        ci_bounds = stat.get("confidence_interval")
+        if ci_bounds is None:
+            lower, upper = np.nan, np.nan
+        else:
+            lower, upper = ci_bounds
+        values = np.asarray( distributions.get(quantity_name, []), dtype=float, ).reshape(-1)
+        n_finite = int(np.isfinite(values).sum())
+        n_total = int(values.size)
+        n_valid = stat.get("n_valid", n_finite)
+        n_invalid = stat.get( "n_invalid", max(n_total - n_finite, 0), )
+        row = {
+            **metadata,
+            "Quantity": quantity_name,
+            "Estimate": stat.get("estimate", np.nan),
+            "Bootstrap_SE": stat.get( "bootstrap_standard_error", np.nan ),
+            "CI_Lower": lower,
+            "CI_Upper": upper,
+            "Confidence_Level": confidence_level,
+            "CI_Method": ci_method,
+            "N_Valid": n_valid,
+            "N_Invalid": n_invalid,
+            "N_Distribution_Entries": n_total,
+            "N_Successful_Fits": n_successful,
+            "N_Failed_Fits": n_failed,
+            "Failure_Reasons": failure_reasons,
+        }
+        rows.append(row)
+    return pd.DataFrame(rows)
+def exportBootstrapAnalysisResults(
+    bootstrap_result=None,
+    ci_result=None,
+    file_name=None,
+    metadata=None,
+    confidence_level=0.95,
+    ci_method="percentile",
+    distribution_sheet_name="Bootstrap_Distribution",
+    summary_sheet_name="Bootstrap_CI_Summary",
+    extra_tables=None,
+):
+    """
+    通用 Bootstrap 结果保存入口。
+    支持：
+    1. Bootstrap 分布 + CI 汇总；
+    2. 仅 Bootstrap 分布；
+    3. 仅 CI 汇总；
+    4. 仅保存 extra_tables，例如样品间比较结果；
+    5. 上述结果的任意组合。
+    """
+    # ==================================================
+    # 1. 检查输出路径
+    # ==================================================
+    if not file_name:
+        raise ValueError("file_name must be provided.")
+    metadata = dict(metadata or {})
+    extra_tables = dict(extra_tables or {})
+    tables_to_export = {}
+    # ==================================================
+    # 2. 只有传入 Bootstrap 结果时，才整理分布
+    # ==================================================
+    if bootstrap_result is not None:
+        distribution_df = buildBootstrapDistributionTable(
+            bootstrap_result,
+            metadata=metadata,
+        )
+        tables_to_export[distribution_sheet_name] = (
+            distribution_df
+        )
+    # ==================================================
+    # 3. 只有传入 CI 结果时，才整理 CI 汇总
+    # ==================================================
+    if ci_result is not None:
+        # 允许仅保存 CI，不要求同时传入 Bootstrap 分布
+        bootstrap_context = (
+            bootstrap_result
+            if bootstrap_result is not None
+            else {}
+        )
+        summary_df = buildBootstrapCISummaryTable(
+            bootstrap_context,
+            ci_result,
+            metadata=metadata,
+            confidence_level=confidence_level,
+            ci_method=ci_method,
+        )
+        tables_to_export[summary_sheet_name] = summary_df
+    # ==================================================
+    # 4. 加入任意附加结果表
+    # ==================================================
+    for sheet_name, table_df in extra_tables.items():
+        if not isinstance(table_df, pd.DataFrame):
+            raise TypeError(
+                f"Extra table '{sheet_name}' must be a DataFrame."
+            )
+        if sheet_name in tables_to_export:
+            raise ValueError(
+                f"Duplicate sheet name: '{sheet_name}'"
+            )
+        tables_to_export[sheet_name] = table_df
+    # ==================================================
+    # 5. 确认至少有一张表需要保存
+    # ==================================================
+    if not tables_to_export:
+        raise ValueError(
+            "No results provided. Supply bootstrap_result, "
+            "ci_result, or extra_tables."
+        )
+    # ==================================================
+    # 6. 统一导出 Excel
+    # ==================================================
+    for sheet_name, table_df in tables_to_export.items():
+        fl.export_to_excel_auto(
+            table_df,
+            filename=file_name,
+            sheet_name=sheet_name,
+            index=False,
+        )
+    return tables_to_export
 FitPredictFunc = Callable[..., Mapping[str, Any]]
 def _validateResidualBootstrapData(
     grouped_data: Mapping[Hashable, pd.DataFrame],
