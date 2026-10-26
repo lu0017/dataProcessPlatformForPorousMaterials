@@ -68,6 +68,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.stats import spearmanr
 from scipy.stats import pearsonr
 from scipy import stats
+from scipy.integrate import trapezoid
 
 # ======================
 # Fitting

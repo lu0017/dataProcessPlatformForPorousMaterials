@@ -1047,9 +1047,7 @@ def plotCurve(
             xx = np.asarray(curve[0])
             yy = np.asarray(curve[1])
         else:
-            raise TypeError(
-                "Each dataset must be a pandas DataFrame or (x, y)."
-            )
+            raise TypeError( "Each dataset must be a pandas DataFrame or (x, y)." )
         if len(xx) != len(yy):
             raise ValueError("x and y must have the same length.")
         idx = np.argsort(xx)
@@ -1065,36 +1063,14 @@ def plotCurve(
         # Experimental line
         # --------------------------
         if line:
-            ax.plot(
-                xx,
-                yy,
-                color=color,
-                linewidth=linewidth,
-                linestyle=linestyle,
-                label=(
-                    display_name
-                    if fit is None
-                    else None
-                ),
-                zorder=2,
-            )
+            ax.plot( xx, yy, color=color, linewidth=linewidth, linestyle=linestyle,
+                label=( display_name if fit is None else None ), zorder=2, )
         # --------------------------
         # Experimental markers
         # --------------------------
         if marker:
-            scatterSphere(
-                ax,
-                xx,
-                yy,
-                color=color,
-                s=markersize,
-                label=(
-                    display_name
-                    if not line and fit is None
-                    else None
-                ),
-                zorder=3,
-            )
+            scatterSphere( ax, xx, yy, color=color, s=markersize,
+                label=( display_name if not line and fit is None else None ), zorder=3, )
         # --------------------------
         # Corresponding fitted curve
         # --------------------------
@@ -1102,21 +1078,10 @@ def plotCurve(
             # Match by the original data key, never by display labels.
             fx, fy = _extract_xy(fit[name])
             if isinstance(fit_label, dict):
-                fit_display_name = fit_label.get(
-                    name,
-                    f"{display_name} Fit",
-                )
+                fit_display_name = fit_label.get( name, f"{display_name} Fit", )
             else:
                 fit_display_name = f"{display_name} {fit_label}"
-            ax.plot(
-                fx,
-                fy,
-                color=color,
-                linewidth=fit_linewidth,
-                linestyle=fit_linestyle,
-                label=fit_display_name,
-                zorder=1,
-            )
+            ax.plot( fx, fy, color=color, linewidth=fit_linewidth, linestyle=fit_linestyle, label=fit_display_name, zorder=1, )
     # --------------------------------------------------
     # Axis labels
     # --------------------------------------------------
@@ -1140,31 +1105,16 @@ def plotCurve(
             markersize=markersize,
             original_labels=original_labels,
         )
-        applyLegend(
-            fig=ax.figure,
-            axes=[ax],
-            handles=handles,
-            position=legendPosition,
-        )
+        applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, )
     # --------------------------------------------------
     # Text styling
     # --------------------------------------------------
-    applyTextStyle(
-        ax=ax,
-        fig=fig,
-        labelsize=textSize,
-        ticksize=textSize,
-        annotationsize=textSize,
-    )
+    applyTextStyle( ax=ax, fig=fig, labelsize=textSize, ticksize=textSize, annotationsize=textSize, )
     # --------------------------------------------------
     # Save figure
     # --------------------------------------------------
     if savepath is not None:
-        saveFigure(
-            fig=ax.figure,
-            savepath=savepath,
-            dpi=300,
-        )
+        saveFigure( fig=ax.figure, savepath=savepath, dpi=300, )
     return ax
 def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
                      pos="top", xscale="linear", yscale="linear"):

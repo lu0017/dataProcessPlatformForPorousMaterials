@@ -1503,7 +1503,7 @@ def plotGCMCDatabase(pressures, poreSize, loading, xlabel="Pressure (kPa)", ylab
         reverse_x=False,
         linewidth=1.5,
         textSize=12,
-        savepath=savepath,
+        # savepath=savepath,
         dpi=600,
     )
     plt.show(block=False)
@@ -1611,7 +1611,9 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # 4. Plot all samples in one figure
     # ======================================================
     savepath = r"F:\0_Academic\3_experiment\3\compare2samples.png"
-    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,savepath=savepath )
+    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,
+                    # savepath=savepath 
+                    )
     plt.show(block=False)
 def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, 
                            pressure_type="merge", fit_label="exp=f(sim)", legendPosition="upper left"):
@@ -2404,7 +2406,7 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
             line=True,
             textSize=18,
             legendPosition="upper left",
-            savepath=savepath,
+            # savepath=savepath,
         )
         # --------------------------------------------------
         # 9.2 Experimental vs density-based simulation
