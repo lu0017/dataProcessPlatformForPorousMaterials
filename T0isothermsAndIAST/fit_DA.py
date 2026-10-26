@@ -12,6 +12,7 @@ from common import *
 import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
+import T1plotSource.plotOperation as myPlt
 import T1dataProcessSource.modelAndFit as mf
 import T1dataProcessSource.residualBootstrap as redBoots
 # ==========================================
@@ -252,26 +253,39 @@ def makeDAGlobalFitPredictFunc(
             "diagnostics": diagnostics,
         }
     return _fit_predict_func
-def poltDA(fits_data, rawData, fixedFlag = False):
-    grouped_data = {T: gdf for T, gdf in rawData.groupby("T_K")}
-    T_list = sorted(grouped_data.keys())
-    plt.figure(figsize=(6,4))
-    for T in T_list:
-        gdf=grouped_data[T]
-        plt.scatter(gdf["P_Pa"]/1000, gdf["q_mmol_g"], label=f"T={T-273.15:.1f}°C exp")
-    for T in T_list:
-        q_fit = fits_data[fits_data["T_K"]==T]["q_fit_mmol_g"].values
-        P_fit = fits_data[fits_data["T_K"]==T]["P_Pa"].values
-        plt.plot(P_fit/1000,q_fit,label=f"T={T-273.15}°C D-A")
-    plt.xlabel("P (kPa)")
-    plt.ylabel("q (mmol/g)")
-    plt.title("D-A and experiment")
-    plt.legend()
-    plt.grid(True)
-    if fixedFlag:
-        plt.show(block=True)
-    else:
-        plt.show(block=False)
+def poltDA(fits_data, rawData, fixedFlag=False, newFigPath=None):
+    grouped_data = { T: gdf for T, gdf in rawData.groupby("T_K") }
+    T_list_K = sorted(grouped_data.keys())
+    data, fits_by_model, labels = dop.prepareIsothermPlotData( grouped_data=grouped_data, T_list_K=T_list_K, 
+                                                              fits_data={"D-A": fits_data}, )
+    # Experimental legend names
+    original_labels = { key: f"{key} Exp" for key in data.keys() }
+    # Fitted curve legend names
+    fit_labels = { key: f"{key} Fit" for key in data.keys() }
+    ax = myPlt.plotCurve(
+        data=data,
+        fit=fits_by_model["D-A"],
+        original_labels=original_labels,
+        fit_label=fit_labels,
+        x="Pressure",
+        y="Uptake",
+        xlabel="Pressure (kPa)",
+        ylabel=r"CO$_2$ uptake (mmol g$^{-1}$)",
+        marker=True,
+        line=False,
+        colors="PAPER1",
+        markersize=45,
+        fit_linewidth=2,
+        fit_linestyle="-",
+        figsize=(6, 4),
+        textSize=12,
+        legend=True,
+        legendPosition="upper left",
+        # title="D-A and experiment",
+        savepath=newFigPath,
+    )
+    plt.show(block=fixedFlag)
+    return ax
 def export_DA_params_custom(DApara_or_dict, file_name="results.xlsx", sheet_name="DA_params", singleFlag=False):
     """
     导出 D-A 拟合参数到 Excel，自定义列名和单位：
@@ -596,10 +610,12 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
     export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
     fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
-    redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
-            metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
+    if run_bootstrap:
+        redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
+                metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
     if plotFlag:
-        poltDA(fits_data, rawData)
+        newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE, type="png",)
+        poltDA(fits_data, rawData, newFigPath=newFigPath)
         poltDA(fits_data_single, rawData, fixedFlag = True)
     return {
         "sample_name": sheet_name,
@@ -617,8 +633,8 @@ def main(file_path=None):
     # =========================
     # 运行设置
     # =========================
-    singleFile = False
-    run_bootstrap = True
+    singleFile = True
+    run_bootstrap = False
     n_bootstrap = 100
     file = (
         file_path

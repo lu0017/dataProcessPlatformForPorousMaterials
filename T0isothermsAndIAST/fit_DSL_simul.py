@@ -12,6 +12,7 @@ from common import *
 import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
+import T1plotSource.plotOperation as myPlt
 import T1dataProcessSource.residualBootstrap as redBoots
 import T1dataProcessSource.modelAndFit as mf
 import T0isothermsAndIAST.strongDSL as sl
@@ -19,6 +20,106 @@ import T0isothermsAndIAST.isostericHeatQstForRawData as qstByRawdata
 # ==========================================
 # 工具函数
 # ==========================================
+def plotDSLResults( grouped_data, T_list_K, fits_data, newFigPath=None):
+    """Plot experimental isotherms and DSL fitting curves."""
+    data, fits_by_model, _ = dop.prepareIsothermPlotData( grouped_data=grouped_data, T_list_K=T_list_K, 
+                                                         fits_data={"DSL": fits_data}, )
+    original_labels = {
+        "0°C": "0°C Exp",
+        "15°C": "15°C Exp",
+        "25°C": "25°C Exp",
+    }
+    fit_labels = {
+        "0°C": "0°C Fit",
+        "15°C": "15°C Fit",
+        "25°C": "25°C Fit",
+    }
+    ax = myPlt.plotCurve(
+        data=data,
+        fit=fits_by_model["DSL"],
+        x="Pressure",
+        y="Uptake",
+        xlabel="Pressure (kPa)",
+        ylabel=r"CO$_2$ uptake (mmol g$^{-1}$)",
+        original_labels=original_labels,
+        fit_label=fit_labels,
+        marker=True,
+        line=False,
+        colors="PAPER1",
+        markersize=45,
+        fit_linewidth=2,
+        fit_linestyle="-",
+        figsize=(6, 4),
+        textSize=12,
+        legend=True,
+        legendPosition="upper left",
+        title=None,
+        savepath=newFigPath,
+    )
+    plt.show(block=False)
+    return ax
+def plotQstComparison( Qst_simuByCC, Qst_exp, newFigPath=None):
+    """Plot simulated and experimental Qst against uptake."""
+    qst_data = {
+        "Qst_simul": ( Qst_simuByCC["q_mmol_g"].to_numpy(),
+            Qst_simuByCC["Qst_kJ_mol"].to_numpy(), ),
+        "Qst_exp": ( Qst_exp["q_mmol_g"].to_numpy(),
+            Qst_exp["Qst_kJ_mol"].to_numpy(), ), }
+    ax = myPlt.plotCurve(
+        data=qst_data,
+        x="Uptake",
+        y="Qst",
+        xlabel=r"$q$ (mmol g$^{-1}$)",
+        ylabel=r"$Q_{st}$ (kJ mol$^{-1}$)",
+        original_labels={
+            "Qst_simul": "Qst_simul",
+            "Qst_exp": "Qst_exp", },
+        marker=True,
+        line=True,
+        colors=["blue", "green"],
+        markersize=50,
+        legend=True,
+        legendPosition="upper right",
+        figsize=(6, 4),
+        textSize=12,
+        title="Qst (Clausius–Clapeyron)",
+        savepath=newFigPath,
+    )
+    plt.show(block=False)
+    return ax
+def plotQstCoverage( Qst_simul, T_list_K, newFigPath=None ):
+    """Plot Qst against coverage at different temperatures."""
+    qst_coverage_data = {}
+    temperature_labels = {}
+    for T in T_list_K:
+        temp_C = T - 273.15
+        name = f"{temp_C:.0f}°C"
+        df_T = Qst_simul[Qst_simul["T_K"] == T]
+        qst_coverage_data[name] = (
+            df_T["theta"].to_numpy(),
+            df_T["Qst_kJ_mol"].to_numpy(), )
+        temperature_labels[name] = f"T = {temp_C:.0f}°C"
+    ax = myPlt.plotCurve(
+        data=qst_coverage_data,
+        x="Coverage",
+        y="Qst",
+        xlabel=r"Coverage $\theta$",
+        ylabel=r"$Q_{st}$ (kJ mol$^{-1}$)",
+        original_labels=temperature_labels,
+        marker=True,
+        line=True,
+        colors="PAPER1",
+        markersize=35,
+        linewidth=2,
+        legend=True,
+        legendPosition="upper right",
+        figsize=(6, 4),
+        textSize=12,
+        title="Coverage vs Qst at different temperatures",
+        savepath=newFigPath,
+    )
+    plt.show(block=False)
+    return ax
 def makeDSLFitPredictFunc(
     T_list,
     *,
@@ -1122,45 +1223,13 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
                 file_name=newFilePath, metadata={ "Sample": sheet_name, "Model": "DSL", "Analysis": "Joint fit", }, 
                 extra_tables=extra_tables, )
     if plotFlag:
-        # 绘图excel
-        plt.figure(figsize=(6,4))
-        for T in T_list_K:
-            gdf=grouped_data[T]
-            plt.scatter(gdf["P_Pa"]/1000, gdf["q_mmol_g"], label=f"T={T-273.15:.1f}°C exp")
-        for T in T_list_K:
-            q_fit = fits_data[fits_data["T_K"]==T]["q_fit_mmol_g"].values
-            P_fit = fits_data[fits_data["T_K"]==T]["P_Pa"].values
-            plt.plot(P_fit/1000,q_fit,label=f"T={T-273.15}°C DSL")
-        plt.xlabel("P (kPa)")
-        plt.ylabel("q (mmol/g)")
-        plt.title("DSL and experiment")
-        plt.legend()
-        plt.grid(True)
-        plt.show(block=False)
-        # Qst图
-        plt.figure()
-        plt.plot(Qst_simuByCC["q_mmol_g"],Qst_simuByCC["Qst_kJ_mol"],marker="*", label="Qst_simul")
-        # 绘制实验点
-        plt.scatter(Qst_exp["q_mmol_g"], Qst_exp["Qst_kJ_mol"], color="green", marker="o", s=50, label="Qst_exp")
-        plt.xlabel("q (mmol/g)")
-        plt.ylabel("Qst (kJ/mol)")
-        plt.title("Qst (Clausius–Clapeyron)")
-        plt.legend()
-        plt.grid(True)
-        plt.show(block=False)
-        markers = ['o', 's', '^', 'v', 'D', '*']  # 不同标记
-        colors = ['b', 'g', 'r', 'c', 'm', 'y'] # 不同颜色
-        plt.figure(figsize=(6,4))
-        for i, T in enumerate(T_list_K):
-            df_T = Qst_simul[Qst_simul["T_K"] == T]
-            plt.plot(df_T["theta"], df_T["Qst_kJ_mol"], marker=markers[i % len(markers)],
-                color=colors[i % len(colors)], label=f"T={T-273.15:.0f}°C")
-        plt.xlabel("Coverage θ")
-        plt.ylabel("Qst (kJ/mol)")
-        plt.title("Coverage vs Qst at different temperatures")
-        plt.legend()
-        plt.grid(True)
-        plt.show(block=True)
+        newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DSL_FILE, type="png",)
+    # 1. DSL fitting
+        plotDSLResults( grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data, newFigPath=newFigPath)
+        # 2. Simulated vs experimental Qst
+        plotQstComparison( Qst_simuByCC=Qst_simuByCC, Qst_exp=Qst_exp, )
+        # 3. Qst vs coverage
+        plotQstCoverage( Qst_simul=Qst_simul, T_list_K=T_list_K, )
     return {
     "sample_name": sheet_name,
     "dsl": dsl,
@@ -1175,8 +1244,8 @@ def main(file_path=None):
     # =========================
     # 运行配置
     # =========================
-    singleFile = False
-    run_bootstrap = True
+    singleFile = True
+    run_bootstrap = False
     n_bootstrap = 100
     file = ( file_path if file_path is not None else fl.getFile() )
     all_sample_results = {}

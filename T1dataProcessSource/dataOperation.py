@@ -1,6 +1,135 @@
 from common import *
 import constantsAndName as const
 import T1dataProcessSource.modelAndFit as mf
+def prepareIsothermPlotData(
+    grouped_data,
+    T_list_K,
+    fits_data=None,
+    fit_models=None,
+    pressure_col="P_Pa",
+    uptake_col="q_mmol_g",
+    temperature_col="T_K",
+    fit_pressure_col="P_Pa",
+    fit_uptake_col="q_fit_mmol_g",
+    name_suffix=None,
+    pressure_factor=1e-3,
+    temperature_offset=273.15,
+    temperature_precision=0,
+):
+    """
+    Prepare experimental and multi-model isotherm data for plotCurve().
+    Parameters
+    ----------
+    grouped_data : dict
+        Experimental data grouped by temperature:
+        {T_K: DataFrame, ...}
+    T_list_K : iterable
+        Temperatures to plot, in K.
+    fits_data : dict, optional
+        Fitting results for one or more models, for example:
+        {
+            "DSL": dsl_fits_dataframe,
+            "D-A": da_fits_dataframe,
+        }
+        Each DataFrame must contain temperature_col,
+        fit_pressure_col, and fit_uptake_col.
+    fit_models : iterable of str, optional
+        Model names to include. If None, use all keys in fits_data.
+    pressure_col, uptake_col : str
+        Experimental pressure and uptake columns.
+    temperature_col, fit_pressure_col, fit_uptake_col : str
+        Column names in the fitting DataFrames.
+    pressure_factor : float
+        Multiplier applied to pressure values.
+        Default: Pa -> kPa.
+    temperature_offset : float
+        Subtracted from T_K to obtain the displayed temperature.
+        Default: K -> °C.
+    temperature_precision : int
+        Decimal places in temperature labels.
+    Returns
+    -------
+    data : dict
+        Experimental curves for plotCurve().
+    fits_by_model : dict
+        Fitting curves organized by model:
+        {
+            "DSL": {"0°C": (P, q), ...},
+            "D-A": {"0°C": (P, q), ...},
+        }
+    labels : dict
+        Display labels for experimental curves.
+    """
+    import numpy as np
+    if fits_data is None:
+        fits_data = {}
+    if fit_models is None:
+        fit_models = list(fits_data.keys())
+    else:
+        fit_models = list(fit_models)
+    # Validate requested models
+    missing_models = [
+        model for model in fit_models
+        if model not in fits_data
+    ]
+    if missing_models:
+        raise KeyError(
+            f"Models not found in fits_data: {missing_models}"
+        )
+    def temperature_label(T):
+        temp = T - temperature_offset
+        return f"{temp:.{temperature_precision}f}°C"
+    def extract_xy(df, x_col, y_col):
+        x = np.asarray(df[x_col], dtype=float) * pressure_factor
+        y = np.asarray(df[y_col], dtype=float)
+        valid = np.isfinite(x) & np.isfinite(y)
+        x, y = x[valid], y[valid]
+        if len(x) == 0:
+            raise ValueError(
+                f"No valid data in columns {x_col!r}, {y_col!r}"
+            )
+        order = np.argsort(x)
+        return x[order], y[order]
+    # 1. Experimental data
+    data = {}
+    labels = {}
+    for T in T_list_K:
+        if T not in grouped_data:
+            raise KeyError(
+                f"Temperature {T} K not found in grouped_data."
+            )
+        name = temperature_label(T)
+
+        if name_suffix:
+            name = f"{name} {name_suffix}"
+
+        gdf = grouped_data[T]
+        data[name] = extract_xy(
+            gdf, pressure_col, uptake_col
+        )
+        labels[name] = name
+    # 2. Fitting data, organized by model
+    fits_by_model = {}
+    for model in fit_models:
+        model_df = fits_data[model]
+        model_fits = {}
+        for T in T_list_K:
+            name = temperature_label(T)
+            # Use numerical tolerance for floating-point temperatures
+            temp_values = model_df[temperature_col].to_numpy(
+                dtype=float
+            )
+            mask = np.isclose(temp_values, T, atol=1e-6, rtol=0)
+            fdf = model_df.loc[mask]
+            if fdf.empty:
+                raise ValueError(
+                    f"No {model} fitting data found for T={T} K."
+                )
+            model_fits[name] = extract_xy(
+                fdf, fit_pressure_col, fit_uptake_col
+            )
+        fits_by_model[model] = model_fits
+    return data, fits_by_model, labels
 def extract_temperature(col_name):
     """Extract numeric temperature from a column name like '15Absolute Pressure (kPa)'."""
     match = re.match(r"^(-?\d+\.?\d*)", col_name)

@@ -10,196 +10,153 @@ import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
 import T1dataProcessSource.modelAndFit as mf
+def flattenNestedResult(obj, analysis_name):
+    """
+    将嵌套的 PCA / VIF 结果整理为一张长表。
+    输出列：
+        Analysis
+        Result_Path
+        Row_Key
+        Column_Key
+        Value
+    """
+    rows = []
+    def add_value(path, value, row_key=None, column_key="Value"):
+        # 转换 NumPy 标量，便于保存到 Excel
+        if isinstance(value, np.generic):
+            value = value.item()
+        rows.append({
+            "Analysis": analysis_name,
+            "Result_Path": path or "Root",
+            "Row_Key": (
+                str(row_key) if row_key is not None else None
+            ),
+            "Column_Key": str(column_key),
+            "Value": value,
+        })
+    def walk(value, path="Root"):
+        if value is None:
+            add_value(path, None)
+            return
+        # ----------------------------------
+        # DataFrame：保留原始行列标签
+        # ----------------------------------
+        if isinstance(value, pd.DataFrame):
+            for i, row_label in enumerate(value.index):
+                for j, column_label in enumerate(value.columns):
+                    cell_value = value.iat[i, j]
+                    if isinstance(cell_value, (dict, list, tuple, np.ndarray,
+                                               pd.Series, pd.DataFrame)):
+                        cell_value = repr(cell_value)
+                    add_value(
+                        path,
+                        cell_value,
+                        row_key=row_label,
+                        column_key=column_label,
+                    )
+            return
+        # ----------------------------------
+        # Series：保留原始索引
+        # ----------------------------------
+        if isinstance(value, pd.Series):
+            for row_label, cell_value in value.items():
+                if isinstance(cell_value, (dict, list, tuple, np.ndarray,
+                                           pd.Series, pd.DataFrame)):
+                    cell_value = repr(cell_value)
+                add_value(
+                    path,
+                    cell_value,
+                    row_key=row_label,
+                    column_key=value.name or "Value",
+                )
+            return
+        # ----------------------------------
+        # dict：递归展开，但不创建新的 Sheet
+        # ----------------------------------
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = f"{path}.{key}"
+                walk(child, child_path)
+            return
+        # ----------------------------------
+        # ndarray：保留数组索引
+        # ----------------------------------
+        if isinstance(value, np.ndarray):
+            if value.ndim == 0:
+                walk(value.item(), path)
+                return
+            for index in np.ndindex(value.shape):
+                index_label = ",".join(map(str, index))
+                child_path = f"{path}[{index_label}]"
+                walk(value[index], child_path)
+            return
+        # ----------------------------------
+        # list / tuple：保留元素位置
+        # ----------------------------------
+        if isinstance(value, (list, tuple)):
+            for i, child in enumerate(value):
+                walk(child, f"{path}[{i}]")
+            return
+        # ----------------------------------
+        # 标量
+        # ----------------------------------
+        if np.isscalar(value):
+            add_value(path, value)
+            return
+        # 对不认识的对象保留表示形式，避免静默丢失
+        add_value(path, repr(value))
+    walk(obj)
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "Analysis",
+            "Result_Path",
+            "Row_Key",
+            "Column_Key",
+            "Value",
+        ],
+    )
 def savePSDAnalysisResults(
     statisticAnalysis,
     ci_sensitivity_result,
     filename,
-    kineticdata=None,  
+    kineticdata=None,
     metrics=None,
     correlation_export=None,
 ):
     """
-    Export PSD statistical analysis and CI boundary sensitivity
-    results to a single Excel workbook.
-    Parameters
-    ----------
-    statisticAnalysis : dict
-        Results returned by staristicAnalysisForPSDdecay().
-    ci_sensitivity_result : dict
-        Results returned by runCompetitionIndexSensitivityAnalysis().
-    filename : str
-        Output Excel file path.
-    metrics : DataFrame, optional
-        Original PSD metrics DataFrame.
-    correlation_export : dict, optional
-        Keyword arguments for fl.exportCorrelationExcel().
-        Supported keys include X, Y, summary, X_matrix,
-        Y_matrix, summary_matrix and summary_matrix_SHHET.
+    Save PSD statistical analysis results to Excel.
+    PCA and VIF nested results are each consolidated into one sheet.
+    Other export behavior remains compatible with the original function.
     """
     used_sheets = set()
-    # --------------------------------------------------
-    # 1. Safe Excel sheet names
-    # --------------------------------------------------
-    def _sheetName(name):
-        name = re.sub(r"[\[\]:*?/\\]", "_", str(name))
-        name = name.strip("'") or "Sheet"
-        name = name[:31]
-        base = name
-        counter = 1
-        while name.lower() in used_sheets:
-            suffix = f"_{counter}"
-            name = f"{base[:31 - len(suffix)]}{suffix}"
-            counter += 1
-        used_sheets.add(name.lower())
-        return name
-    # --------------------------------------------------
-    # 2. Export one DataFrame
-    # --------------------------------------------------
-    def _exportDataFrame(df, sheet_name, index=True):
+    # ==================================================
+    # 1. Excel export helper
+    # ==================================================
+    def _exportDataFrame(df, sheet_name, index=False):
         if df is None:
             return
         if not isinstance(df, pd.DataFrame):
             df = pd.DataFrame(df)
+        # Excel sheet name: maximum 31 characters
+        base = re.sub(r"[\[\]:*?/\\]", "_", str(sheet_name))
+        base = base.strip("'") or "Sheet"
+        base = base[:31]
+        safe_name = base
+        counter = 1
+        while safe_name.lower() in used_sheets:
+            suffix = f"_{counter}"
+            safe_name = f"{base[:31 - len(suffix)]}{suffix}"
+            counter += 1
+        used_sheets.add(safe_name.lower())
         fl.export_to_excel_auto(
             df,
             filename=filename,
-            sheet_name=_sheetName(sheet_name),
+            sheet_name=safe_name,
             index=index,
         )
-    # --------------------------------------------------
-    # 3. Convert Bootstrap results
-    # --------------------------------------------------
-    def _bootstrapToDataFrame(result):
-        rows = []
-        for name, stats in result["statistics"].items():
-            ci = stats["confidence_interval"]
-            rows.append({
-                "Statistic": name,
-                "Estimate": stats["estimate"],
-                "CI_lower": ci[0],
-                "CI_upper": ci[1],
-                "Bootstrap_SE": stats["bootstrap_standard_error"],
-                "Valid": stats["n_valid"],
-                "Invalid": stats["n_invalid"],
-            })
-        return pd.DataFrame(rows)
-    # --------------------------------------------------
-    # 4. Convert LOO results
-    # --------------------------------------------------
-    def _looToDataFrame(result):
-        rows = []
-        for name, stats in result["summary"].items():
-            absolute = stats["absolute_changes"]
-            relative = stats["relative_changes"] or {}
-            rows.append({
-                "Statistic": name,
-                "Baseline": stats["baseline"],
-                "Valid_LOO": stats["valid_count"],
-                "Invalid_LOO": stats["invalid_count"],
-                "LOO_min": stats["min"],
-                "LOO_max": stats["max"],
-                "Max_abs_change": absolute["max"],
-                "Mean_abs_change": absolute["mean"],
-                "Max_relative_change": relative.get("max"),
-                "Mean_relative_change": relative.get("mean"),
-                "Sign_consistency": stats["sign_consistency"],
-            })
-        return pd.DataFrame(rows)
-    # --------------------------------------------------
-    # 5. Export nested PCA results
-    # --------------------------------------------------
-    def _exportNestedResult(obj, prefix):
-        if obj is None:
-            return
-        if isinstance(obj, pd.DataFrame):
-            _exportDataFrame(obj, prefix, index=True)
-            return
-        if isinstance(obj, pd.Series):
-            _exportDataFrame(
-                obj.to_frame(name=obj.name or "Value"),
-                prefix,
-                index=True,
-            )
-            return
-        if isinstance(obj, dict):
-            scalar_items = {}
-            nested_items = {}
-            for key, value in obj.items():
-                if (
-                    value is None
-                    or np.isscalar(value)
-                ):
-                    scalar_items[key] = value
-                else:
-                    nested_items[key] = value
-            if scalar_items:
-                _exportDataFrame(
-                    pd.DataFrame(
-                        list(scalar_items.items()),
-                        columns=["Item", "Value"],
-                    ),
-                    f"{prefix}_values",
-                    index=False,
-                )
-            for key, value in nested_items.items():
-                _exportNestedResult(
-                    value,
-                    f"{prefix}_{key}",
-                )
-            return
-        if isinstance(obj, (list, tuple)):
-            # Export numeric arrays directly when possible.
-            try:
-                arr = np.asarray(obj)
-                if arr.ndim == 1 and arr.dtype != object:
-                    _exportDataFrame(
-                        pd.DataFrame({"Value": arr}),
-                        prefix,
-                        index=False,
-                    )
-                    return
-                if arr.ndim >= 2 and arr.dtype != object:
-                    _exportDataFrame(
-                        pd.DataFrame(
-                            arr.reshape(arr.shape[0], -1)
-                        ),
-                        prefix,
-                        index=False,
-                    )
-                    return
-            except (ValueError, TypeError):
-                pass
-            for i, value in enumerate(obj):
-                _exportNestedResult(
-                    value,
-                    f"{prefix}_{i + 1}",
-                )
-            return
-        if isinstance(obj, np.ndarray):
-            arr = np.asarray(obj)
-            if arr.ndim == 0:
-                _exportDataFrame(
-                    pd.DataFrame({
-                        "Value": [arr.item()]
-                    }),
-                    prefix,
-                    index=False,
-                )
-            else:
-                _exportNestedResult(
-                    arr.tolist(),
-                    prefix,
-                )
-            return
-        # Export a single scalar as a one-row table.
-        if np.isscalar(obj):
-            _exportDataFrame(
-                pd.DataFrame({"Value": [obj]}),
-                prefix,
-                index=False,
-            )
     # ==================================================
-    # A. Original PSD metrics
+    # 2. Input data
     # ==================================================
     if kineticdata is not None:
         _exportDataFrame(
@@ -213,9 +170,6 @@ def savePSDAnalysisResults(
             "metrics",
             index=True,
         )
-    # ==================================================
-    # B. Actual data used in statistical analysis
-    # ==================================================
     combined_data = statisticAnalysis.get("combined_data")
     if combined_data is not None:
         _exportDataFrame(
@@ -224,54 +178,110 @@ def savePSDAnalysisResults(
             index=True,
         )
     # ==================================================
-    # C. Bootstrap
+    # 3. Bootstrap summary
     # ==================================================
     bootstrap_result = statisticAnalysis.get("bootstrap_result")
     if bootstrap_result is not None:
-        _exportDataFrame(
-            _bootstrapToDataFrame(bootstrap_result),
-            "bootstrap_summary",
-            index=False,
-        )
+        rows = []
+        for name, stats in bootstrap_result.get(
+            "statistics", {}
+        ).items():
+            ci = stats["confidence_interval"]
+            rows.append({
+                "Statistic": name,
+                "Estimate": stats["estimate"],
+                "CI_lower": ci[0],
+                "CI_upper": ci[1],
+                "Bootstrap_SE": stats["bootstrap_standard_error"],
+                "Valid": stats["n_valid"],
+                "Invalid": stats["n_invalid"],
+            })
+        if rows:
+            _exportDataFrame(
+                pd.DataFrame(rows),
+                "bootstrap_summary",
+            )
     # ==================================================
-    # D. Leave-one-out analysis
+    # 4. Leave-one-out summary
     # ==================================================
     loo_result = statisticAnalysis.get("loo_result")
     if loo_result is not None:
-        _exportDataFrame(
-            _looToDataFrame(loo_result),
-            "loo_summary",
-            index=False,
-        )
+        rows = []
+        for name, stats in loo_result.get("summary", {}).items():
+            absolute = stats.get("absolute_changes") or {}
+            relative = stats.get("relative_changes") or {}
+            rows.append({
+                "Statistic": name,
+                "Baseline": stats.get("baseline"),
+                "Valid_LOO": stats.get("valid_count"),
+                "Invalid_LOO": stats.get("invalid_count"),
+                "LOO_min": stats.get("min"),
+                "LOO_max": stats.get("max"),
+                "Max_abs_change": absolute.get("max"),
+                "Mean_abs_change": absolute.get("mean"),
+                "Max_relative_change": relative.get("max"),
+                "Mean_relative_change": relative.get("mean"),
+                "Sign_consistency": stats.get("sign_consistency"),
+            })
+        if rows:
+            _exportDataFrame(
+                pd.DataFrame(rows),
+                "loo_summary",
+            )
     # ==================================================
-    # E. PCA
+    # 5. PCA: all nested results -> one sheet
     # ==================================================
     pca_result = statisticAnalysis.get("pca_result")
     if pca_result is not None:
-        _exportNestedResult(pca_result, "PCA")
+        pca_df = flattenNestedResult(
+            pca_result,
+            analysis_name="PCA",
+        )
+        if not pca_df.empty:
+            _exportDataFrame(
+                pca_df,
+                "PCA_Results",
+            )
     # ==================================================
-    # F. VIF
+    # 6. VIF: all nested results -> one sheet
     # ==================================================
     vif_result = statisticAnalysis.get("vif_result")
     if vif_result is not None:
-        _exportNestedResult(vif_result, "VIF")
+        vif_df = flattenNestedResult(
+            vif_result,
+            analysis_name="VIF",
+        )
+        if not vif_df.empty:
+            _exportDataFrame(
+                vif_df,
+                "VIF_Results",
+            )
     # ==================================================
-    # G. Partial correlation
+    # 7. Partial correlation
     # ==================================================
     partial_result = statisticAnalysis.get(
         "partial_correlation_result"
     )
     if partial_result is not None:
-        _exportDataFrame(
-            pd.DataFrame(
+        if isinstance(partial_result, pd.DataFrame):
+            partial_df = partial_result
+        elif isinstance(partial_result, pd.Series):
+            partial_df = partial_result.rename(
+                "Value"
+            ).reset_index()
+        elif isinstance(partial_result, dict):
+            partial_df = pd.DataFrame(
                 list(partial_result.items()),
                 columns=["Statistic", "Value"],
-            ),
+            )
+        else:
+            partial_df = pd.DataFrame(partial_result)
+        _exportDataFrame(
+            partial_df,
             "partial_corr",
-            index=False,
         )
     # ==================================================
-    # H. CI boundary sensitivity
+    # 8. CompetitionIndex boundary sensitivity
     # ==================================================
     if ci_sensitivity_result is not None:
         ci_summary = ci_sensitivity_result.get("summary")
@@ -282,16 +292,14 @@ def savePSDAnalysisResults(
             _exportDataFrame(
                 ci_summary,
                 "CI_sensitivity",
-                index=False,
             )
         if ci_details is not None:
             _exportDataFrame(
                 ci_details,
                 "CI_boundary_data",
-                index=False,
             )
     # ==================================================
-    # I. Existing correlation analysis (optional)
+    # 9. Existing correlation export: unchanged
     # ==================================================
     if correlation_export is not None:
         fl.exportCorrelationExcel(
@@ -1467,12 +1475,11 @@ def main(file_path=None):
     #                     #   savePath = figureName
     #                       )
     # ##################### 结束单独计算孔体积用##############
-    # # ##################### 保存数据到excel##############
-    # fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
-    # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
-    # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
-    # # ##################### 结束保存数据到excel##############
-    
+    # ##################### 保存数据到excel##############
+    fl.export_to_excel_auto( kineticdata, filename=out_path, sheet_name="kineticdata" )
+    fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
+    fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
+    # ##################### 结束保存数据到excel##############
     ########################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
     statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
             target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
@@ -1484,7 +1491,6 @@ def main(file_path=None):
                            metrics=metrics, filename=out_path, correlation_export={ 
                                "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
     ########################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
-
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
