@@ -84,6 +84,8 @@ from lmfit.models import (
 )
 from sklearn.metrics import r2_score, mean_squared_error
 
+from functools import partial
+
 # ======================
 # Excel
 # ======================

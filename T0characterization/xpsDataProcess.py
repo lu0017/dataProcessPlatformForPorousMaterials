@@ -9,6 +9,9 @@ import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
+# -----------------------------------------------------------------------------
+# Configuration: compatible with the user's existing C1s peak-config structure
+# -----------------------------------------------------------------------------
 XPS_PEAK_CONFIG = {
     "C1s": {
         "x_range": (280.0, 295.0),
@@ -51,643 +54,610 @@ XPS_PEAK_CONFIG = {
                 "eta_bounds": (0.0, 1.0),
             },
         ],
+        # The 3-peak candidate uses the first three entries by default.
+        # Override candidate_peak_names if a different chemically justified
+        # three-peak subset is required.
+        "candidate_peak_names": {
+            3: ["C-C/C=C", "C-O", "C=O"],
+            4: ["C-C/C=C", "C-O", "C=O", "O-C=O"],
+        },
+        "fit_eta": False,  # False preserves the old fixed-eta behaviour.
+        "maxfev": 50000,
     },
 }
-def shirleyBackground(x, y, max_iter=200, tol=1e-5):
-    """
-    Iterative Shirley background estimation.
-    Parameters
-    ----------
-    x : array-like
-        Binding energy, sorted in ascending order.
-    y : array-like
-        Measured intensity.
-    max_iter : int, default=200
-        Maximum number of iterations.
-    tol : float, default=1e-5
-        Absolute convergence tolerance.
-    Returns
-    -------
-    background : ndarray
-        Estimated Shirley background, not background-corrected intensity.
-    """
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    if x.ndim != 1 or y.ndim != 1 or len(x) != len(y):
-        raise ValueError("x and y must be 1D arrays with the same length.")
-    if len(x) < 3:
-        raise ValueError("At least 3 data points are required.")
-    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
-        raise ValueError("x and y must contain only finite values.")
-    dx = np.diff(x)
-    if np.any(dx <= 0):
-        raise ValueError(
-            "x must be strictly increasing. "
-            "Sort by binding energy and remove duplicate x values first."
-        )
-    # Initial linear background between the two endpoints
-    background = np.linspace(y[0], y[-1], len(y))
-    for _ in range(max_iter):
-        # Background-corrected signal used for the Shirley integral
-        signal = np.maximum(y - background, 0.0)
-        # Trapezoidal integral over each adjacent interval
-        interval_integral = (
-            (signal[:-1] + signal[1:]) * dx / 2.0
-        )
-        # Integral from each point to the high-energy endpoint
-        reverse_integral = np.zeros_like(signal)
-        reverse_integral[:-1] = np.cumsum(
-            interval_integral[::-1]
-        )[::-1]
-        total = reverse_integral[0]
-        if not np.isfinite(total) or total <= 0:
-            return np.linspace(y[0], y[-1], len(y))
-        # Update Shirley background
-        new_background = (
-            y[-1]
-            + (y[0] - y[-1]) * reverse_integral / total
-        )
-        # Check convergence
-        if np.max(np.abs(new_background - background)) < tol:
-            background = new_background
-            break
-        background = new_background
-    return background
-def pseudoVoigt(x, area, center, fwhm, eta):
-    """
-    Area-normalized pseudo-Voigt peak.
-    Parameters
-    ----------
-    x : array-like
-        Binding energy.
-    area : float
-        Total integrated peak area over the infinite domain.
-    center : float
-        Peak center.
-    fwhm : float
-        Full width at half maximum.
-    eta : float
-        Lorentzian fraction, from 0 to 1.
-    """
-    x = np.asarray(x, dtype=float)
-    if fwhm <= 0:
-        raise ValueError("FWHM must be positive.")
-    if not 0.0 <= eta <= 1.0:
-        raise ValueError("Eta must be between 0 and 1.")
-    # Gaussian component
-    sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
-    gaussian = ( np.exp(-0.5 * ((x - center) / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi)) )
-    # Lorentzian component
-    gamma = fwhm / 2.0
-    lorentzian = ( gamma / ( np.pi * ((x - center) ** 2 + gamma ** 2) ) )
-    return area * ( (1.0 - eta) * gaussian + eta * lorentzian )
-def multiPeakModel(x, *params):
-    """
-    params per peak: area, center, fwhm, eta
-    """
-    y = np.zeros_like(np.asarray(x, dtype=float))
-    for i in range(0, len(params), 4):
-        y += pseudoVoigt(x, *params[i:i + 4])
-    return y
-def fitXPSRegion(
-    df,
-    config,
-    x="Binding Energy",
-    y="Intensity",
-    mode=None,
-    verbose=True,
-):
-    """
-    Fit one XPS region using one of two modes.
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Experimental XPS spectrum.
-    config : dict
-        Region-specific configuration.
-    x : str
-        Binding-energy column name.
-    y : str
-        Intensity column name.
-    mode : {"envelope", "components"}, optional
-        "envelope":
-            Diagnostic fit of the dominant peak envelope using an
-            asymmetric pseudo-Voigt profile. Does not provide
-            chemical-state area percentages.
-        "components":
-            Simultaneous fitting of configured peaks using fixed Eta.
-    verbose : bool
-        Print diagnostics and fitted parameters.
-    Returns
-    -------
-    dict
-        x, raw, background, corrected, components,
-        fitted_corrected, fitted, residual, peaks,
-        covariance, metrics, success, fit_mode
-    """
-    import numpy as np
-    import pandas as pd
-    from scipy.optimize import curve_fit
-    from scipy.integrate import trapezoid
-    # ======================================
-    # 0. Select fitting mode
-    # ======================================
-    fit_mode = (
-        mode
-        if mode is not None
-        else config.get("fit_mode", "components")
-    )
-    fit_mode = fit_mode.lower().strip()
-    if fit_mode not in {"envelope", "components"}:
-        raise ValueError(
-            "mode must be 'envelope' or 'components'."
-        )
-    # ======================================
-    # 1. Prepare experimental data
-    # ======================================
+# -----------------------------------------------------------------------------
+# Data preparation
+# -----------------------------------------------------------------------------
+def prepareXPSData(df, config, x="Binding Energy", y="Intensity"):
+    """Clean, range-filter, sort and de-duplicate one XPS spectrum."""
+    if x not in df.columns or y not in df.columns:
+        raise KeyError(f"DataFrame must contain columns {x!r} and {y!r}.")
     work = df[[x, y]].copy()
     work[x] = pd.to_numeric(work[x], errors="coerce")
     work[y] = pd.to_numeric(work[y], errors="coerce")
-    work = work.replace(
-        [np.inf, -np.inf],
-        np.nan,
-    )
-    work = work.dropna().sort_values(x)
-    xmin, xmax = config.get(
-        "x_range",
-        (None, None),
-    )
+    work = work.replace([np.inf, -np.inf], np.nan).dropna().sort_values(x)
+    xmin, xmax = config.get("x_range", (None, None))
     if xmin is not None:
         work = work[work[x] >= xmin]
     if xmax is not None:
         work = work[work[x] <= xmax]
-    # Average duplicate binding-energy points
-    work = work.groupby(
-        x,
-        as_index=False,
-    )[y].mean()
+    work = work.groupby(x, as_index=False)[y].mean()
     X = work[x].to_numpy(dtype=float)
     Y = work[y].to_numpy(dtype=float)
     if len(X) < 10:
-        raise ValueError(
-            f"Insufficient data points: {len(X)}"
-        )
+        raise ValueError(f"Insufficient data points after filtering: {len(X)}")
     if not np.all(np.isfinite(X)) or not np.all(np.isfinite(Y)):
-        raise ValueError(
-            "Spectrum contains non-finite values."
-        )
+        raise ValueError("Spectrum contains non-finite values after cleaning.")
     if np.any(np.diff(X) <= 0):
-        raise ValueError(
-            "Binding energy must be strictly increasing."
-        )
-    idx_max = int(np.argmax(Y))
-    idx_min = int(np.argmin(Y))
-    if verbose:
-        print(
-            f"[Raw spectrum] "
-            f"Max: {X[idx_max]:.3f} eV, {Y[idx_max]:.2f}; "
-            f"Min: {X[idx_min]:.3f} eV, {Y[idx_min]:.2f}"
-        )
-    # ======================================
-    # 2. Estimate background
-    # ======================================
-    background_method = config.get(
-        "background",
-        "shirley",
-    ).lower()
-    if background_method == "shirley":
-        background = shirleyBackground(X, Y)
-    elif background_method == "linear":
-        background = np.linspace(
-            Y[0],
-            Y[-1],
-            len(Y),
-        )
-    elif background_method == "none":
-        background = np.zeros_like(Y)
-    else:
-        raise ValueError(
-            f"Unsupported background: {background_method}"
-        )
-    corrected = Y - background
-    if verbose:
-        idx_corr_max = int(np.argmax(corrected))
-        print(
-            f"[Peak diagnostic] "
-            f"Raw max = {X[idx_max]:.3f} eV; "
-            f"Corrected max = {X[idx_corr_max]:.3f} eV"
-        )
-    # ======================================
-    # 3. Fit-quality helper
-    # ======================================
-    def calculateMetrics(raw, fitted, residual):
-        ss_res = np.sum(residual ** 2)
-        ss_tot = np.sum(
-            (raw - np.mean(raw)) ** 2
-        )
-        r2 = (
-            1.0 - ss_res / ss_tot
-            if ss_tot > 0
-            else np.nan
-        )
-        rmse = np.sqrt(
-            np.mean(residual ** 2)
-        )
-        return {
-            "R2": float(r2),
-            "RMSE": float(rmse),
-            "n_points": len(raw),
-        }
-    def printResidualDiagnostics(
-        X_fit,
-        Y_fit,
-        fitted,
-        residual,
-    ):
-        if not verbose:
-            return
-        idx_overfit = int(np.argmin(residual))
-        idx_underfit = int(np.argmax(residual))
-        print(
-            f"[Largest overfit] "
-            f"BE={X_fit[idx_overfit]:.3f} eV, "
-            f"Raw={Y_fit[idx_overfit]:.2f}, "
-            f"Fit={fitted[idx_overfit]:.2f}, "
-            f"Residual={residual[idx_overfit]:.2f}"
-        )
-        print(
-            f"[Largest underfit] "
-            f"BE={X_fit[idx_underfit]:.3f} eV, "
-            f"Raw={Y_fit[idx_underfit]:.2f}, "
-            f"Fit={fitted[idx_underfit]:.2f}, "
-            f"Residual={residual[idx_underfit]:.2f}"
-        )
-    def checkParameterBounds(
-        params,
-        lower,
-        upper,
-        param_names,
-    ):
-        bound_hits = []
-        for i, name in enumerate(param_names):
-            value = params[i]
-            lo = lower[i]
-            hi = upper[i]
-            # Only positive/finite parameter values are expected here
-            atol = 1e-3 * max(1.0, abs(value))
-            if np.isclose(
-                value,
-                lo,
-                rtol=0,
-                atol=atol,
-            ):
-                bound_hits.append(
-                    f"{name} at LOWER bound "
-                    f"({value:.6g})"
-                )
-            if (
-                np.isfinite(hi)
-                and np.isclose(
-                    value,
-                    hi,
-                    rtol=0,
-                    atol=atol,
-                )
-            ):
-                bound_hits.append(
-                    f"{name} at UPPER bound "
-                    f"({value:.6g})"
-                )
-        if verbose:
-            if bound_hits:
-                print(
-                    "[Fit bounds] Parameters near bounds:"
-                )
-                for item in bound_hits:
-                    print(f"  - {item}")
-            else:
-                print(
-                    "[Fit bounds] "
-                    "No parameters near bounds."
-                )
-        return bound_hits
-    # ======================================
-    # 4. Envelope diagnostic mode
-    # ======================================
-    if fit_mode == "envelope":
-        # Explicit range is required to avoid accidentally
-        # fitting the entire C1s region with one broad peak.
-        envelope_range = config.get(
-            "envelope_range",
-            None,
-        )
-        if envelope_range is None:
-            raise ValueError(
-                "Envelope mode requires "
-                "config['envelope_range'], e.g. (280, 286) "
-                "for diagnosing the dominant C1s peak."
-            )
-        env_min, env_max = envelope_range
-        env_mask = (
-            (X >= env_min)
-            & (X <= env_max)
-        )
-        if np.count_nonzero(env_mask) < 10:
-            raise ValueError(
-                "Insufficient data points in envelope_range."
-            )
-        X_fit = X[env_mask]
-        Y_fit = Y[env_mask]
-        B_fit = background[env_mask]
-        C_fit = corrected[env_mask]
-        # --------------------------------------
-        # 4.1 Initial peak position and bounds
-        # --------------------------------------
-        idx_peak = int(np.argmax(C_fit))
-        center0 = float(X_fit[idx_peak])
-        # If no explicit center bounds are supplied,
-        # use the observed corrected-signal maximum
-        # with a local search interval around it.
-        if "envelope_center_bounds" in config:
-            center_lo, center_hi = config[
-                "envelope_center_bounds"
-            ]
-        else:
-            center_lo = max(
-                float(X_fit[0]),
-                center0 - 0.8,
-            )
-            center_hi = min(
-                float(X_fit[-1]),
-                center0 + 0.8,
-            )
-        if center_lo >= center_hi:
-            raise ValueError(
-                "Invalid envelope_center_bounds."
-            )
-        if not center_lo <= center0 <= center_hi:
-            center0 = float(
-                np.clip(
-                    center0,
-                    center_lo,
-                    center_hi,
-                )
-            )
-        # Width bounds apply separately to the
-        # lower- and higher-binding-energy sides.
-        width_lo, width_hi = config.get(
-            "envelope_width_bounds",
-            (0.5, 4.0),
-        )
-        if not (
-            0 < width_lo < width_hi
-        ):
-            raise ValueError(
-                "envelope_width_bounds must satisfy "
-                "0 < lower < upper."
-            )
-        # Fixed line-shape mixing coefficient
-        eta = float( config.get( "envelope_eta_fixed", 0.3, ) )
-        if not 0.0 <= eta <= 1.0:
-            raise ValueError( "envelope_eta_fixed must be between 0 and 1." )
-        height0 = max( float(np.max(C_fit)), 1e-8, )
-        width0 = float( np.clip( 1.5, width_lo + 1e-6, width_hi - 1e-6, ) )
-        # --------------------------------------
-        # 4.2 Asymmetric pseudo-Voigt envelope
-        # --------------------------------------
-        def asymmetricEnvelope( xx, height, center, width_left, width_right, ):
-            """
-            Diagnostic envelope model.
-            The left and right sides have separate width
-            parameters. This is a flexible line-shape
-            diagnostic, not a chemical-state peak model.
-            width_left:
-                Width parameter on the lower-BE side.
-            width_right:
-                Width parameter on the higher-BE side.
-            """
-            xx = np.asarray( xx, dtype=float, )
-            widths = np.where( xx < center, width_left, width_right, )
-            z = (xx - center) / widths
-            gaussian = np.exp( -4.0 * np.log(2.0) * z ** 2 )
-            lorentzian = 1.0 / ( 1.0 + 4.0 * z ** 2 )
-            return height * ( (1.0 - eta) * gaussian + eta * lorentzian )
-        p0 = [ height0, center0, width0, width0, ]
-        lower = [ 0.0, center_lo, width_lo, width_lo, ]
-        upper = [ np.inf, center_hi, width_hi, width_hi, ]
-        # --------------------------------------
-        # 4.3 Fit envelope to corrected experimental data
-        # --------------------------------------
-        popt, pcov = curve_fit( asymmetricEnvelope, X_fit, C_fit, p0=p0, bounds=(lower, upper), maxfev=50000, )
-        fitted_corrected = asymmetricEnvelope( X_fit, *popt, )
-        fitted_total = B_fit + fitted_corrected
-        residual = Y_fit - fitted_total
-        height, center, width_left, width_right = popt
-        # Diagnostic envelope integral only.
-        # This is NOT a chemical-state area.
-        envelope_area = trapezoid( fitted_corrected, X_fit, )
-        peak_table = pd.DataFrame([{
-            "Feature": "Main envelope (diagnostic only)",
-            "Center (eV)": center,
-            "Width left (eV)": width_left,
-            "Width right (eV)": width_right,
-            "Eta fixed": eta,
-            "Peak height": height,
-            "Envelope area in fit window": envelope_area,
-        }])
-        param_names = [ "Envelope height", "Envelope center", "Width left", "Width right", ]
-        bound_hits = checkParameterBounds( popt, lower, upper, param_names, )
-        metrics = calculateMetrics( Y_fit, fitted_total, residual, )
-        printResidualDiagnostics( X_fit, Y_fit, fitted_total, residual, )
-        if verbose:
-            print(
-                f"[Envelope fit] "
-                f"R2={metrics['R2']:.4f}; "
-                f"RMSE={metrics['RMSE']:.2f}"
-            )
-            print(
-                f"[Envelope parameters] "
-                f"Center={center:.3f} eV; "
-                f"Width left={width_left:.3f} eV; "
-                f"Width right={width_right:.3f} eV"
-            )
-        return {
-            "x": X_fit,
-            "raw": Y_fit,
-            "background": B_fit,
-            "corrected": C_fit,
-            "components": {
-                "Main envelope (diagnostic only)": (
-                    fitted_corrected
-                ),
-            },
-            "fitted_corrected": fitted_corrected,
-            "fitted": fitted_total,
-            "residual": residual,
-            "peaks": peak_table,
-            "covariance": pcov,
-            "metrics": metrics,
-            "success": True,
-            "fit_mode": "envelope",
-            "diagnostic_only": True,
-            "fit_range": (
-                float(X_fit[0]),
-                float(X_fit[-1]),
-            ),
-            "bound_hits": bound_hits,
-            "full_spectrum": {
-                "x": X,
-                "raw": Y,
-                "background": background,
-                "corrected": corrected,
-            },
-        }
-    # ======================================
-    # 5. Multi-component fitting mode
-    # ======================================
-    peak_configs = config.get( "peaks", [], )
-    if not peak_configs:
-        raise ValueError( "Component mode requires config['peaks']." )
-    signal_scale = max( float(np.max(corrected)), float(np.std(corrected)), 1e-8, )
-    p0 = []
-    lower = []
-    upper = []
-    fixed_etas = []
-    for peak in peak_configs:
-        center = float(peak["center"])
-        center_lo, center_hi = peak["center_bounds"]
-        fwhm = float( peak.get("fwhm", 1.2) )
-        fwhm_lo, fwhm_hi = peak.get( "fwhm_bounds", (0.5, 2.0), )
-        eta = float( peak.get( "eta_fixed", peak.get("eta", 0.3), ) )
-        if not 0.0 <= eta <= 1.0:
-            raise ValueError( f"Eta for '{peak['name']}' must be between 0 and 1." )
-        if not center_lo <= center <= center_hi:
-            raise ValueError( f"Initial center for '{peak['name']}' is outside center_bounds." )
-        if not fwhm_lo <= fwhm <= fwhm_hi:
-            raise ValueError( f"Initial FWHM for '{peak['name']}' is outside fwhm_bounds." )
-        fixed_etas.append(eta)
-        area0 = max( signal_scale * fwhm, 1e-8, )
-        p0.extend([ area0, center, fwhm, ])
-        lower.extend([ 0.0, center_lo, fwhm_lo, ])
-        upper.extend([ np.inf, center_hi, fwhm_hi, ])
-    p0 = np.asarray(p0, dtype=float)
-    lower = np.asarray(lower, dtype=float)
-    upper = np.asarray(upper, dtype=float)
-    # --------------------------------------
-    # 5.1 Build fixed-Eta multi-peak model
-    # --------------------------------------
-    def model(xx, *params):
-        xx = np.asarray( xx, dtype=float, )
-        y_model = np.zeros_like(xx)
-        for i, peak in enumerate(peak_configs):
-            area, center, fwhm = params[ 3 * i: 3 * i + 3 ]
-            eta = fixed_etas[i]
-            y_model += pseudoVoigt( xx, area, center, fwhm, eta, )
-        return y_model
-    # --------------------------------------
-    # 5.2 Simultaneous fitting
-    # --------------------------------------
-    popt, pcov = curve_fit( model, X, corrected, p0=p0, bounds=(lower, upper), maxfev=50000, )
-    fitted_corrected = model( X, *popt, )
-    fitted_total = background + fitted_corrected
-    residual = Y - fitted_total
-    # --------------------------------------
-    # 5.3 Check parameter bounds
-    # --------------------------------------
-    param_names = []
-    for peak in peak_configs:
-        param_names.extend([ f"{peak['name']}.Area", f"{peak['name']}.Center", f"{peak['name']}.FWHM", ])
-    bound_hits = checkParameterBounds( popt, lower, upper, param_names, )
-    # --------------------------------------
-    # 5.4 Peak areas
-    # --------------------------------------
-    components = {}
-    peak_rows = []
-    for i, peak in enumerate(peak_configs):
-        area, center, fwhm = popt[ 3 * i: 3 * i + 3 ]
-        eta = fixed_etas[i]
-        component = pseudoVoigt( X, area, center, fwhm, eta, )
-        components[peak["name"]] = component
-        measured_area = trapezoid( component, X, )
-        peak_rows.append({
-            "Peak": peak["name"],
-            "Center (eV)": center,
-            "FWHM (eV)": fwhm,
-            "Eta": eta,
-            "Area parameter": area,
-            "Area in region": measured_area,
-        })
-    peak_table = pd.DataFrame( peak_rows )
-    total_area = peak_table[ "Area in region" ].sum()
-    if total_area > 0:
-        peak_table["Area (%)"] = ( peak_table["Area in region"] / total_area * 100.0 )
-    else:
-        peak_table["Area (%)"] = np.nan
-    # --------------------------------------
-    # 5.5 Fit quality and diagnostics
-    # --------------------------------------
-    metrics = calculateMetrics( Y, fitted_total, residual, )
-    printResidualDiagnostics( X, Y, fitted_total, residual, )
-    if verbose:
-        print( f"[Component fit] R2={metrics['R2']:.4f}; RMSE={metrics['RMSE']:.2f}" )
-        print("[Fitted peak centers]")
-        for i, peak in enumerate(peak_configs):
-            center = popt[3 * i + 1]
-            print( f"  {peak['name']}: " f"{center:.3f} eV" )
-    # ======================================
-    # 6. Return results
-    # ======================================
+        raise ValueError("Binding energy must be strictly increasing.")
+    return X, Y
+# -----------------------------------------------------------------------------
+# Background estimation
+# -----------------------------------------------------------------------------
+def shirleyBackground(X, Y, max_iter=200, tol=1e-5):
+    """Iterative Shirley background estimate for a sorted spectrum.
+    This is a practical iterative implementation. Confirm endpoint selection and
+    convergence visually for each spectrum, especially for sloping baselines.
+    """
+    X = np.asarray(X, dtype=float)
+    Y = np.asarray(Y, dtype=float)
+    if X.ndim != 1 or Y.ndim != 1 or len(X) != len(Y):
+        raise ValueError("X and Y must be one-dimensional arrays of equal length.")
+    if len(X) < 3:
+        raise ValueError("At least three points are required for Shirley background.")
+    # Endpoint levels initialize the background; the integral is evaluated over X.
+    background = np.linspace(Y[0], Y[-1], len(Y))
+    y_min = min(float(Y[0]), float(Y[-1]))
+    signal = np.maximum(Y - background, 0.0)
+    for _ in range(max_iter):
+        old = background.copy()
+        signal = np.maximum(Y - background, 0.0)
+        total = trapezoid(signal, X)
+        if not np.isfinite(total) or total <= np.finfo(float).eps:
+            return np.linspace(Y[0], Y[-1], len(Y))
+        # Cumulative area from the low-binding-energy end, normalized to [0, 1].
+        cumulative = np.concatenate(([0.0], np.cumsum((signal[1:] + signal[:-1]) * np.diff(X) / 2.0)))
+        fraction = np.clip(cumulative / total, 0.0, 1.0)
+        background = Y[0] + (Y[-1] - Y[0]) * fraction
+        if np.max(np.abs(background - old)) <= tol * max(1.0, np.max(np.abs(old))):
+            break
+    return background
+def estimateXPSBackground(X, Y, method="shirley"):
+    """Dispatch background estimation according to config['background']."""
+    method = str(method).lower().strip()
+    if method == "shirley":
+        return shirleyBackground(X, Y)
+    if method == "linear":
+        return np.linspace(Y[0], Y[-1], len(Y))
+    if method == "none":
+        return np.zeros_like(Y, dtype=float)
+    raise ValueError(f"Unsupported background method: {method!r}")
+# -----------------------------------------------------------------------------
+# Peak line shapes: all profiles are normalized by area over the full line shape
+# -----------------------------------------------------------------------------
+def gaussianPeak(X, area, center, fwhm):
+    X = np.asarray(X, dtype=float)
+    sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    return area / (sigma * np.sqrt(2.0 * np.pi)) * np.exp(-0.5 * ((X - center) / sigma) ** 2)
+def lorentzianPeak(X, area, center, fwhm):
+    X = np.asarray(X, dtype=float)
+    gamma = fwhm / 2.0
+    return area / np.pi * gamma / ((X - center) ** 2 + gamma**2)
+def pseudoVoigtPeak(X, area, center, fwhm, eta):
+    """Area-normalized pseudo-Voigt; eta is the Lorentzian fraction."""
+    eta = float(eta)
+    if not 0.0 <= eta <= 1.0:
+        raise ValueError("eta must be between 0 and 1.")
+    return (1.0 - eta) * gaussianPeak(X, area, center, fwhm) + eta * lorentzianPeak(X, area, center, fwhm)
+def evaluatePeak(X, area, center, fwhm, shape="pseudo_voigt", eta=0.3):
+    """Evaluate one peak for the requested candidate line shape."""
+    shape = str(shape).lower().replace("-", "_").strip()
+    if shape in {"gaussian", "g"}:
+        return gaussianPeak(X, area, center, fwhm)
+    if shape in {"lorentzian", "lorentz", "l"}:
+        return lorentzianPeak(X, area, center, fwhm)
+    if shape in {"pseudo_voigt", "pseudovoigt", "pv"}:
+        return pseudoVoigtPeak(X, area, center, fwhm, eta)
+    raise ValueError(f"Unsupported peak shape: {shape!r}")
+# -----------------------------------------------------------------------------
+# Model parameter setup and evaluation
+# -----------------------------------------------------------------------------
+def validatePeakConfig(peak, fit_eta=False):
+    required = ("name", "center", "center_bounds")
+    missing = [key for key in required if key not in peak]
+    if missing:
+        raise KeyError(f"Peak config missing required keys {missing}: {peak}")
+    center = float(peak["center"])
+    center_lo, center_hi = map(float, peak["center_bounds"])
+    fwhm = float(peak.get("fwhm", 1.2))
+    fwhm_lo, fwhm_hi = map(float, peak.get("fwhm_bounds", (0.5, 2.0)))
+    eta = float(peak.get("eta_fixed", peak.get("eta", 0.3)))
+    eta_lo, eta_hi = map(float, peak.get("eta_bounds", (0.0, 1.0)))
+    if not center_lo < center_hi or not center_lo <= center <= center_hi:
+        raise ValueError(f"Invalid initial center/bounds for peak {peak['name']!r}.")
+    if not 0.0 < fwhm_lo < fwhm_hi or not fwhm_lo <= fwhm <= fwhm_hi:
+        raise ValueError(f"Invalid initial FWHM/bounds for peak {peak['name']!r}.")
+    if not 0.0 <= eta <= 1.0:
+        raise ValueError(f"Eta for peak {peak['name']!r} must be between 0 and 1.")
+    if not 0.0 <= eta_lo < eta_hi <= 1.0:
+        raise ValueError(f"eta_bounds for peak {peak['name']!r} must lie within [0, 1].")
+    if fit_eta and not eta_lo <= eta <= eta_hi:
+        raise ValueError(f"Initial eta for peak {peak['name']!r} is outside eta_bounds.")
     return {
+        "name": str(peak["name"]),
+        "center": center,
+        "center_bounds": (center_lo, center_hi),
+        "fwhm": fwhm,
+        "fwhm_bounds": (fwhm_lo, fwhm_hi),
+        "eta": eta,
+        "eta_bounds": (eta_lo, eta_hi),
+    }
+def prepareFitParameters(X, corrected, peak_configs, shape, fit_eta=False):
+    """Build initial values, bounds, and parameter labels for one model fit."""
+    signal_scale = max(float(np.max(corrected)), float(np.std(corrected)), 1e-8)
+    p0, lower, upper, param_names = [], [], [], []
+    normalized_configs = []
+    is_pv = str(shape).lower().replace("-", "_") in {"pseudo_voigt", "pseudovoigt", "pv"}
+    for peak in peak_configs:
+        p = validatePeakConfig(peak, fit_eta=fit_eta and is_pv)
+        normalized_configs.append(p)
+        area0 = max(signal_scale * p["fwhm"], 1e-8)
+        p0.extend([area0, p["center"], p["fwhm"]])
+        lower.extend([0.0, p["center_bounds"][0], p["fwhm_bounds"][0]])
+        upper.extend([np.inf, p["center_bounds"][1], p["fwhm_bounds"][1]])
+        param_names.extend([f"{p['name']}.Area", f"{p['name']}.Center", f"{p['name']}.FWHM"])
+        if is_pv and fit_eta:
+            p0.append(p["eta"])
+            lower.append(p["eta_bounds"][0])
+            upper.append(p["eta_bounds"][1])
+            param_names.append(f"{p['name']}.Eta")
+    return (np.asarray(p0, dtype=float), np.asarray(lower, dtype=float),
+            np.asarray(upper, dtype=float), param_names, normalized_configs)
+def unpackPeakParameters(params, peak_configs, shape, fit_eta=False):
+    """Convert a flat optimizer vector into per-peak parameter dictionaries."""
+    shape_key = str(shape).lower().replace("-", "_")
+    is_pv = shape_key in {"pseudo_voigt", "pseudovoigt", "pv"}
+    stride = 4 if is_pv and fit_eta else 3
+    unpacked = []
+    for i, peak in enumerate(peak_configs):
+        start = stride * i
+        area, center, fwhm = params[start:start + 3]
+        eta = params[start + 3] if stride == 4 else peak["eta"]
+        unpacked.append({"name": peak["name"], "area_parameter": float(area),
+                         "center": float(center), "fwhm": float(fwhm), "eta": float(eta)})
+    return unpacked
+def evaluateMultiPeakModel(X, params, peak_configs, shape="pseudo_voigt", fit_eta=False):
+    """Sum the configured component profiles."""
+    peak_params = unpackPeakParameters(params, peak_configs, shape, fit_eta=fit_eta)
+    total = np.zeros_like(np.asarray(X, dtype=float))
+    for p in peak_params:
+        total += evaluatePeak(X, p["area_parameter"], p["center"], p["fwhm"], shape, p["eta"])
+    return total
+def curveFitMultiPeakAdapter(X, *params, peak_configs, shape="pseudo_voigt", fit_eta=False):
+    """Top-level adapter matching scipy.optimize.curve_fit's callable API."""
+    return evaluateMultiPeakModel(X, params, peak_configs, shape=shape, fit_eta=fit_eta)
+# -----------------------------------------------------------------------------
+# Fit-quality statistics and diagnostics
+# -----------------------------------------------------------------------------
+def calculateXPSMetrics(observed, fitted, residual):
+    observed = np.asarray(observed, dtype=float)
+    fitted = np.asarray(fitted, dtype=float)
+    residual = np.asarray(residual, dtype=float)
+    ss_res = float(np.sum(residual**2))
+    ss_tot = float(np.sum((observed - np.mean(observed))**2))
+    r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else np.nan
+    rmse = float(np.sqrt(np.mean(residual**2)))
+    mae = float(np.mean(np.abs(residual)))
+    n = len(observed)
+    return {"R2": r2, "RMSE": rmse, "MAE": mae, "SSE": ss_res, "n_points": n}
+def calculateInformationCriteria(metrics, n_parameters):
+    """AIC/BIC based on Gaussian residual likelihood; lower is preferred."""
+    n = int(metrics["n_points"])
+    sse = max(float(metrics["SSE"]), np.finfo(float).tiny)
+    k = int(n_parameters)
+    return {
+        "AIC": float(n * np.log(sse / n) + 2 * k),
+        "BIC": float(n * np.log(sse / n) + k * np.log(n)),
+    }
+def checkParameterBounds( params, lower, upper, param_names, relative_tol=1e-4, ):
+    """Return bound diagnostics for every fitted parameter."""
+    rows = []
+    for value, lo, hi, name in zip( params, lower, upper, param_names ):
+        value = float(value)
+        lo = float(lo)
+        hi = float(hi)
+        scale = max(1.0, abs(value))
+        near_lower = ( np.isfinite(lo) and abs(value - lo) <= relative_tol * max(scale, abs(lo)) )
+        near_upper = ( np.isfinite(hi) and abs(value - hi) <= relative_tol * max(scale, abs(hi)) )
+        if near_lower and near_upper:
+            status = "both"
+        elif near_lower:
+            status = "lower"
+        elif near_upper:
+            status = "upper"
+        else:
+            status = "none"
+        rows.append({
+            "Parameter": name,
+            "Value": value,
+            "Lower bound": lo,
+            "Upper bound": hi,
+            "Distance to lower": value - lo if np.isfinite(lo) else np.nan,
+            "Distance to upper": hi - value if np.isfinite(hi) else np.nan,
+            "Bound status": status,
+            "At bound": status != "none",
+        })
+    return pd.DataFrame(rows)
+def printXPSResidualDiagnostics(X, observed, fitted, residual):
+    """Print concise residual summaries; this is called only when requested."""
+    residual = np.asarray(residual, dtype=float)
+    print("[Residual diagnostics] "
+          f"mean={np.mean(residual):.4g}; std={np.std(residual):.4g}; "
+          f"min={np.min(residual):.4g}; max={np.max(residual):.4g}")
+# -----------------------------------------------------------------------------
+# Single candidate fit: one shape + one explicit peak list only
+# -----------------------------------------------------------------------------
+def fitXPSRegion(df, config, x="Binding Energy", y="Intensity", mode=None, verbose=False, *,
+                 shape="pseudo_voigt", peak_configs=None, fit_eta=None,
+                 model_name=None):
+    """Fit exactly one XPS model. Does not compare models or print by default.
+    Parameters
+    ----------
+    config : dict
+        Region config (e.g. XPS_PEAK_CONFIG['C1s']).
+    shape : {'gaussian', 'lorentzian', 'pseudo_voigt'}
+        Line shape used for every component in this single fit.
+    peak_configs : list[dict], optional
+        Explicit peaks to fit. Defaults to config['peaks'].
+    fit_eta : bool, optional
+        If True, optimize eta for pseudo-Voigt components using eta_bounds.
+        Defaults to config.get('fit_eta', False). Otherwise eta is fixed, as in
+        the original implementation. eta_bounds are validated but not optimized.
+    verbose : bool
+        Print metrics and residual diagnostics only when True.
+    """
+    # Backward compatibility: the old function accepted mode="components".
+    # Envelope fitting is now intentionally handled by the separate fitXPSEnvelope().
+    if mode is not None and str(mode).lower().strip() != "components":
+        raise ValueError("fitXPSRegion now fits one component model only; use fitXPSEnvelope() for envelope diagnostics.")
+    if peak_configs is None:
+        peak_configs = config.get("peaks", [])
+    if not peak_configs:
+        raise ValueError("A component fit requires a non-empty peak_configs list.")
+    if fit_eta is None:
+        fit_eta = bool(config.get("fit_eta", False))
+    if shape not in {"gaussian", "lorentzian", "pseudo_voigt", "pseudo-voigt", "pseudovoigt", "pv"}:
+        raise ValueError(f"Unsupported shape: {shape!r}")
+    X, Y = prepareXPSData(df, config, x=x, y=y)
+    background = estimateXPSBackground(X, Y, config.get("background", "shirley"))
+    corrected = Y - background
+    p0, lower, upper, param_names, normalized_peaks = prepareFitParameters(
+        X, corrected, peak_configs, shape, fit_eta=fit_eta
+    )
+    fit_eta_effective = bool(fit_eta and str(shape).lower().replace("-", "_") in {"pseudo_voigt", "pseudovoigt", "pv"})
+    # partial binds the model settings while the top-level adapter accepts *params.
+    fit_callable = partial(curveFitMultiPeakAdapter, peak_configs=normalized_peaks,
+                           shape=shape, fit_eta=fit_eta_effective)
+    popt, pcov = curve_fit(fit_callable, X, corrected, p0=p0,
+                           bounds=(lower, upper), maxfev=int(config.get("maxfev", 50000)))
+    fitted_corrected = evaluateMultiPeakModel(X, popt, normalized_peaks, shape, fit_eta=fit_eta_effective)
+    fitted = background + fitted_corrected
+    residual = Y - fitted
+    metrics = calculateXPSMetrics(Y, fitted, residual)
+    information = calculateInformationCriteria(metrics, len(popt))
+    parameterBounds = checkParameterBounds(popt, lower, upper, param_names)
+    boundHits = parameterBounds.loc[ parameterBounds["At bound"] ].reset_index(drop=True)
+    unpacked = unpackPeakParameters(popt, normalized_peaks, shape, fit_eta=fit_eta_effective)
+    components = {}
+    rows = []
+    for p in unpacked:
+        component = evaluatePeak(X, p["area_parameter"], p["center"], p["fwhm"], shape, p["eta"])
+        components[p["name"]] = component
+        area_in_window = float(trapezoid(component, X))
+        rows.append({"Peak": p["name"], "Center (eV)": p["center"],
+                     "FWHM (eV)": p["fwhm"], "Eta (Lorentzian fraction)": p["eta"],
+                     "Area parameter": p["area_parameter"], "Area in region": area_in_window})
+    peak_table = pd.DataFrame(rows)
+    total_area = float(peak_table["Area in region"].sum())
+    peak_table["Area (%)"] = peak_table["Area in region"] / total_area * 100.0 if total_area > 0 else np.nan
+    result = {
+        "model_name": model_name or f"{shape}_{len(normalized_peaks)}peaks",
+        "shape": shape,
         "x": X,
         "raw": Y,
         "background": background,
         "corrected": corrected,
         "components": components,
         "fitted_corrected": fitted_corrected,
-        "fitted": fitted_total,
+        "fitted": fitted,
         "residual": residual,
         "peaks": peak_table,
         "covariance": pcov,
+        "parameters": popt,
+        "parameter_names": param_names,
         "metrics": metrics,
+        "information_criteria": information,
         "success": True,
         "fit_mode": "components",
         "diagnostic_only": False,
-        "fit_range": (
-            float(X[0]),
-            float(X[-1]),
-        ),
-        "bound_hits": bound_hits,
+        "fit_range": (float(X[0]), float(X[-1])),
+        "parameter_bounds": parameterBounds,
+        "bound_hits": boundHits,
+        "n_parameters": len(popt),
     }
-def fitXPSData( data, regions=("C1s",), peakConfig=None, x="Binding Energy", y="Intensity", ):
+    if verbose:
+        print(f"[{result['model_name']}] R2={metrics['R2']:.5f}; "
+              f"RMSE={metrics['RMSE']:.5g}; AIC={information['AIC']:.5g}; BIC={information['BIC']:.5g}")
+        printXPSResidualDiagnostics(X, Y, fitted, residual)
+    return result
+# -----------------------------------------------------------------------------
+# Candidate selection and comparison
+# -----------------------------------------------------------------------------
+def selectPeakConfigs(config, n_peaks):
+    """Select a declared peak subset for a candidate model."""
+    peak_configs = config.get("peaks", [])
+    candidate_names = config.get("candidate_peak_names", {}).get(n_peaks)
+    if candidate_names is None:
+        if len(peak_configs) < n_peaks:
+            raise ValueError(f"Config has only {len(peak_configs)} peaks, cannot fit {n_peaks} peaks.")
+        return peak_configs[:n_peaks]
+    by_name = {p["name"]: p for p in peak_configs}
+    missing = [name for name in candidate_names if name not in by_name]
+    if missing:
+        raise KeyError(f"candidate_peak_names[{n_peaks}] refers to undefined peaks: {missing}")
+    if len(candidate_names) != n_peaks:
+        raise ValueError(f"candidate_peak_names[{n_peaks}] must contain exactly {n_peaks} names.")
+    return [by_name[name] for name in candidate_names]
+def buildXPSCandidateSpecs(config, peak_counts=(3, 4), shapes=("gaussian", "lorentzian", "pseudo_voigt")):
+    """Create the six default candidates: three shapes x three/four peaks."""
+    specs = []
+    for shape in shapes:
+        for n_peaks in peak_counts:
+            peak_configs = selectPeakConfigs(config, n_peaks)
+            specs.append({"model_name": f"{shape}_{n_peaks}peaks", "shape": shape,
+                          "n_peaks": n_peaks, "peak_configs": peak_configs})
+    return specs
+def collectXPSParameterBounds(modelResult):
     """
-    Fit selected XPS regions for all samples.
+    Extract parameter-bound diagnostics from one model result.
+    Preference:
+        1. parameter_bounds: all fitted parameters
+        2. bound_hits: parameters close to bounds
+    Returns
+    -------
+    pandas.DataFrame
+    """
+    parameterBounds = modelResult.get("parameter_bounds")
+    if isinstance(parameterBounds, pd.DataFrame):
+        return parameterBounds.copy()
+    boundHits = modelResult.get("bound_hits")
+    if isinstance(boundHits, pd.DataFrame):
+        return boundHits.copy()
+    return pd.DataFrame()
+def summarizeXPSModelComparison(results):
+    """Build a ranking table; lower AIC/BIC are preferred, not R2 alone."""
+    rows = []
+    for name, result in results.items():
+        rows.append({
+            "Model": name,
+            "Shape": result["shape"],
+            "N peaks": len(result["peaks"]),
+            "R2": result["metrics"]["R2"],
+            "RMSE": result["metrics"]["RMSE"],
+            "MAE": result["metrics"]["MAE"],
+            "AIC": result["information_criteria"]["AIC"],
+            "BIC": result["information_criteria"]["BIC"],
+            "Parameters": result["n_parameters"],
+            "Bound hits": len(result["bound_hits"]),
+        })
+    table = pd.DataFrame(rows)
+    if not table.empty:
+        table = table.sort_values(["BIC", "AIC"], ascending=True).reset_index(drop=True)
+        table.insert(0, "BIC rank", np.arange(1, len(table) + 1))
+    return table
+def compareXPSModels(df, config, x="Binding Energy", y="Intensity", *,
+                     candidate_specs=None, peak_counts=(3, 4),
+                     shapes=("gaussian", "lorentzian", "pseudo_voigt"),
+                     fit_eta=None, verbose=False, continue_on_error=True):
+    """High-level runner: fit candidate models one by one and summarize results.
+    Returns a dict with per-model results, a comparison table, and failures.
+    Each candidate is fitted independently by fitXPSRegion().
+    """
+    if candidate_specs is None:
+        candidate_specs = buildXPSCandidateSpecs(config, peak_counts=peak_counts, shapes=shapes)
+    results, failures = {}, {}
+    for spec in candidate_specs:
+        name = spec.get("model_name", f"{spec['shape']}_{spec.get('n_peaks', len(spec['peak_configs']))}peaks")
+        try:
+            result = fitXPSRegion(
+                df, config, x=x, y=y,
+                shape=spec["shape"],
+                peak_configs=spec["peak_configs"],
+                fit_eta=fit_eta,
+                model_name=name,
+                verbose=verbose,
+            )
+            results[name] = result
+        except Exception as exc:
+            failures[name] = {"error_type": type(exc).__name__, "message": str(exc)}
+            if not continue_on_error:
+                raise
+    summary = summarizeXPSModelComparison(results)
+    return {"results": results, "summary": summary, "failures": failures}
+# -----------------------------------------------------------------------------
+# Optional envelope diagnostic, kept separate from component-model comparison
+# -----------------------------------------------------------------------------
+def asymmetricPseudoVoigtEnvelope(X, height, center, width_left, width_right, eta=0.3):
+    """Asymmetric pseudo-Voigt envelope parameterized by peak height."""
+    X = np.asarray(X, dtype=float)
+    widths = np.where(X < center, width_left, width_right)
+    widths = np.maximum(widths, np.finfo(float).eps)
+    # Convert a height-like amplitude to a unit-height Gaussian/Lorentzian blend.
+    z = (X - center) / widths
+    gaussian = np.exp(-4.0 * np.log(2.0) * z**2)
+    lorentzian = 1.0 / (1.0 + 4.0 * z**2)
+    return height * ((1.0 - eta) * gaussian + eta * lorentzian)
+def curveFitEnvelopeAdapter(X, height, center, width_left, width_right, eta=0.3):
+    """Top-level scipy adapter for the asymmetric envelope fit."""
+    return asymmetricPseudoVoigtEnvelope(X, height, center, width_left, width_right, eta=eta)
+def fitXPSData( data, peakConfig, regions=("C1s",), x="Binding Energy", y="Intensity", modelSelection=True, shape="pseudo_voigt", fit_eta=None, verbose=False, ):
+    """
+    Batch-fit XPS spectra for multiple samples and regions.
+    Parameters
+    ----------
+    data : dict
+        {sample: {region: DataFrame}}
+        Output from extractXPSRegions().
+    peakConfig : dict
+        Region-specific fitting configuration, e.g. XPS_PEAK_CONFIG.
+    regions : tuple or list
+        Regions to fit.
+    modelSelection : bool
+        True: compare the six candidate models.
+        False: fit only one specified model.
+    shape : str
+        Used only when modelSelection=False.
     Returns
     -------
     dict
-        results[sample][region] = fit result
+        {sample: {region: fitting_result}}
     """
-    if peakConfig is None:
-        peakConfig = XPS_PEAK_CONFIG
-    results = {}
-    for sample, sample_data in data.items():
-        results[sample] = {}
+    fitResults = {}
+    for sample, sampleData in data.items():
+        fitResults[sample] = {}
         for region in regions:
-            df = sample_data.get(region)
-            if not isinstance(df, pd.DataFrame):
-                print(f"[Skip] {sample} / {region}: no DataFrame")
-                continue
             if region not in peakConfig:
-                print(f"[Skip] {sample} / {region}: no peak config")
+                fitResults[sample][region] = { "success": False, "error": f"No peak configuration found for {region}.", }
                 continue
+            df = sampleData.get(region)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                fitResults[sample][region] = { "success": False, "error": f"Missing or empty spectrum for {region}.", }
+                continue
+            config = peakConfig[region]
             try:
-                results[sample][region] = fitXPSRegion( df=df, config=peakConfig[region], x=x, y=y, )
-                print(
-                    f"[Fit] {sample} / {region}: "
-                    f"R²={results[sample][region]['metrics']['R2']:.4f}" )
-            except (ValueError, RuntimeError, FloatingPointError) as exc:
-                results[sample][region] = { "success": False, "error": str(exc), }
-                print(f"[Failed] {sample} / {region}: {exc}")
-    return results
+                if modelSelection:
+                    # Compare Gaussian/Lorentzian/Pseudo-Voigt,
+                    # each with 3-peak and 4-peak candidates.
+                    result = compareXPSModels( df=df, config=config, x=x, y=y, fit_eta=fit_eta, verbose=verbose, continue_on_error=True, )
+                    result["success"] = len(result["results"]) > 0
+                else:
+                    # Fit only one specified model.
+                    result = fitXPSRegion( df=df, config=config, x=x, y=y, shape=shape, fit_eta=fit_eta, verbose=verbose, )
+                fitResults[sample][region] = result
+            except Exception as exc:
+                fitResults[sample][region] = { "success": False, "error": f"{type(exc).__name__}: {exc}", }
+    return fitResults
+def collectXPSModelSummaries(fitResults, debug=True):
+    """Collect XPS model summaries, peak parameters, bound diagnostics, and fit metrics."""
+    rows = []
+    for sample, sampleResults in fitResults.items():
+        for region, regionResult in sampleResults.items():
+            modelResults = regionResult["results"] if isinstance(regionResult, dict) and isinstance(regionResult.get("results"), dict) else ({regionResult.get("model_name", "model"): regionResult} if isinstance(regionResult, dict) else {})
+            for modelName, modelResult in modelResults.items():
+                if not isinstance(modelResult, dict):
+                    continue
+                metrics, info = modelResult.get("metrics", {}), modelResult.get("information_criteria", {})
+                parameterBounds, boundHitsDf = modelResult.get("parameter_bounds"), modelResult.get("bound_hits")
+                if isinstance(parameterBounds, pd.DataFrame):
+                    selectedBounds, boundsSource = parameterBounds.copy(), "parameter_bounds"
+                elif isinstance(boundHitsDf, pd.DataFrame):
+                    selectedBounds, boundsSource = boundHitsDf.copy(), "bound_hits (fallback)"
+                else:
+                    selectedBounds, boundsSource = pd.DataFrame(), "unavailable"
+                if not selectedBounds.empty:
+                    boundRows = selectedBounds.loc[selectedBounds["At bound"].fillna(False).astype(bool)] if "At bound" in selectedBounds.columns else selectedBounds
+                    boundHits = len(boundRows)
+                    boundParameters = boundRows["Parameter"].astype(str).tolist() if "Parameter" in boundRows.columns else []
+                    parameterBoundRecords = selectedBounds.to_dict(orient="records")
+                else:
+                    boundHits, boundParameters, parameterBoundRecords = 0, [], []
+                peaks = modelResult.get("peaks", [])
+                if isinstance(peaks, pd.DataFrame):
+                    peaksDf = peaks.copy()
+                elif isinstance(peaks, dict):
+                    peaksDf = pd.DataFrame(peaks if all(isinstance(v, (dict, list, tuple, np.ndarray, pd.Series)) for v in peaks.values()) else [peaks])
+                elif isinstance(peaks, (list, tuple)):
+                    peaksDf = pd.DataFrame([p for p in peaks if isinstance(p, dict)])
+                else:
+                    peaksDf = pd.DataFrame()
+                if not peaksDf.empty:
+                    areaCol = next((c for c in peaksDf.columns if str(c).lower() in ("area", "peak area", "integrated area")), None)
+                    if areaCol:
+                        areas = pd.to_numeric(peaksDf[areaCol], errors="coerce")
+                        totalArea = areas.sum()
+                        peaksDf["Area (%)"] = areas / totalArea * 100 if totalArea > 0 else np.nan
+                row = {
+                    "Sample": sample, "Region": region, "Model": modelName,
+                    "Success": modelResult.get("success", True),
+                    "R2": metrics.get("R2", np.nan), "RMSE": metrics.get("RMSE", np.nan),
+                    "MAE": metrics.get("MAE", np.nan), "AIC": info.get("AIC", np.nan),
+                    "BIC": info.get("BIC", np.nan), "N peaks": len(peaksDf) if not peaksDf.empty else len(peaks) if isinstance(peaks, (list, tuple)) else 0,
+                    "Bound hits": boundHits, "Bound parameters": ", ".join(boundParameters),
+                    "Parameter bounds": parameterBoundRecords, "Error": modelResult.get("error"),
+                }
+                rows.append(row)
+                if debug:
+                    print(f"\n{'=' * 90}\n[XPS DEBUG] Sample={sample} | Region={region} | Model={modelName}\n{'-' * 90}")
+                    print("Available result keys:", list(modelResult.keys()))
+                    print(f"Fit metrics: R2={row['R2']:.5f} | RMSE={row['RMSE']:.4f} | MAE={row['MAE']:.4f} | AIC={row['AIC']:.3f} | BIC={row['BIC']:.3f}")
+                    print(f"Parameter-bound source: {boundsSource}")
+                    print(selectedBounds.to_string(index=False) if not selectedBounds.empty else "No parameter-bound information saved.")
+                    print(f"Bound-hit count: {boundHits} | Bound-hit parameters: {boundParameters}")
+                    print("Peak parameters:")
+                    print(peaksDf.to_string(index=False, float_format=lambda v: f"{v:.4f}") if not peaksDf.empty else "No peak-parameter table found in modelResult['peaks'].")
+                    print("=" * 90)
+    summary = pd.DataFrame(rows)
+    if debug and not summary.empty:
+        displayColumns = ["Sample", "Region", "Model", "Success", "R2", "RMSE", "MAE", "AIC", "BIC", "N peaks", "Bound hits"]
+        print("\n=== XPS Model Comparison Summary ===")
+        print(summary[displayColumns].to_string(index=False, float_format=lambda value: f"{value:.5f}"))
+    return summary
+def fitXPSEnvelope(df, config, x="Binding Energy", y="Intensity", verbose=False):
+    """Fit a single asymmetric envelope for diagnosis only, not chemical areas."""
+    if "envelope_range" not in config:
+        raise ValueError("Envelope mode requires config['envelope_range'].")
+    X_all, Y_all = prepareXPSData(df, config, x=x, y=y)
+    B_all = estimateXPSBackground(X_all, Y_all, config.get("background", "shirley"))
+    C_all = Y_all - B_all
+    env_min, env_max = config["envelope_range"]
+    mask = (X_all >= env_min) & (X_all <= env_max)
+    if np.count_nonzero(mask) < 10:
+        raise ValueError("Insufficient data points in envelope_range.")
+    X, Y, B, C = X_all[mask], Y_all[mask], B_all[mask], C_all[mask]
+    idx = int(np.argmax(C))
+    center0 = float(X[idx])
+    center_lo, center_hi = config.get("envelope_center_bounds", (max(X[0], center0 - 0.8), min(X[-1], center0 + 0.8)))
+    width_lo, width_hi = config.get("envelope_width_bounds", (0.5, 4.0))
+    eta = float(config.get("envelope_eta_fixed", 0.3))
+    if not 0.0 <= eta <= 1.0:
+        raise ValueError("envelope_eta_fixed must be between 0 and 1.")
+    p0 = [max(float(np.max(C)), 1e-8), float(np.clip(center0, center_lo, center_hi)),
+          float(np.clip(1.5, width_lo + 1e-6, width_hi - 1e-6)),
+          float(np.clip(1.5, width_lo + 1e-6, width_hi - 1e-6))]
+    envelope_callable = partial(curveFitEnvelopeAdapter, eta=eta)
+    lower = [0.0, center_lo, width_lo, width_lo]
+    upper = [np.inf, center_hi, width_hi, width_hi]
+    popt, pcov = curve_fit(envelope_callable, X, C, p0=p0, bounds=(lower, upper),
+                           maxfev=int(config.get("maxfev", 50000)))
+    fitted_corrected = envelope_callable(X, *popt)
+    fitted = B + fitted_corrected
+    residual = Y - fitted
+    metrics = calculateXPSMetrics(Y, fitted, residual)
+    height, center, width_left, width_right = popt
+    peaks = pd.DataFrame([{"Feature": "Main envelope (diagnostic only)",
+                           "Center (eV)": center, "Width left (eV)": width_left,
+                           "Width right (eV)": width_right, "Eta fixed": eta,
+                           "Peak height": height,
+                           "Envelope area in fit window": float(trapezoid(fitted_corrected, X))}])
+    if verbose:
+        print(f"[Envelope diagnostic] R2={metrics['R2']:.5f}; RMSE={metrics['RMSE']:.5g}")
+        printXPSResidualDiagnostics(X, Y, fitted, residual)
+    return {"x": X, "raw": Y, "background": B, "corrected": C,
+            "components": {"Main envelope (diagnostic only)": fitted_corrected},
+            "fitted_corrected": fitted_corrected, "fitted": fitted,
+            "residual": residual, "peaks": peaks, "covariance": pcov,
+            "metrics": metrics, "success": True, "fit_mode": "envelope",
+            "diagnostic_only": True, "fit_range": (float(X[0]), float(X[-1]))}
 def saveXPS(xpsData, filename="XPS.xlsx"):
     """
     Save XPS data.
@@ -712,11 +682,7 @@ def saveXPS(xpsData, filename="XPS.xlsx"):
     # =========================
     regions = set()
     for sampleData in xpsData.values():
-        regions.update(
-            key
-            for key, value in sampleData.items()
-            if isinstance(value, pd.DataFrame)
-        )
+        regions.update( key for key, value in sampleData.items() if isinstance(value, pd.DataFrame) )
     regions = sorted(regions)
     # =========================
     # Export each region
@@ -734,66 +700,27 @@ def saveXPS(xpsData, filename="XPS.xlsx"):
             df = sampleData[region]
             if not isinstance(df, pd.DataFrame):
                 continue
-            temp = df[
-                [
-                    "Binding Energy",
-                    "Intensity",
-                ]
-            ].reset_index(drop=True)
+            temp = df[ [ "Binding Energy", "Intensity", ] ].reset_index(drop=True)
             data_blocks.append(temp)
-            header_row1.extend(
-                [
-                    sample,
-                    sample,
-                ]
-            )
-            header_row2.extend(
-                [
-                    "Binding Energy",
-                    "Intensity",
-                ]
-            )
+            header_row1.extend( [ sample, sample, ] )
+            header_row2.extend( [ "Binding Energy", "Intensity", ] )
         if len(data_blocks) == 0:
             continue
         # ---------------------
         # Horizontal concatenate
         # ---------------------
-        output = pd.concat(
-            data_blocks,
-            axis=1,
-        )
+        output = pd.concat( data_blocks, axis=1, )
         # ---------------------
         # Two header rows
         # ---------------------
-        header = pd.DataFrame(
-            [
-                header_row1,
-                header_row2,
-            ],
-            columns=output.columns,
-        )
-        final = pd.concat(
-            [
-                header,
-                output,
-            ],
-            ignore_index=True,
-        )
+        header = pd.DataFrame( [ header_row1, header_row2, ], columns=output.columns, )
+        final = pd.concat( [ header, output, ], ignore_index=True, )
         # ---------------------
         # Export
         # ---------------------
-        fl.export_to_excel_auto(
-            final,
-            filename=filename,
-            sheet_name=region,
-        )
+        fl.export_to_excel_auto( final, filename=filename, sheet_name=region, )
         print(f"Export {region} -> {filename}")
-def readXPS(
-    folder,
-    pattern="*.csv",
-    keyName=None,
-    parser_kwargs=None,
-):
+def readXPS( folder, pattern="*.csv", keyName=None, parser_kwargs=None, ):
     """
     Batch read XPS spectra from CSV files.
     Returns
@@ -841,78 +768,38 @@ def readXPS(
         metadata = result["metadata"]
         grouped_data = result["data"]
         if sample_name not in xps:
-            xps[sample_name] = {
-                "metadata": metadata,
-            }
+            xps[sample_name] = { "metadata": metadata, }
         for _, regions in grouped_data.items():
             for region_name, df in regions.items():
                 region_key = str(region_name).strip().lower()
-                standardized_region = region_map.get(
-                    region_key,
-                    str(region_name).strip(),
-                )
+                standardized_region = region_map.get( region_key, str(region_name).strip(), )
                 xps[sample_name][standardized_region] = df
     return xps
-def plotXPSFit(
-    fit_result,
-    title=None,
-    figsize=(7, 5),
-    savepath=None,
-    dpi=600,
-):
-    """
-    Plot raw spectrum, background, individual peaks,
-    total fitted spectrum, and residual.
-    """
+def plotXPSFit(fit_result, title=None, figsize=(7, 5), savepath=None, dpi=600):
+    """Plot XPS spectrum, background, fitted components, and residual."""
     if not fit_result.get("success", False):
         raise ValueError("Cannot plot an unsuccessful fit.")
-    X = fit_result["x"]
-    Y = fit_result["raw"]
-    fig, (ax, ax_res) = plt.subplots(
-        2, 1,
-        figsize=figsize,
-        sharex=True,
-        gridspec_kw={"height_ratios": [3, 1]},
-    )
-    ax.scatter(
-        X, Y, s=10, label="Data", zorder=3
-    )
-    ax.plot(
-        X,
-        fit_result["background"],
-        linestyle="--",
-        label="Background",
-    )
+    X, Y = fit_result["x"], fit_result["raw"]
+    background, fitted = fit_result["background"], fit_result["fitted"]
+    fig, (ax, ax_res) = plt.subplots(2, 1, figsize=figsize, sharex=True,
+                                     gridspec_kw={"height_ratios": [3, 1]})
+    ax.scatter(X, Y, s=8, label="Data", zorder=3)
+    ax.plot(X, background, "--", lw=1.2, label="Background")
     for name, component in fit_result["components"].items():
-        ax.plot(
-            X,
-            fit_result["background"] + component,
-            linewidth=1.2,
-            label=name,
-        )
-    ax.plot(
-        X,
-        fit_result["fitted"],
-        linewidth=2,
-        label="Total fit",
-    )
+        ax.plot(X, background + component, lw=1.1, label=name)
+    ax.plot(X, fitted, lw=2, label="Total fit")
     ax.set_ylabel("Intensity (a.u.)")
-    ax.legend(fontsize=8)
-    ax_res.axhline(0, linestyle="--", linewidth=1)
-    ax_res.plot(X, fit_result["residual"], linewidth=1)
+    ax.legend(fontsize=8, frameon=False)
+    ax_res.axhline(0, color="gray", ls="--", lw=0.8)
+    ax_res.plot(X, fit_result["residual"], lw=1)
     ax_res.set_xlabel("Binding Energy (eV)")
     ax_res.set_ylabel("Residual")
-    # XPS convention: high binding energy on the left
-    ax_res.set_xlim(X.max(), X.min())
-    if title is not None:
+    ax_res.set_xlim(max(X), min(X))
+    if title:
         ax.set_title(title)
     fig.tight_layout()
-    if savepath is not None:
-        fig.savefig(
-            savepath,
-            dpi=dpi,
-            bbox_inches="tight",
-        )
+    if savepath:
+        fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
     plt.show(block=False)
     return fig, (ax, ax_res)
 def plotSpectrumXPS(
@@ -1071,9 +958,7 @@ def extractXPSRegions(
                     continue
                 xmin, xmax = energyRanges[region]
                 mask = survey[x].between(xmin, xmax)
-                result[sample][region] = (
-                    survey.loc[mask].copy().reset_index(drop=True)
-                )
+                result[sample][region] = ( survey.loc[mask].copy().reset_index(drop=True) )
     return result
 def cropXPSData(data, xmin=None, xmax=None):
     """
@@ -1111,12 +996,7 @@ def cropXPSData(data, xmin=None, xmax=None):
                 # Preserve metadata and other non-DataFrame values
                 result[sample][region] = value
     return result
-def baselineCorrectionXPS(
-    data,
-    x="Binding Energy",
-    y="Intensity",
-    method="asls",
-):
+def baselineCorrectionXPS( data, x="Binding Energy", y="Intensity", method="asls", ):
     """Baseline correction for nested XPS spectra."""
     result = {}
     for sample, sample_data in data.items():
@@ -1133,25 +1013,31 @@ def baselineCorrectionXPS(
             else:
                 result[sample][region] = value
     return result
-def normalizeSpectrumXPS(
-    data,
-    y="Intensity",
-    method="vector",
-):
+def normalizeSpectrumXPS( data, y="Intensity", method="vector", ):
     """Normalize nested XPS spectra."""
     result = {}
     for sample, sample_data in data.items():
         result[sample] = {}
         for region, value in sample_data.items():
             if isinstance(value, pd.DataFrame):
-                normalized = dop.normalizeSpectrum(
-                    {sample: value},
-                    y=y,
-                    method=method,
-                )
+                normalized = dop.normalizeSpectrum( {sample: value}, y=y, method=method, )
                 result[sample][region] = normalized[sample]
             else:
                 result[sample][region] = value
+    return result
+def smoothXPSSpectrum(data, y="Intensity", regions=("Survey",), method="savgol", **kwargs):
+    result = {}
+    for sample, item in data.items():
+        newitem = item.copy()
+        for region in regions:
+            if region not in item:
+                continue
+            df = item[region].copy()
+            if y not in df.columns:
+                raise KeyError(f"{sample}/{region}: missing '{y}', columns={df.columns.tolist()}")
+            df[y] = dop.smooth(df[y].to_numpy(), method=method, **kwargs)
+            newitem[region] = df
+        result[sample] = newitem
     return result
 def main(file_path=None):
     spectrum = "XPS"
@@ -1192,221 +1078,34 @@ def main(file_path=None):
         charaData = readXPS( folder, pattern="*.csv", keyName = keyName, parser_kwargs=None, )
         charaData1 = dop.copySamples(charaData,sampleMap)
         charaData1 = dop.renameSamples(charaData,sampleMap)
-        charaData2= dop.swapDictLevels(charaData1)
+        # charaData2= dop.swapDictLevels(charaData1)
     if saveFile:
         saveXPS( charaData1, filename=out_path )
     print(f"Read {len(charaData)} samples.")
     if spectrum == "XPS":
         # charaData1 = cropXPSData(charaData1, xmin=700, xmax=3500)
         # charaData2 = baselineCorrectionXPS( charaData1, x=keyName[0], y=keyName[1], method="airpls", )
+        # charaData2 = smoothXPSSpectrum( charaData1, y=keyName[1], regions=("Survey",), method="savgol", window_length=11, polyorder=3, )
         # 2. Extract regions
         charaDataRegions = extractXPSRegions( charaData1, highResolutionFlag=False, 
-                                regions=("C1s", "O1s"), x="Binding Energy", )      
-       #调试部分
-        # 从原有配置复制 C1s 参数，不修改原始配置
-        # =========================================================
-        # 1. Configure envelope fitting
-        # =========================================================
-        envelopeConfig = copy.deepcopy(
-            XPS_PEAK_CONFIG["C1s"]
-        )
-        # Main-peak diagnostic range (will be varied below)
-        base_range = (280.0, 286.0)
-        # Width constraints for the asymmetric envelope
-        envelopeConfig["envelope_width_bounds"] = (
-            0.5,
-            4.0,
-        )
-        # Fixed pseudo-Voigt mixing parameter
-        envelopeConfig["envelope_eta_fixed"] = 0.3
-        # Test different upper limits of the envelope fitting range
-        test_ranges = [
-            (280.0, 286.0),
-            (280.0, 286.5),
-            (280.0, 287.0),
-        ]
-        # Samples to analyze
-        samples = ["S1", "S3"]
-        # =========================================================
-        # 2. Fit all samples under all tested ranges
-        # =========================================================
-        # Store complete fitting results:
-        # envelopeResults[sample][energy_range] = result
-        envelopeResults = {}
-        # Collect summary statistics for the comparison table
-        summary_rows = []
-        for sample in samples:
-            print("\n" + "=" * 60)
-            print(f"Sample: {sample} / C1s envelope")
-            # Retrieve C1s data
-            df = charaDataRegions[sample]["C1s"]
-            envelopeResults[sample] = {}
-            for energy_range in test_ranges:
-                print(
-                    f"\n--- Fitting range: "
-                    f"{energy_range[0]:.1f}–"
-                    f"{energy_range[1]:.1f} eV ---"
-                )
-                # Copy the base configuration so that each test
-                # is independent of the previous fitting run
-                testConfig = copy.deepcopy(envelopeConfig)
-                testConfig["envelope_range"] = energy_range
-                # Fit the envelope
-                result = fitXPSRegion(
-                    df=df,
-                    config=testConfig,
-                    mode="envelope",
-                    verbose=False,
-                )
-                # Store the complete result
-                envelopeResults[sample][energy_range] = result
-                # Extract fitted envelope parameters
-                peak = result["peaks"].iloc[0]
-                metrics = result["metrics"]
-                # Store diagnostics
-                bound_hits = result.get(
-                    "bound_hits",
-                    [],
-                )
-                summary_rows.append({
-                    "Sample": sample,
-                    "Range (eV)": (
-                        f"{energy_range[0]:.1f}–"
-                        f"{energy_range[1]:.1f}"
-                    ),
-                    "R2": metrics["R2"],
-                    "RMSE": metrics["RMSE"],
-                    "Center (eV)": peak["Center (eV)"],
-                    "Width left (eV)": peak["Width left (eV)"],
-                    "Width right (eV)": peak["Width right (eV)"],
-                    "Boundary hits": (
-                        "; ".join(bound_hits)
-                        if bound_hits
-                        else "None"
-                    ),
-                })
-                print(
-                    f"R2 = {metrics['R2']:.4f}; "
-                    f"RMSE = {metrics['RMSE']:.2f}"
-                )
-                print(
-                    f"Center = {peak['Center (eV)']:.3f} eV; "
-                    f"Width left = {peak['Width left (eV)']:.3f} eV; "
-                    f"Width right = {peak['Width right (eV)']:.3f} eV"
-                )
-                print(
-                    "Boundary hits:",
-                    bound_hits if bound_hits else "None",
-                )
-        # =========================================================
-        # 3. Display the range-sensitivity comparison table
-        # =========================================================
-        sensitivityTable = pd.DataFrame(summary_rows)
-        print("\n" + "=" * 80)
-        print("ENVELOPE FITTING RANGE SENSITIVITY")
-        print("=" * 80)
-        print(
-            sensitivityTable.to_string(
-                index=False,
-                float_format=lambda value: f"{value:.4f}",
-            )
-        )
-        # =========================================================
-        # 4. Plot the baseline-range fit for S1 and S3
-        # =========================================================
-        for sample in samples:
-            result = envelopeResults[sample][base_range]
-            print("\n" + "=" * 60)
-            print(
-                f"Plotting {sample} / C1s envelope "
-                f"({base_range[0]:.1f}–{base_range[1]:.1f} eV)"
-            )
-            plotXPSFit(
-                result,
-                title=(
-                    f"{sample} - C1s envelope "
-                    f"({base_range[0]:.1f}–{base_range[1]:.1f} eV)"
-                ),
-                # Uncomment the next line to save each figure
-                # savepath=f"{sample}_C1s_envelope.png",
-            )
-
-        # Keep the original fitting ranges
-        test_ranges = [
-            (280.0, 286.0),
-            (280.0, 286.5),
-            (280.0, 287.0),
-        ]
-
-        # Test different upper limits for the right-side width
-        right_width_limits = [4.0, 5.0, 6.0]
-
-        samples = ["S1", "S3"]
-        widthTestResults = []
-
-        for sample in samples:
-
-            df = charaDataRegions[sample]["C1s"]
-
-            for energy_range in test_ranges:
-
-                for width_upper in right_width_limits:
-
-                    test_config = copy.deepcopy(envelopeConfig)
-
-                    test_config["envelope_range"] = energy_range
-                    test_config["envelope_width_bounds"] = (
-                        0.5,
-                        width_upper,
+                                regions=("C1s", "O1s"), x="Binding Energy", )  
+        charaDataRegions = smoothXPSSpectrum( charaDataRegions, y=keyName[1], regions=("C1s",), method="savgol", window_length=11, polyorder=3, )
+        # Batch fitting
+        fitResults = fitXPSData( data=charaDataRegions, peakConfig=XPS_PEAK_CONFIG, regions=("C1s",), modelSelection=True, verbose=False, )
+        # Collect all sample/model results
+        fitSummary = collectXPSModelSummaries(fitResults)
+        # Plot selected models
+        for sample, sampleResults in fitResults.items():
+            regionResult = sampleResults.get("C1s", {})
+            modelResults = regionResult.get("results", {})
+            for modelName in ("lorentzian_3peaks", "lorentzian_4peaks"):
+                if modelName in modelResults:
+                    plotXPSFit(
+                        modelResults[modelName],
+                        title=f"{sample} C1s - {modelName}",
+                        # savepath=f"{sample}_C1s_{modelName}.png",
                     )
-
-                    result = fitXPSRegion(
-                        df=df,
-                        config=test_config,
-                        mode="envelope",
-                        verbose=False,
-                    )
-
-                    peak = result["peaks"].iloc[0]
-                    metrics = result["metrics"]
-
-                    width_right = peak["Width right (eV)"]
-
-                    width_at_upper = abs(
-                        width_right - width_upper
-                    ) < 1e-3
-
-                    widthTestResults.append({
-                        "Sample": sample,
-                        "Range": (
-                            f"{energy_range[0]:.1f}-"
-                            f"{energy_range[1]:.1f}"
-                        ),
-                        "Width upper": width_upper,
-                        "Width right": width_right,
-                        "Center": peak["Center (eV)"],
-                        "R2": metrics["R2"],
-                        "RMSE": metrics["RMSE"],
-                        "At upper bound": width_at_upper,
-                    })
-
-        widthTestTable = pd.DataFrame(widthTestResults)
-
-        print(
-            widthTestTable.to_string(
-                index=False,
-                float_format=lambda value: f"{value:.4f}",
-            )
-        )
-# =========================================================
-# 5. Optional: export the comparison table
-# =========================================================
-# Uncomment if you want to save the summary to Excel
-# sensitivityTable.to_excel(
-#     "C1s_envelope_range_sensitivity.xlsx",
-#     index=False,
-# )
-        ##调试
+ ##以上为调试
         charaData3 = normalizeSpectrumXPS( charaData2, y=keyName[1], method="vector", )
         figureName = fl.get_expanded_name(out_path, fileName = "FTIR", type="png")
         figureName = fl.get_expanded_name( out_path, fileName="XPS", type="png", )
@@ -1434,84 +1133,6 @@ def main(file_path=None):
                     linewidth=1.0,
                     # savepath=figureName,
                 )
-        testPeakConfig = copy.deepcopy(XPS_PEAK_CONFIG)
-        for peak in testPeakConfig["C1s"]["peaks"]:
-            if peak["name"] == "C-C/C=C":
-                peak["fwhm_bounds"] = (0.5, 3.5)
-        fitResults_wide = fitXPSData(
-            charaDataRegions,
-            regions=("C1s",),
-            peakConfig=testPeakConfig,
-        )
-        # fitResults = fitXPSData( charaDataRegions, regions=("C1s",), peakConfig=XPS_PEAK_CONFIG, )
-        # 先关闭之前的图窗，避免把旧图误认为新结果
-        for sample in ["S1", "S3"]:
-            result = fitResults_wide[sample]["C1s"]
-            mask = (
-                (result["x"] >= 281.8)
-                & (result["x"] <= 283.6)
-            )
-            diagnostic = pd.DataFrame({
-                "BE (eV)": result["x"][mask],
-                "Raw": result["raw"][mask],
-                "Background": result["background"][mask],
-                "Corrected": result["corrected"][mask],
-                "Fitted components": result["fitted_corrected"][mask],
-                "Total fit": result["fitted"][mask],
-                "Residual": result["residual"][mask],
-            })
-            print(f"\n===== {sample}: 281.8–283.6 eV =====")
-            print(diagnostic.round(2).to_string(index=False))
-        plt.close("all")
-        for sample in ["S1", "S3"]:
-            result = fitResults_wide[sample]["C1s"]
-            X = result["x"]
-            Y = result["raw"]
-            idx_max = np.argmax(Y)
-            top_idx = np.argsort(Y)[-5:][::-1]
-            print(f"\n{'=' * 40}")
-            print(f"Sample: {sample}")
-            print(f"Maximum: BE = {X[idx_max]:.3f} eV, "
-                f"Intensity = {Y[idx_max]:.3f}")
-            print(f"Intensity range: {Y.min():.3f} – {Y.max():.3f}")
-            print("\nTop 5 intensity points:")
-            print(pd.DataFrame({
-                "Binding Energy (eV)": X[top_idx],
-                "Intensity": Y[top_idx],
-            }))
-            plotXPSFit(
-                result,
-                title=f"{sample} - C1s (current fit)",
-            )
-        plt.show()
-        # samples = ["S1", "S3"]
-        # region = "C1s"
-        # for sample in samples:
-        #     result = fitResults[sample][region]
-        #     if result["success"]:
-        #         print(f"\n{'=' * 40}")
-        #         print(f"Sample: {sample} / {region}")
-        #         print(result["peaks"])
-        #         print(result["metrics"])
-        #         plotXPSFit(
-        #             result,
-        #             title=f"{sample} - {region}",
-        #             # savepath=f"{sample}_{region}_fit.png",
-        #         )
-        #     else:
-        #         print(f"[Warning] Fit failed: {sample} / {region}")
-    # elif spectrum == "Raman": 
-    #     charaData1 = dop.cropX(charaData1, xmin=500, xmax=2200)
-    #     charaData2 = dop.smoothSpectrum( charaData1, y=keyName[1], method="gaussian", sigma=1.2, )
-    #     charaData3 = dop.baselineCorrection( charaData2, x=keyName[0], y=keyName[1], method="rubberband", )
-    #     figureName = fl.get_expanded_name(out_path, fileName = "Raman", type="png")
-    #     myPlt.plotSpectrum( charaData1, figsize=(8, 4), x=keyName[0], y=keyName[1], 
-    #                    reverse_x=True, offset=0, colors="PAPER1", linewidth=0.5, )
-    #     myPlt.plotSpectrum( charaData2, figsize=(8, 4), x=keyName[0], y=keyName[1], 
-    #                    offset=80, colors="PAPER1", linewidth=0.5, )
-    #     myPlt.plotSpectrum( charaData3, figsize=(8, 4), x=keyName[0], y=keyName[1], 
-    #                    offset=50, colors="PAPER1", linewidth=0.5, savepath=figureName)
-    # plt.show(block=True)
     y =0
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None
