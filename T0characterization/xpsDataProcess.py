@@ -64,6 +64,39 @@ XPS_PEAK_CONFIG = {
         "fit_eta": False,  # False preserves the old fixed-eta behaviour.
         "maxfev": 50000,
     },
+    "O1s": {
+        "x_range": (528.0, 536.0),
+        "background": "shirley",
+        "peaks": [
+            {
+                "name": "C=O",
+                "center": 531.0,
+                "center_bounds": (530.3, 531.8),
+                "fwhm": 1.5,
+                "fwhm_bounds": (0.8, 2.5),
+                "eta": 0.3,
+                "eta_bounds": (0.0, 1.0),
+            },
+            {
+                "name": "C-O",
+                "center": 532.5,
+                "center_bounds": (531.5, 533.5),
+                "fwhm": 1.5,
+                "fwhm_bounds": (0.8, 2.5),
+                "eta": 0.3,
+                "eta_bounds": (0.0, 1.0),
+            },
+            {
+                "name": "O-C=O",
+                "center": 533.5,
+                "center_bounds": (532.5, 535.0),
+                "fwhm": 1.5,
+                "fwhm_bounds": (0.8, 2.5),
+                "eta": 0.3,
+                "eta_bounds": (0.0, 1.0),
+            },
+        ],
+    },
 }
 # -----------------------------------------------------------------------------
 # Data preparation
@@ -1089,9 +1122,9 @@ def main(file_path=None):
         # 2. Extract regions
         charaDataRegions = extractXPSRegions( charaData1, highResolutionFlag=False, 
                                 regions=("C1s", "O1s"), x="Binding Energy", )  
-        charaDataRegions = smoothXPSSpectrum( charaDataRegions, y=keyName[1], regions=("C1s",), method="savgol", window_length=11, polyorder=3, )
+        # charaDataRegions = smoothXPSSpectrum( charaDataRegions, y=keyName[1], regions=("C1s",), method="savgol", window_length=11, polyorder=3, )
         # Batch fitting
-        fitResults = fitXPSData( data=charaDataRegions, peakConfig=XPS_PEAK_CONFIG, regions=("C1s",), modelSelection=True, verbose=False, )
+        fitResults = fitXPSData( data=charaDataRegions, peakConfig=XPS_PEAK_CONFIG, regions=("O1s",), modelSelection=True, verbose=False, )
         # Collect all sample/model results
         fitSummary = collectXPSModelSummaries(fitResults)
         # Plot selected models
