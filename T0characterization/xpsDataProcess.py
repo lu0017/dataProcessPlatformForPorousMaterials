@@ -1074,7 +1074,7 @@ def smoothXPSSpectrum(data, y="Intensity", regions=("Survey",), method="savgol",
     return result
 def main(file_path=None):
     spectrum = "XPS"
-    saveFile = False
+    saveFile = True
     singleFile = False
     highResolutionFlag = False #False时将自动从Suvey中提取对应的区段谱
     charaData = {}
@@ -1122,8 +1122,18 @@ def main(file_path=None):
         # 2. Extract regions
         charaDataRegions = extractXPSRegions( charaData1, highResolutionFlag=False, 
                                 regions=("C1s", "O1s"), x="Binding Energy", )  
+        if saveFile:
+                saveXPS( charaDataRegions, filename=out_path )
         # charaDataRegions = smoothXPSSpectrum( charaDataRegions, y=keyName[1], regions=("C1s",), method="savgol", window_length=11, polyorder=3, )
         # Batch fitting
+        
+        
+        
+        
+        
+        
+        
+        return
         fitResults = fitXPSData( data=charaDataRegions, peakConfig=XPS_PEAK_CONFIG, regions=("O1s",), modelSelection=True, verbose=False, )
         # Collect all sample/model results
         fitSummary = collectXPSModelSummaries(fitResults)
