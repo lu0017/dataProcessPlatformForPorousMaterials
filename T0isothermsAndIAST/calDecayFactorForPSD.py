@@ -1526,6 +1526,8 @@ def main(file_path=None):
         "O-EDS",
         "O(At)",
         "ID/IG",
+        "co2_hen",
+        "n2_hen",
         # "GCMC_High",
         # # "GCMC_HighLowRatio",
         # "GCMC_Centroid",

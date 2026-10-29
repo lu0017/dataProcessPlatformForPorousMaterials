@@ -22,6 +22,7 @@ XPS_PEAK_COLORS = {
         "C=O":     "#4C78A8",
         "C-O":     "#F58518",
         "O-C=O":   "#54A24B",
+        "Adsorbed H2O":"#A000E8",
     },
 }
 def getXPSPeakColumns(df):
@@ -32,7 +33,7 @@ def getXPSPeakColumns(df):
         if m:
             peaks.append((int(m.group(1)), c))
     return [c for _, c in sorted(peaks)]
-def getXPSPeakColors(xpsFit, sample, region, defaultColors=None):
+def getXPSPeakColors0(xpsFit, sample, region, defaultColors=None):
     peakNames = xpsFit.get(sample, {}).get(
         "metadata", {}
     ).get("peak_names", {}).get(region, {})
@@ -43,6 +44,22 @@ def getXPSPeakColors(xpsFit, sample, region, defaultColors=None):
         if name in regionColors
     }
     peakColumns = getXPSPeakColumns(xpsFit[sample][region])
+    fallbackColors = {
+        column: XPS_DEFAULT_COLORS[i % len(XPS_DEFAULT_COLORS)]
+        for i, column in enumerate(peakColumns)
+    }
+    return {**fallbackColors, **colors, **(defaultColors or {})}
+def getXPSPeakColors(xpsFit, sample, region, defaultColors=None):
+    peakColumns = getXPSPeakColumns(xpsFit[sample][region])
+    peakNames = xpsFit.get(sample, {}).get(
+        "metadata", {}
+    ).get("peak_names", {}).get(region, {})
+    regionColors = XPS_PEAK_COLORS.get(region, {})
+    colors = {
+        column: regionColors[name]
+        for column, name in peakNames.items()
+        if column in peakColumns and name in regionColors
+    }
     fallbackColors = {
         column: XPS_DEFAULT_COLORS[i % len(XPS_DEFAULT_COLORS)]
         for i, column in enumerate(peakColumns)
@@ -70,7 +87,7 @@ def addGradientPeak(ax, x, y, baseline, color, n_layers=100, alpha=0.95, zorder=
         facecolor = blendXPSColor(color, weight=(i + 0.5) / n_layers)
         ax.fill_between(x, y0, y1, color=facecolor, alpha=alpha,
                         linewidth=0, zorder=zorder)
-def plotXPSComponents(
+def plotXPSComponents0(
     ax, df, colors=None, fill_base="background",
     n_layers=100, alpha=0.95, linewidth=0.8, zorder=2,
     xpsFit=None, sample=None, region=None
@@ -96,6 +113,45 @@ def plotXPSComponents(
         y = df[column].to_numpy(float)
         addGradientPeak( ax, x, y, baseline, color, n_layers, alpha, zorder + i * 0.01 )
         ax.plot( x, y, color=color, lw=linewidth, zorder=zorder + i * 0.01 + 0.001 )
+    return peak_columns, peak_colors
+def plotXPSComponents(
+    ax, df, colors=None, fill_base="background",
+    n_layers=100, alpha=0.95, linewidth=0.8, zorder=2,
+    xpsFit=None, sample=None, region=None
+):
+    peak_columns = getXPSPeakColumns(df)
+    if xpsFit is not None and sample is not None and region is not None:
+        color_map = getXPSPeakColors(xpsFit, sample, region)
+        color_map.update(colors or {})
+        peak_colors = [
+            color_map.get(c, XPS_DEFAULT_COLORS[i % len(XPS_DEFAULT_COLORS)])
+            for i, c in enumerate(peak_columns)
+        ]
+    else:
+        palette = colors or XPS_DEFAULT_COLORS
+        peak_colors = [
+            palette.get(c, XPS_DEFAULT_COLORS[i % len(XPS_DEFAULT_COLORS)])
+            if isinstance(palette, dict)
+            else palette[i % len(palette)]
+            for i, c in enumerate(peak_columns)
+        ]
+    x = df["B.E.(eV)"].to_numpy(float)
+    if fill_base == "background":
+        baseline = df["Background"].to_numpy(float)
+    elif fill_base == "zero":
+        baseline = np.zeros(len(df))
+    else:
+        raise ValueError("fill_base must be 'background' or 'zero'.")
+    for i, (column, color) in enumerate(zip(peak_columns, peak_colors)):
+        y = df[column].to_numpy(float)
+        addGradientPeak(
+            ax, x, y, baseline, color, n_layers, alpha,
+            zorder + i * 0.01
+        )
+        ax.plot(
+            x, y, color=color, lw=linewidth,
+            zorder=zorder + i * 0.01 + 0.001
+        )
     return peak_columns, peak_colors
 def plotXPSTotalFit(ax, df, color="#C62828", linewidth=1.4, zorder=5):
     ax.plot(df["B.E.(eV)"], df["Peak Sum"], color=color, lw=linewidth, zorder=zorder)
@@ -228,7 +284,7 @@ def plotAllXPSFits(
                 save_path=figPath, **kwargs
             )
     return results
-def readXPSFitDat(folder, pattern="*.dat"):
+def readXPSFitDat0(folder, pattern="*.dat"):
     regionMap = {
         "C 1S": "C1s", "C1S": "C1s",
         "O 1S": "O1s", "O1S": "O1s",
@@ -249,7 +305,46 @@ def readXPSFitDat(folder, pattern="*.dat"):
         df = df.dropna(subset=["B.E.(eV)", "Raw Intensity", "Peak Sum"])
         xps.setdefault(sample, {"metadata": {"Sample": sample}})[region] = df.reset_index(drop=True)
     return xps
-def readXPSPar(folder, pattern="*.par"):
+def readXPSFitDat(folder, pattern="*.dat"):
+    regionMap = {
+            "C 1S": "C1s", "C1S": "C1s",
+            "O 1S": "O1s", "O1S": "O1s",
+            "N 1S": "N1s", "N1S": "N1s",
+            "K 2P": "K2p", "K2P": "K2p",
+        }
+    columns = ["B.E.(eV)", "Raw Intensity", "Peak Sum", "Background",
+               "Peak 1", "Peak 2", "Peak 3", "difference"]
+    xps = {}
+    for file in Path(folder).glob(pattern):
+        parts = file.stem.split()
+        if len(parts) < 2:
+            continue
+        sample = parts[0]
+        regionKey = "".join(parts[1:]).upper()
+        region = regionMap.get(regionKey, "".join(parts[1:]))
+        rows = []
+        with open(file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                values = line.split()
+                if len(values) < 2:
+                    continue
+                try:
+                    rows.append([float(v) for v in values])
+                except ValueError:
+                    continue
+        if not rows:
+            continue
+        nCols = max(map(len, rows))
+        columns = ["B.E.(eV)", "Raw Intensity", "Peak Sum", "Background"]
+        nPeaks = max(0, nCols - 5)
+        columns += [f"Peak {i}" for i in range(1, nPeaks + 1)]
+        columns += ["difference"] if nCols >= 5 else []
+        rows = [row + [np.nan] * (nCols - len(row)) for row in rows]
+        df = pd.DataFrame(rows, columns=columns[:nCols])
+        df = df.dropna(subset=["B.E.(eV)", "Raw Intensity"])
+        xps.setdefault(sample, {"metadata": {"Sample": sample}})[region] = df.reset_index(drop=True)
+    return xps
+def readXPSPar0(folder, pattern="*.par"):
     regionMap = {
         "C 1S": "C1s", "C1S": "C1s",
         "O 1S": "O1s", "O1S": "O1s",
@@ -266,6 +361,36 @@ def readXPSPar(folder, pattern="*.par"):
         region = regionMap.get(" ".join(parts[1:3]).upper(), "".join(parts[1:3]))
         df = pd.read_csv(file, sep=r"\s+", skiprows=1, header=None, names=columns)
         df = df.apply(pd.to_numeric, errors="coerce").dropna(subset=["Peak"])
+        xps.setdefault(sample, {"metadata": {"Sample": sample}})[region] = df.reset_index(drop=True)
+    return xps
+def readXPSPar(folder, pattern="*.par"):
+    regionMap = {
+            "C 1S": "C1s", "C1S": "C1s",
+            "O 1S": "O1s", "O1S": "O1s",
+            "N 1S": "N1s", "N1S": "N1s",
+            "K 2P": "K2p", "K2P": "K2p",
+        }
+    columns = ["Peak", "Position (eV)", "Area", "FWHM (eV)", "%GL (%)"]
+    xps = {}
+    for file in Path(folder).glob(pattern):
+        parts = file.stem.split()
+        if len(parts) < 2:
+            continue
+        sample = parts[0]
+        regionKey = "".join(parts[1:]).upper()
+        region = regionMap.get(regionKey, "".join(parts[1:]))
+        rows = []
+        with open(file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[1:]:
+                values = line.split()
+                if len(values) < len(columns):
+                    continue
+                try:
+                    rows.append([float(v) for v in values[:len(columns)]])
+                except ValueError:
+                    continue
+        df = pd.DataFrame(rows, columns=columns)
+        df = df.dropna(subset=["Peak"])
         xps.setdefault(sample, {"metadata": {"Sample": sample}})[region] = df.reset_index(drop=True)
     return xps
 def exportXPSPeakSummary(xps, filename="XPS_Peak_Summary.xlsx"):
@@ -300,7 +425,7 @@ def saveXPSRegions(xpsData, path, regions=None,sub_folder=None):
                 filename = os.path.join(path, f"{sample}_{region}.txt")
                 df.to_csv(filename, sep="\t", index=False, header=False)
                 print(f"Export {sample}_{region} -> {filename}")
-def applyXPSPeakNames(xpsFit, peakinfor):
+def applyXPSPeakNames0(xpsFit, peakinfor):
     for sample, sampleData in xpsFit.items():
         if sample not in peakinfor:
             continue
@@ -315,7 +440,39 @@ def applyXPSPeakNames(xpsFit, peakinfor):
                 for _, row in peakInfo.iterrows()
             }
     return xpsFit
-def labelXPSPeaks(xps, peakConfig=xpsAuto.XPS_PEAK_CONFIG):
+def applyXPSPeakNames(xpsFit, peakinfor):
+    for sample, sampleData in xpsFit.items():
+        if sample not in peakinfor:
+            continue
+        for region, df in sampleData.items():
+            peakInfo = peakinfor[sample].get(region)
+            if not isinstance(df, pd.DataFrame) or not isinstance(peakInfo, pd.DataFrame):
+                continue
+            if "B.E.(eV)" not in df.columns or "Position (eV)" not in peakInfo.columns:
+                continue
+            peakColumns = getXPSPeakColumns(df)
+            peakPositions = {
+                col: df.loc[df[col].idxmax(), "B.E.(eV)"]
+                for col in peakColumns
+                if df[col].notna().any()
+            }
+            peakNames = {}
+            for _, row in peakInfo.iterrows():
+                if pd.isna(row["Position (eV)"]) or pd.isna(row.get("name")):
+                    continue
+                position = float(row["Position (eV)"])
+                if not peakPositions:
+                    continue
+                column = min(
+                    peakPositions,
+                    key=lambda col: abs(peakPositions[col] - position)
+                )
+                peakNames[column] = row["name"]
+            sampleData.setdefault("metadata", {}).setdefault(
+                "peak_names", {}
+            )[region] = peakNames
+    return xpsFit
+def labelXPSPeaks0(xps, peakConfig=xpsAuto.XPS_PEAK_CONFIG):
     for sampleData in xps.values():
         for region, df in sampleData.items():
             if not isinstance(df, pd.DataFrame) or region not in peakConfig:
@@ -333,6 +490,27 @@ def labelXPSPeaks(xps, peakConfig=xpsAuto.XPS_PEAK_CONFIG):
             df["name"] = names
             df["matched"] = matches
     return xps
+def labelXPSPeaks(xps, peakConfig=xpsAuto.XPS_PEAK_CONFIG):
+    for sampleData in xps.values():
+        for region, df in sampleData.items():
+            if not isinstance(df, pd.DataFrame) or region not in peakConfig:
+                continue
+            peaks = peakConfig[region]["peaks"]
+            names, matches = [], []
+            for pos in df["Position (eV)"]:
+                candidates = [
+                    p for p in peaks
+                    if p["center_bounds"][0] <= pos <= p["center_bounds"][1]
+                ]
+                peak = min(candidates or peaks, key=lambda p: abs(pos - p["center"]))
+                names.append(peak["name"])
+                matches.append(bool(candidates))
+            df["Peak (1-based)"] = (
+                pd.to_numeric(df["Peak"], errors="coerce") + 1
+            ).astype("Int64")
+            df["name"] = names
+            df["matched"] = matches
+    return xps
 def processXPSPar(xps):
     for sampleData in xps.values():
         for region, df in sampleData.items():
@@ -342,7 +520,7 @@ def processXPSPar(xps):
             df["Area (%)"] = df["Area"] / df["Area"].sum() * 100
             sampleData[region] = df.reset_index(drop=True)
     return xps
-def applyXPSCalibration(data, offsetMap, energyColumn="Binding Energy"):
+def applyXPSCalibration0(data, offsetMap, energyColumn="Binding Energy"):
     """Apply sample-specific binding-energy offsets to all XPS regions based on C 1S: C=C at 284.8eV ."""
     calibratedData = copy.deepcopy(data)
     for sample, regions in calibratedData.items():
@@ -350,6 +528,20 @@ def applyXPSCalibration(data, offsetMap, energyColumn="Binding Energy"):
         for regionData in regions.values():
             if isinstance(regionData, pd.DataFrame) and energyColumn in regionData.columns:
                 regionData[energyColumn] += offset
+    return calibratedData
+def applyXPSCalibration(data, offsetMap, energyColumn="Binding Energy"):
+    """Apply sample- and region-specific binding-energy offsets."""
+    calibratedData = copy.deepcopy(data)
+    for sample, regions in calibratedData.items():
+        sampleOffset = offsetMap.get(sample, 0.0)
+        for region, regionData in regions.items():
+            if not isinstance(regionData, pd.DataFrame) or energyColumn not in regionData.columns:
+                continue
+            if isinstance(sampleOffset, dict):
+                offset = sampleOffset.get(region, sampleOffset.get("default", 0.0))
+            else:
+                offset = sampleOffset
+            regionData[energyColumn] += offset
     return calibratedData
 def debugXPSPeakData(peakinfor, xpsFit):
     print("\n========== peakinfor ==========")
@@ -414,29 +606,29 @@ def main(file_path=None):
     }
     # C 1s calibration offsets (eV)
     offsetMap = {
-        "S1": 0.8,
-        "S2": 0.0,
-        "S3": 0.0,
-        "S4": 0.0,
-        "S5": 0.0,
-        "S6": 0.0,
-        "S7": 0.0,
-        "S8": 0.0,
-        "S9": 0.0,
-        "S10": 0.0,
+        "S1": {"default": 0.0, "C1s": 0.77, "O1s": 1.4, "N1s": 0.0, "P2p": 0.0},
+        "S2": {"default": 0.0, "C1s": 0.36, "O1s": 0.73, "N1s": 0.0, "P2p": 0.0},
+        "S3": {"default": 0.0, "C1s": 1.7, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
+        "S4": {"default": 0.0, "C1s": 0.89, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
+        "S5": {"default": 0.0, "C1s": 0.26, "O1s": 0.55, "N1s": 0.0, "P2p": 0.0},
+        "S6": {"default": 0.0, "C1s": 1.0, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
+        "S7": {"default": 0.0, "C1s": 0.58, "O1s": 0.8, "N1s": 0.0, "P2p": 0.0},
+        "S8": {"default": 0.0, "C1s": 0.3, "O1s": 1.03, "N1s": 0.0, "P2p": 0.0},
+        "S9": {"default": 0.0, "C1s": 0.0, "O1s": 0.17, "N1s": 0.0, "P2p": 0.0},
+        "S10": {"default": 0.0, "C1s": 0.0, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
     }
     if STEP == 3:
         folder = fl.select_folder()
         out_path = fl.get_expanded_name(folder, fileName = "XPS_Peak_Summary")
         peakResult = readXPSPar(folder, pattern="*.par")
-        peakResult = dop.copySamples(peakResult,sampleMap)
-        peakResult = dop.renameSamples(peakResult,sampleMap)
+        # peakResult = dop.copySamples(peakResult,sampleMap)
+        # peakResult = dop.renameSamples(peakResult,sampleMap)
         peakpPecent = processXPSPar(peakResult)
         peakinfor = labelXPSPeaks(peakpPecent)
         # exportXPSPeakSummary(peakinfor, filename=out_path)
         xpsFit0 = readXPSFitDat(folder)
-        xpsFit0 = dop.copySamples(xpsFit0,sampleMap)
-        xpsFit0 = dop.renameSamples(xpsFit0,sampleMap)
+        # xpsFit0 = dop.copySamples(xpsFit0,sampleMap)
+        # xpsFit0 = dop.renameSamples(xpsFit0,sampleMap)
         debugXPSPeakData(peakinfor, xpsFit0)
         xpsFit=applyXPSPeakNames(xpsFit0, peakinfor)
         fig_path = fl.get_expanded_name(folder, fileName = "S1 O",type="png")
