@@ -22,7 +22,7 @@ XPS_PEAK_COLORS = {
         "C=O":     "#4C78A8",
         "C-O":     "#F58518",
         "O-C=O":   "#54A24B",
-        "Adsorbed H2O":"#A000E8",
+        "O-H":"#A000E8",
     },
 }
 def getXPSPeakColumns(df):
@@ -425,6 +425,46 @@ def saveXPSRegions(xpsData, path, regions=None,sub_folder=None):
                 filename = os.path.join(path, f"{sample}_{region}.txt")
                 df.to_csv(filename, sep="\t", index=False, header=False)
                 print(f"Export {sample}_{region} -> {filename}")
+def extractXPSNoisyPeak(xpsFit, region, peakName, sample=None, peakConfig=xpsAuto.XPS_PEAK_CONFIG):
+    config = next((p for p in peakConfig[region]["peaks"] if p["name"] == peakName), None)
+    if config is None:
+        raise ValueError(f"Peak '{peakName}' not found in {region} config.")
+    center = config["center"]
+    result = {}
+    for s in ([sample] if sample is not None else xpsFit):
+        if s not in xpsFit or region not in xpsFit[s]:
+            continue
+        df = xpsFit[s][region]
+        beCol = "B.E.(eV)"
+        peakCols = [c for c in df.columns if str(c).startswith("Peak ") and str(c).split()[-1].isdigit()]
+        if beCol not in df.columns or "Background" not in df.columns or not peakCols:
+            continue
+        peakCenters = {c: df.loc[df[c].idxmax(), beCol] for c in peakCols if df[c].notna().any()}
+        if not peakCenters:
+            continue
+        peakCol = min(peakCenters, key=lambda c: abs(peakCenters[c] - center))
+        extracted = df[[beCol, peakCol, "Background"]].rename(columns={peakCol: peakName}).dropna(subset=[peakName]).copy()
+        result[s] = {region: extracted}
+    return result
+def subtractXPSNoise(xpsData, OH, returnAll=False):
+    result = {}
+    for s, regions in xpsData.items():
+        for region, df in regions.items():
+            if s not in OH or region not in OH[s]:
+                if returnAll:
+                    result.setdefault(s, {})[region] = df.copy()
+                continue
+            noise = OH[s][region].dropna(subset=["B.E.(eV)"]).set_index("B.E.(eV)")
+            noise = noise["O-H"] - noise["Background"]
+            corrected = df.copy()
+            be = corrected["Binding Energy"]
+            matched = be.isin(noise.index) & be.map(noise).notna()
+            if matched.any():
+                corrected.loc[matched, "Intensity"] -= be[matched].map(noise)
+                result.setdefault(s, {})[region] = corrected
+            elif returnAll:
+                result.setdefault(s, {})[region] = corrected
+    return result
 def applyXPSPeakNames0(xpsFit, peakinfor):
     for sample, sampleData in xpsFit.items():
         if sample not in peakinfor:
@@ -580,7 +620,7 @@ def debugXPSPeakData(peakinfor, xpsFit):
                     else:
                         print(" ", repr(data)[:300])
 def main(file_path=None):
-    STEP = 3 #1 原始.csv数据读取导出 .txt，， #2 XPS peak完成C 1S的offset确认后设置并重新导出txt，，， #3 读取.par 计算% 画图
+    STEP = 9 #1 原始.csv数据读取导出 .txt，， #2 XPS peak完成C 1S的offset确认后设置并重新导出txt，，， #3 读取.par 计算% 画图
     saveFile = True
     singleFile = False
     highResolutionFlag = False #False时将自动从Suvey中提取对应的区段谱
@@ -667,6 +707,16 @@ def main(file_path=None):
                                         regions=("C1s", "O1s"), x="Binding Energy", ) 
         if STEP == 2:
             offsetCharaDataRegions = applyXPSCalibration(charaDataRegions, offsetMap)
+        elif STEP == 9:
+            noisyFolder = fl.check_or_create_folder(folder, sub_folder_name="noisy")
+            noisy = readXPSFitDat(noisyFolder)
+            OH=extractXPSNoisyPeak(noisy, region="O1s", peakName="O-H", peakConfig=xpsAuto.XPS_PEAK_CONFIG)
+            for s, d in OH.items():
+                df = d["O1s"]
+                print(f"\n{s} - O1s - O-H | Peak center: {xpsAuto.XPS_PEAK_CONFIG['O1s']['peaks'][next(i for i, p in enumerate(xpsAuto.XPS_PEAK_CONFIG['O1s']['peaks']) if p['name'] == 'O-H')]['center']} eV")
+                print(d["O1s"].head(20).to_string(index=False))
+            correctedData=subtractXPSNoise(charaDataRegions, OH)
+            saveXPSRegions(correctedData, noisyFolder, regions=None, sub_folder="corrected")
         out_path2 = fl.get_expanded_name(folder, fileName = "OFFSET")
         if saveFile:
             # xpsAuto.saveXPS( charaData1, filename=out_path )

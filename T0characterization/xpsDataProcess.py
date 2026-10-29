@@ -96,7 +96,7 @@ XPS_PEAK_CONFIG = {
                 "eta_bounds": (0.0, 1.0),
             },
             {
-            "name": "Adsorbed H2O",
+            "name": "O-H",
             "center": 536.0,
             "center_bounds": (535.0, 537.0),
             "fwhm": 1.5,
