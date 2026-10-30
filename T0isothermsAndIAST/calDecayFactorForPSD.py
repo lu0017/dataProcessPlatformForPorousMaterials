@@ -1525,6 +1525,9 @@ def main(file_path=None):
     include = [
         "O-EDS",
         "O(At)",
+        "C=O",
+        "C-O",
+        "O-C=O",
         "ID/IG",
         "co2_hen",
         "n2_hen",

@@ -188,7 +188,7 @@ def configureXPSAxes(ax, xlim=None, ylim=None, xticks=None, xtick_step=2,
     ax.spines["top"].set_visible(show_top_spine)
     ax.spines["right"].set_visible(show_right_spine)
 def buildXPSLegend(ax, peak_columns, peak_colors, labels=None, loc="upper right",
-                   fontsize=10, frameon=True, show_raw=True,
+                   fontsize=10, frameon=True, show_raw=True,bbox_to_anchor=None,
                    show_background=True, show_total_fit=True, ncol=1):
     labels = labels or {}
     handles = []
@@ -206,12 +206,11 @@ def buildXPSLegend(ax, peak_columns, peak_colors, labels=None, loc="upper right"
     if show_total_fit:
         handles.append(Line2D([], [], color="#C62828", lw=1.4,
                               label=labels.get("total", "Total fit")))
-    return ax.legend(handles=handles, loc=loc, fontsize=fontsize,
-                     frameon=frameon, ncol=ncol)
+    return ax.legend(handles=handles, loc=loc, fontsize=fontsize, frameon=frameon, ncol=ncol,bbox_to_anchor=bbox_to_anchor)
 def plotXPSFit(xps, sample, region, colors=None, figsize=(7, 5),
-               xlim=None, ylim=None, xticks=None, xtick_step=2,
+               xlim=None, ylim=None, xticks=None, xtick_step=2, showXtickLabels=True,
                reverse_x=True, fill_base="background", show_legend=True,
-               legend_loc="upper right", legend_fontsize=10, legend_labels=None,
+               legend_loc="upper right", legend_fontsize=10, legend_labels=None,legend_bbox_to_anchor=None,
                raw_markersize=3, peak_layers=100, peak_alpha=0.95,
                tick_labelsize=11, axis_labelsize=13, spine_width=1,
                title=None, save_path=None, dpi=600, show=True):
@@ -238,13 +237,14 @@ def plotXPSFit(xps, sample, region, colors=None, figsize=(7, 5),
         reverse_x=reverse_x, tick_labelsize=tick_labelsize,
         axis_labelsize=axis_labelsize, spine_width=spine_width
     )
+    ax.tick_params(axis="x", labelbottom=showXtickLabels)
     if title:
         ax.set_title(title, fontsize=axis_labelsize)
     if show_legend:
         auto_labels = getXPSLegendLabels(xps, sample, region)
         legend_labels = {**auto_labels, **(legend_labels or {})}
         buildXPSLegend(
-            ax, peak_columns, peak_colors, labels=legend_labels,
+            ax, peak_columns, peak_colors, labels=legend_labels, bbox_to_anchor=legend_bbox_to_anchor,
             loc=legend_loc, fontsize=legend_fontsize
         )
     fig.tight_layout()
@@ -255,9 +255,7 @@ def plotXPSFit(xps, sample, region, colors=None, figsize=(7, 5),
     if show:
         plt.show(block=False)
     return fig, ax
-def plotAllXPSFits(
-    xpsFit, folder, figsize=(7, 1.5), fileType="png", **plotKwargs
-):
+def plotAllXPSFits( xpsFit, folder, showXtickLabels=True, figsize=(7, 1.5), fileType="png", **plotKwargs ):
     regionConfig = {
         "C1s": {"name": "C", "xlim": (280, 295), "xtick_step": 2},
         "O1s": {"name": "O", "xlim": (527.5, 537), "xtick_step": 2},
@@ -270,19 +268,133 @@ def plotAllXPSFits(
         for region, config in regionConfig.items():
             if region not in sampleData or not isinstance(sampleData[region], pd.DataFrame):
                 continue
-            kwargs = {
-                "figsize": figsize,
+            kwargs = { "figsize": figsize,
                 "xlim": config["xlim"],
                 "xtick_step": config["xtick_step"],
-                **plotKwargs,
-            }
-            figPath = fl.get_expanded_name(
-                folder, fileName=f"{sample} {config['name']}", type=fileType
+                "showXtickLabels": showXtickLabels,
+                **plotKwargs, }
+            figPath = fl.get_expanded_name( folder, fileName=f"{sample} {config['name']}", type=fileType )
+            results[sample][region] = plotXPSFit( xpsFit, sample=sample, region=region, save_path=figPath, **kwargs )
+    return results
+def plotSingleSpectrumXPS(
+    data, sample=None, region=None,
+    x="Binding Energy", y="Intensity",
+    figsize=(7, 2), offset=0, xlim=None, ylim=None,
+    xlabel="Binding Energy (eV)", ylabel="Intensity (a.u.)",
+    showXLabel=True, showYLabel=True,
+    showXTickLabels=True, showYTickLabels=False,
+    showXticks=True, showYticks=False,
+    reverse_x=True, linewidth=1.2,
+    color="black", tick_labelsize=11,
+    axis_labelsize=13, spine_width=1,
+    title=None, savepath=None, dpi=600,
+    show=True
+):
+    if isinstance(data, pd.DataFrame):
+        df = data
+    else:
+        if sample is None or region is None:
+            raise ValueError("sample and region are required when data is a dictionary.")
+        df = data[sample][region]
+
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"Expected DataFrame, got {type(df).__name__}")
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(df[x], df[y] + offset, color=color, linewidth=linewidth)
+
+    if reverse_x:
+        ax.invert_xaxis()
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    if showXLabel:
+        ax.set_xlabel(xlabel, fontsize=axis_labelsize)
+    if showYLabel:
+        ax.set_ylabel(ylabel, fontsize=axis_labelsize)
+
+    ax.tick_params(
+        axis="x", which="both",direction="in",
+        bottom=showXticks, top=False,
+        labelbottom=showXTickLabels,
+        labelsize=tick_labelsize
+    )
+    ax.tick_params(
+        axis="y", which="both",direction="in",
+        left=showYticks, right=False,
+        labelleft=showYTickLabels,
+        labelsize=tick_labelsize
+    )
+
+    for side in ["top", "right", "bottom", "left"]:
+        ax.spines[side].set_visible(True)
+        ax.spines[side].set_linewidth(spine_width)
+
+    if title:
+        ax.set_title(title, fontsize=axis_labelsize)
+
+    fig.tight_layout()
+
+    if savepath:
+        path = Path(savepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
+
+    if show:
+        plt.show(block=False)
+
+    return fig, ax
+def plotSpectrumXPS(
+    data, folder=None, regions=None, x="Binding Energy",
+    y="Intensity", offset=0, figsize=(7, 2),showXLabel=False,
+    xlim=None, ylim=None, fileType="png", **plotKwargs
+):
+    region_map = {
+        "su": "Survey", "survey": "Survey",
+        "c": "C1s", "c1s": "C1s",
+        "o": "O1s", "o1s": "O1s",
+        "n": "N1s", "n1s": "N1s",
+        "s": "S2p", "s2p": "S2p",
+        "p": "P2p", "p2p": "P2p",
+    }
+
+    if isinstance(regions, str):
+        regions = region_map.get(regions.strip().lower(), regions)
+    elif regions is not None:
+        regions = [region_map.get(r.strip().lower(), r) for r in regions]
+
+    results = {}
+    for sample, sample_data in data.items():
+        selected_regions = (
+            [k for k, v in sample_data.items() if isinstance(v, pd.DataFrame)]
+            if regions is None
+            else [regions] if isinstance(regions, str)
+            else regions
+        )
+
+        results[sample] = {}
+        for region in selected_regions:
+            if region not in sample_data:
+                print(f"Skip: {sample} / {region} (not found)")
+                continue
+
+            figPath = None
+            if folder is not None:
+                figPath = fl.get_expanded_name(
+                    folder, fileName=f"{sample} {region}", type=fileType
+                )
+
+            results[sample][region] = plotSingleSpectrumXPS(
+                data, sample=sample, region=region,
+                x=x, y=y, offset=offset,
+                xlim=xlim, ylim=ylim,showXLabel=showXLabel,
+                figsize=figsize,
+                savepath=figPath,
+                **plotKwargs
             )
-            results[sample][region] = plotXPSFit(
-                xpsFit, sample=sample, region=region,
-                save_path=figPath, **kwargs
-            )
+
     return results
 def readXPSFitDat0(folder, pattern="*.dat"):
     regionMap = {
@@ -393,8 +505,43 @@ def readXPSPar(folder, pattern="*.par"):
         df = df.dropna(subset=["Peak"])
         xps.setdefault(sample, {"metadata": {"Sample": sample}})[region] = df.reset_index(drop=True)
     return xps
+def exportXPSPeakSummaryWide(xps, filename="XPS_Peak_Summary.xlsx"):
+    metrics = ["Position (eV)", "Area", "FWHM (eV)", "Area (%)"]
+    peaks = list(dict.fromkeys(
+        (region, peak["name"])
+        for data in xps.values()
+        for region, df in data.items()
+        if isinstance(df, pd.DataFrame) and "name" in df.columns
+        for _, peak in df.iterrows()
+        if pd.notna(peak["name"])
+    ))
+    rows = []
+    for sample, data in xps.items():
+        row = {"sample": sample}
+        for region, name in peaks:
+            df = data.get(region)
+            match = df[df["name"] == name] if isinstance(df, pd.DataFrame) and "name" in df.columns else pd.DataFrame()
+            peak = match.iloc[0] if not match.empty else {}
+            for metric in metrics:
+                row[f"{region}_{name}_{metric}"] = peak.get(metric, None)
+        rows.append(row)
+    columns = ["sample"] + [ f"{region}_{name}_{metric}" for region, name in peaks for metric in metrics ]
+    summary = pd.DataFrame(rows, columns=columns)
+    fl.export_to_excel_auto( summary, filename=filename, sheet_name="Peak Summary2", index=False )
+    wb = load_workbook(filename)
+    ws = wb["Peak Summary2"]
+    ws.insert_rows(1, 2)
+    ws.cell(1, 1, "sample")
+    ws.cell(2, 1, "sample")
+    col = 2
+    for region, name in peaks:
+        for metric in metrics:
+            ws.cell(1, col, name)
+            ws.cell(2, col, metric)
+            col += 1
+    wb.save(filename)
+    return summary
 def exportXPSPeakSummary(xps, filename="XPS_Peak_Summary.xlsx"):
-    import pandas as pd
     columns = ["sample", "region", "name", "Position (eV)", "Area",
                "FWHM (eV)", "Area (%)", "%GL (%)"]
     rows = []
@@ -620,8 +767,8 @@ def debugXPSPeakData(peakinfor, xpsFit):
                     else:
                         print(" ", repr(data)[:300])
 def main(file_path=None):
-    STEP = 9 #1 原始.csv数据读取导出 .txt，， #2 XPS peak完成C 1S的offset确认后设置并重新导出txt，，， #3 读取.par 计算% 画图
-    saveFile = True
+    STEP = 1 #1 原始.csv数据读取导出 .txt，， #2 XPS peak完成C 1S的offset确认后设置并重新导出txt，，， #3 读取.par 计算% 画图
+    saveFile = False
     singleFile = False
     highResolutionFlag = False #False时将自动从Suvey中提取对应的区段谱
     charaData = {}
@@ -647,7 +794,7 @@ def main(file_path=None):
     # C 1s calibration offsets (eV)
     offsetMap = {
         "S1": {"default": 0.0, "C1s": 0.77, "O1s": 1.4, "N1s": 0.0, "P2p": 0.0},
-        "S2": {"default": 0.0, "C1s": 0.36, "O1s": 0.73, "N1s": 0.0, "P2p": 0.0},
+        "S2": {"default": 0.0, "C1s": 0.36, "O1s": -0.4, "N1s": 0.0, "P2p": 0.0},
         "S3": {"default": 0.0, "C1s": 1.7, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
         "S4": {"default": 0.0, "C1s": 0.89, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
         "S5": {"default": 0.0, "C1s": 0.26, "O1s": 0.55, "N1s": 0.0, "P2p": 0.0},
@@ -655,7 +802,7 @@ def main(file_path=None):
         "S7": {"default": 0.0, "C1s": 0.58, "O1s": 0.8, "N1s": 0.0, "P2p": 0.0},
         "S8": {"default": 0.0, "C1s": 0.3, "O1s": 1.03, "N1s": 0.0, "P2p": 0.0},
         "S9": {"default": 0.0, "C1s": 0.0, "O1s": 0.17, "N1s": 0.0, "P2p": 0.0},
-        "S10": {"default": 0.0, "C1s": 0.0, "O1s": 0.0, "N1s": 0.0, "P2p": 0.0},
+        "S10": {"default": 0.0, "C1s": 0.0, "O1s": -0.3, "N1s": 0.0, "P2p": 0.0},
     }
     if STEP == 3:
         folder = fl.select_folder()
@@ -665,29 +812,32 @@ def main(file_path=None):
         # peakResult = dop.renameSamples(peakResult,sampleMap)
         peakpPecent = processXPSPar(peakResult)
         peakinfor = labelXPSPeaks(peakpPecent)
-        # exportXPSPeakSummary(peakinfor, filename=out_path)
+        exportXPSPeakSummary(peakinfor, filename=out_path)
+        exportXPSPeakSummaryWide(peakinfor, filename=out_path)
         xpsFit0 = readXPSFitDat(folder)
         # xpsFit0 = dop.copySamples(xpsFit0,sampleMap)
         # xpsFit0 = dop.renameSamples(xpsFit0,sampleMap)
         debugXPSPeakData(peakinfor, xpsFit0)
         xpsFit=applyXPSPeakNames(xpsFit0, peakinfor)
-        fig_path = fl.get_expanded_name(folder, fileName = "S1 O",type="png")
+        fig_path = fl.get_expanded_name(folder, fileName = "S10 O",type="png")
         plotXPSFit(
-            xpsFit, sample="S1", region="O1s",figsize=(7, 1.5),
+            xpsFit, sample="S10", region="O1s",figsize=(7, 2.25),
             # colors=["#A000E8", "#4BA3F5"],
             xlim=(527.5, 537), 
-            xtick_step=2, show_legend=True,
-            legend_loc="upper left",reverse_x=True,
+            xtick_step=2, show_legend=False,
+            legend_loc="right",reverse_x=True,
+            # legend_bbox_to_anchor=(1.5, 1),
             save_path=fig_path,
         )
-        plotResults = plotAllXPSFits(
-            xpsFit,
-            folder=folder,
-            figsize=(7, 1.5),
-            show_legend=False,
-            legend_loc="upper left",
-            reverse_x=True,
-        )
+        # plotResults = plotAllXPSFits(
+        #     xpsFit,
+        #     folder=folder,
+        #     showXtickLabels=False,
+        #     figsize=(7, 2),
+        #     show_legend=False,
+        #     legend_loc="upper left",
+        #     reverse_x=True,
+        # )
     else:
         if singleFile:
             # 选择一个文件
@@ -705,6 +855,10 @@ def main(file_path=None):
             charaData1 = dop.renameSamples(charaData,sampleMap)
             charaDataRegions = xpsAuto.extractXPSRegions( charaData1, highResolutionFlag=False, 
                                         regions=("C1s", "O1s"), x="Binding Energy", ) 
+            FIG_out_path2 = fl.check_or_create_folder(folder, sub_folder_name="figSurvey")
+            # plotSpectrumXPS( charaData1, folder=FIG_out_path2, regions="Su",xlim=(1000,0),figsize=(7, 1.95),)
+            su_fig_path = fl.get_expanded_name(FIG_out_path2, fileName = "S10 Survey",type="png")
+            plotSingleSpectrumXPS( charaData1["S10"]["Survey"], figsize=(7, 2.2), xlim=(1000,0), savepath=su_fig_path, )
         if STEP == 2:
             offsetCharaDataRegions = applyXPSCalibration(charaDataRegions, offsetMap)
         elif STEP == 9:
