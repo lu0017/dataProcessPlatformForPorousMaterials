@@ -253,6 +253,39 @@ def makeDAGlobalFitPredictFunc(
             "diagnostics": diagnostics,
         }
     return _fit_predict_func
+def plotDAResiduals(fits_data, fixedFlag=False, newFigPath=None):
+    data = {}
+
+    for T, gdf in fits_data.groupby("T_K"):
+        label = f"{T - 273.15:.0f}°C"
+        gdf = gdf.sort_values("P_Pa")
+
+        data[label] = (
+            gdf["P_Pa"].values * 1e-3,
+            gdf["residuals"].values )
+
+    ax = myPlt.plotCurve(
+        data=data,
+        x="Pressure",
+        y="Residuals",
+        xlabel="Pressure (kPa)",
+        ylabel=r"Residuals (mmol g$^{-1}$)",
+        marker=True,
+        line=False,
+        colors="PAPER1",
+        markersize=45,
+        figsize=(6, 4),
+        textSize=12,
+        legend=True,
+        legendPosition="upper left",
+        savepath=newFigPath,
+    )
+
+    ax.axhline(0, color="black", linestyle="--", linewidth=1)
+    # ax.set_xscale("log")
+
+    plt.show(block=fixedFlag)
+    return ax
 def poltDA(fits_data, rawData, fixedFlag=False, newFigPath=None):
     grouped_data = { T: gdf for T, gdf in rawData.groupby("T_K") }
     T_list_K = sorted(grouped_data.keys())
@@ -616,6 +649,7 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     if plotFlag:
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE, type="png",)
         poltDA(fits_data, rawData, newFigPath=newFigPath)
+        plotDAResiduals(fits_data)
         poltDA(fits_data_single, rawData, fixedFlag = True)
     return {
         "sample_name": sheet_name,
@@ -635,12 +669,8 @@ def main(file_path=None):
     # =========================
     singleFile = True
     run_bootstrap = False
-    n_bootstrap = 100
-    file = (
-        file_path
-        if file_path is not None
-        else fl.getFile()
-    )
+    n_bootstrap = 10000
+    file = ( file_path if file_path is not None else fl.getFile() )
     # 收集全部样品的拟合和 bootstrap 结果
     all_sample_results = {}
     # 样品间比较结果的输出目录

@@ -20,6 +20,50 @@ import T0isothermsAndIAST.isostericHeatQstForRawData as qstByRawdata
 # ==========================================
 # 工具函数
 # ==========================================
+def plotDSLResiduals(grouped_data, T_list_K, fits_data, newFigPath=None):
+    """Plot residuals of DSL fitting."""
+    data = {}
+
+    for T in T_list_K:
+        label = f"{T - 273.15:.0f}°C"
+        fdf = fits_data[np.isclose(fits_data["T_K"], T, atol=1e-6)].copy()
+        fdf = fdf.sort_values("P_Pa")
+
+        data[label] = (
+            fdf["P_Pa"].values * 1e-3,
+            fdf["residuals"].values,
+        )
+
+    labels = {
+        "0°C": "0°C",
+        "15°C": "15°C",
+        "25°C": "25°C",
+    }
+
+    ax = myPlt.plotCurve(
+        data=data,
+        x="Pressure",
+        y="Residuals",
+        xlabel="Pressure (kPa)",
+        ylabel=r"Residuals (mmol g$^{-1}$)",
+        original_labels=labels,
+        marker=True,
+        line=False,
+        colors="PAPER1",
+        markersize=45,
+        figsize=(6, 4),
+        textSize=12,
+        legend=True,
+        legendPosition="upper left",
+        title=None,
+        savepath=newFigPath,
+    )
+
+    ax.axhline(0, color="black", linestyle="--", linewidth=1)
+    # ax.set_xscale("log")
+
+    plt.show(block=False)
+    return ax
 def plotDSLResults( grouped_data, T_list_K, fits_data, newFigPath=None):
     """Plot experimental isotherms and DSL fitting curves."""
     data, fits_by_model, _ = dop.prepareIsothermPlotData( grouped_data=grouped_data, T_list_K=T_list_K, 
@@ -1226,6 +1270,7 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DSL_FILE, type="png",)
     # 1. DSL fitting
         plotDSLResults( grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data, newFigPath=newFigPath)
+        plotDSLResiduals(grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data,)
         # 2. Simulated vs experimental Qst
         plotQstComparison( Qst_simuByCC=Qst_simuByCC, Qst_exp=Qst_exp, )
         # 3. Qst vs coverage

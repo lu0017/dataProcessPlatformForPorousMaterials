@@ -1375,7 +1375,7 @@ def runCompetitionIndexSensitivityAnalysis(
 ##########################################################################
 def main(file_path=None):
     # # 选择文件
-    psd_sheet = "PSD-GCMC-CO2"
+    psd_sheet = "PSD-DFT-CO2"
     kinetic_sheet = "thermalkinetic"
     regions_DFT = {
         "High": (0.3,0.65),
@@ -1385,7 +1385,7 @@ def main(file_path=None):
         "High": (0.3,0.50),
         "Middle": (0.5,0.65),
         "Low": (0.65,0.8)}
-    regions = regions_GCMC
+    regions = regions_DFT
     xColumns=[
         "HighLowRatio",
         "CompetitionIndex",
@@ -1397,7 +1397,7 @@ def main(file_path=None):
         "E (J/mol)"
     ]
     file = fl.getFile()
-    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation-GCMC_stati")
+    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation_stati2")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
     # # # ##################### 用于分析指定样品##############
     # # =========================
@@ -1480,17 +1480,19 @@ def main(file_path=None):
     # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # # ##################### 结束保存数据到excel##############
-    ########################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+
+    # #######################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
     # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
     #         target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
     #         n_bootstrap=10000, confidence_level=0.95, random_state=42, )
-    # offsets = (-0.05, -0.025, 0.0, 0.025, 0.05)
+    # offsets = (-0.1,-0.05, -0.025, 0.0, 0.025, 0.05,0.1)
     # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
     #         regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
     # savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
     #                        metrics=metrics, filename=out_path, correlation_export={ 
     #                            "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
-    ########################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    #######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
@@ -1515,7 +1517,9 @@ def main(file_path=None):
     myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
                                 # savepath="DFT-E-Skewness"
                                 )
-    myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),savepath="DFT-E-HighLowRatio")
+    myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+                                # savepath="DFT-E-HighLowRatio"
+                                )
     myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 结束输出图片部分##############
     exclude = [
