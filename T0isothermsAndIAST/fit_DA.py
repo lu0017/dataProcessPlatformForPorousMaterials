@@ -253,7 +253,7 @@ def makeDAGlobalFitPredictFunc(
             "diagnostics": diagnostics,
         }
     return _fit_predict_func
-def plotDAResiduals(fits_data, fixedFlag=False, newFigPath=None):
+def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes = True):
     data = {}
 
     for T, gdf in fits_data.groupby("T_K"):
@@ -278,12 +278,14 @@ def plotDAResiduals(fits_data, fixedFlag=False, newFigPath=None):
         textSize=12,
         legend=True,
         legendPosition="upper left",
-        savepath=newFigPath,
+        # savepath=figPath,
     )
 
     ax.axhline(0, color="black", linestyle="--", linewidth=1)
-    # ax.set_xscale("log")
-
+    if logAxes:
+        ax.set_xscale("log")
+    if figPath is not None:
+            myPlt.saveFigure( fig=ax.figure, savepath=figPath, dpi=300, )
     plt.show(block=fixedFlag)
     return ax
 def poltDA(fits_data, rawData, fixedFlag=False, newFigPath=None):
@@ -649,7 +651,8 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     if plotFlag:
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE, type="png",)
         poltDA(fits_data, rawData, newFigPath=newFigPath)
-        plotDAResiduals(fits_data)
+        newFigPath2 = fl.get_expanded_name(newPath, sheet_name, expand=const.RESIDUAL_FILE, type="png",)
+        plotDAResiduals(fits_data,logAxes=True,figPath=newFigPath2)
         poltDA(fits_data_single, rawData, fixedFlag = True)
     return {
         "sample_name": sheet_name,
@@ -679,7 +682,7 @@ def main(file_path=None):
     # 模式一：单样品
     # =========================
     if singleFile:
-        sheet_name = "CC-Hy-900-1-1"
+        sheet_name = "CC-Ca-800-2-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
         result = runDAsimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         # 单样品模式不进行样品间比较
@@ -727,28 +730,26 @@ def main(file_path=None):
         # 方式 A：仅比较指定样品对
         # 使用时保留这部分，注释掉方式 B
         # ==================================================
-        sample_pairs = [
-            ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
-            ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
-            ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
-            # 按需添加其他样品对
-        ]
+        # sample_pairs = [
+        #     ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
+        #     ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
+        #     ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
+        #     # 按需添加其他样品对
+        # ]
         # ==================================================
         # 方式 B：全部有效样品两两比较
         # 使用时注释掉方式 A，取消下面这部分的注释
         # ==================================================
-        # sample_names = [
-        #     name
-        #     for name, result in all_sample_results.items()
-        #     if (
-        #         result.get("da_bootstrap") is not None
-        #         and result.get("da_ci") is not None
-        #     )
-        # ]
-        #
-        # sample_pairs = list(
-        #     combinations(sample_names, 2)
-        # )
+        sample_names = [
+            name
+            for name, result in all_sample_results.items()
+            if (
+                result.get("da_bootstrap") is not None
+                and result.get("da_ci") is not None
+            )
+        ]
+        
+        sample_pairs = list( combinations(sample_names, 2) )
         # ==================================================
         # 1. 计算 D-A 参数 E 的样品间差值 CI
         # ==================================================

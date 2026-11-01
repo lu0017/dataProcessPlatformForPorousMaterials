@@ -58,6 +58,7 @@ DA_FILE = "DA_fit"
 TSA_FILE = "TSA"
 QST_DSL_FILE = "Qst_dsl"
 SPLIT_FILE = "split"
+RESIDUAL_FILE = "residual"
 
 """sheet name"""
 DSL_PARA_SHEET = "DSL_params"

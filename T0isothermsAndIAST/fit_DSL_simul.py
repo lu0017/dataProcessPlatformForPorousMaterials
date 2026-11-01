@@ -20,7 +20,7 @@ import T0isothermsAndIAST.isostericHeatQstForRawData as qstByRawdata
 # ==========================================
 # 工具函数
 # ==========================================
-def plotDSLResiduals(grouped_data, T_list_K, fits_data, newFigPath=None):
+def plotDSLResiduals(grouped_data, T_list_K, fits_data, figPath=None, logAxes=True):
     """Plot residuals of DSL fitting."""
     data = {}
 
@@ -56,12 +56,14 @@ def plotDSLResiduals(grouped_data, T_list_K, fits_data, newFigPath=None):
         legend=True,
         legendPosition="upper left",
         title=None,
-        savepath=newFigPath,
+        # savepath=figPath,
     )
 
     ax.axhline(0, color="black", linestyle="--", linewidth=1)
-    # ax.set_xscale("log")
-
+    if logAxes:
+        ax.set_xscale("log")
+    if figPath is not None:
+            myPlt.saveFigure( fig=ax.figure, savepath=figPath, dpi=300, )
     plt.show(block=False)
     return ax
 def plotDSLResults( grouped_data, T_list_K, fits_data, newFigPath=None):
@@ -1270,7 +1272,8 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DSL_FILE, type="png",)
     # 1. DSL fitting
         plotDSLResults( grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data, newFigPath=newFigPath)
-        plotDSLResiduals(grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data,)
+        newFigPath2 = fl.get_expanded_name(newPath, sheet_name, expand=const.RESIDUAL_FILE, type="png",)
+        plotDSLResiduals(grouped_data=grouped_data, T_list_K=T_list_K, fits_data=fits_data,figPath=newFigPath2)
         # 2. Simulated vs experimental Qst
         plotQstComparison( Qst_simuByCC=Qst_simuByCC, Qst_exp=Qst_exp, )
         # 3. Qst vs coverage
@@ -1290,8 +1293,8 @@ def main(file_path=None):
     # 运行配置
     # =========================
     singleFile = True
-    run_bootstrap = False
-    n_bootstrap = 100
+    run_bootstrap = True
+    n_bootstrap = 10000
     file = ( file_path if file_path is not None else fl.getFile() )
     all_sample_results = {}
     # 用于保存样品间比较结果的输出目录
@@ -1300,7 +1303,7 @@ def main(file_path=None):
     # 模式一：单样品拟合
     # =========================
     if singleFile:
-        sheet_name = "CC-Hy-900-1-1"
+        sheet_name = "CC-Hy-600-1-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
         result = runDslSimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         # 单样品模式不执行样品间比较
@@ -1348,28 +1351,28 @@ def main(file_path=None):
         # 方式 A：仅比较指定样品对
         # 使用时保留这部分，注释掉方式 B
         # ----------------------------------
-        sample_pairs = [
-            ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
-            ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
-            ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
-            # 按需添加其他样品对
-        ]
+        # sample_pairs = [
+        #     ("CC-Hy-600-0.5-1", "CC-Hy-600-1-1"),
+        #     ("CC-Hy-600-0.5-1", "CC-Hy-700-1-1"),
+        #     ("CC-Hy-600-2-1", "CC-Hy-900-1-1"),
+        #     # 按需添加其他样品对
+        # ]
         # ----------------------------------
         # 方式 B：全部有效样品两两比较
         # 使用时注释掉方式 A，取消下面这部分注释
         # ----------------------------------
-        # sample_names = [
-        #     name
-        #     for name, result in all_sample_results.items()
-        #     if (
-        #         result.get("dsl_bootstrap") is not None
-        #         and result.get("dsl_ci") is not None
-        #     )
-        # ]
-        #
-        # sample_pairs = list(
-        #     combinations(sample_names, 2)
-        # )
+        sample_names = [
+            name
+            for name, result in all_sample_results.items()
+            if (
+                result.get("dsl_bootstrap") is not None
+                and result.get("dsl_ci") is not None
+            )
+        ]
+        
+        sample_pairs = list(
+            combinations(sample_names, 2)
+        )
         # ----------------------------------
         # 执行 DSL b1 样品间 CI 比较
         # ----------------------------------
@@ -1395,10 +1398,7 @@ def main(file_path=None):
                                                     extra_tables={ "DSL_b1_Pairwise_CI": contrast_df, }, )
             print( "\nSample-pair CI results saved to:\n" f"{comparison_file}" )
         else:
-            print(
-                "No valid sample-pair comparison results "
-                "were generated. Nothing was saved."
-            )
+            print( "No valid sample-pair comparison results were generated. Nothing was saved." )
     return all_sample_results, contrast_df
 if __name__ == "__main__":
     f = sys.argv[1] if len(sys.argv) > 1 else None

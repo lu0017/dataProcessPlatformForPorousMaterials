@@ -55,6 +55,7 @@ from itertools import product
 from itertools import combinations
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+import matplotlib.ticker as mticker
 # ======================
 # Scipy
 # ======================

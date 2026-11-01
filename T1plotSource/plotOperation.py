@@ -1153,6 +1153,7 @@ def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=600)
     plt.show(block=False)
+    return ax
 def plotBatchCorrelation(results, topN=5, sort_by="R2"):
     """
     Batch plot top-N correlations.

@@ -10,6 +10,340 @@ import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
 import T1plotSource.plotOperation as myPlt
 import T1dataProcessSource.modelAndFit as mf
+def plotCorrelationLOOSensitivity(
+    loo_result, statistic="Pearson_r",
+    descriptors=None, figsize=(6, 4),
+    colors="black", savepath=None,
+    xlim=None, fontsize=12,
+    labelsize=None, ticksize=None,
+    showChange=False
+):
+    summary = loo_result["summary"]
+
+    if descriptors is None:
+        descriptors = ["Centroid", "CompetitionIndex", "Skewness"]
+
+    if statistic not in ("Pearson_r", "R2"):
+        raise ValueError("statistic must be 'Pearson_r' or 'R2'")
+
+    labelsize = labelsize or fontsize
+    ticksize = ticksize or fontsize
+
+    labels = {
+        "Centroid": "Centroid",
+        "CompetitionIndex": "CompetitionIndex",
+        "Skewness": "Skewness"
+    }
+
+    rows = []
+    for descriptor in descriptors:
+        key = next(
+            (k for k in summary
+             if descriptor in k and k.endswith(f"_{statistic}")),
+            None
+        )
+        if key is None:
+            continue
+
+        stats = summary[key]
+        rows.append({
+            "Descriptor": descriptor,
+            "Baseline": stats["baseline"],
+            "LOO_min": stats["min"],
+            "LOO_max": stats["max"],
+            "Max_abs_change": stats["absolute_changes"]["max"],
+            "Mean_abs_change": stats["absolute_changes"]["mean"],
+            "Sign_consistency": stats["sign_consistency"]
+        })
+
+    data = pd.DataFrame(rows)
+    if data.empty:
+        raise ValueError(f"No results found for {statistic}")
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    y = np.arange(len(data))
+    estimate = data["Baseline"].to_numpy()
+    lower = data["LOO_min"].to_numpy()
+    upper = data["LOO_max"].to_numpy()
+    xerr = np.vstack([
+        estimate - lower,
+        upper - estimate
+    ])
+
+    ax.errorbar(
+        estimate, y, xerr=xerr,
+        fmt="o", markersize=6, capsize=3,
+        elinewidth=1.3, linewidth=1.3,
+        color=colors, markeredgecolor="black",
+        markeredgewidth=0.5
+    )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([
+        labels.get(d, d) for d in data["Descriptor"]
+    ])
+    ax.invert_yaxis()
+
+    ax.set_xlabel(
+        "Pearson correlation coefficient, $r$"
+        if statistic == "Pearson_r"
+        else "Coefficient of determination, $R^2$",
+        fontsize=labelsize
+    )
+    ax.set_ylabel("PSD descriptor", fontsize=labelsize)
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    else:
+        xmin = min(lower.min(), estimate.min())
+        xmax = max(upper.max(), estimate.max())
+        margin = max((xmax - xmin) * 0.25, 0.002)
+        ax.set_xlim(xmin - margin, xmax + margin)
+
+    if statistic == "Pearson_r":
+        ax.axvline(0, color="gray", linestyle=":", linewidth=1)
+
+    if showChange:
+        for yi, row in zip(y, data.itertuples()):
+            ax.annotate(
+                f"Max Δ={row.Max_abs_change:.3g}",
+                (row.LOO_max, yi),
+                xytext=(5, 0), textcoords="offset points",
+                va="center", fontsize=fontsize - 2
+            )
+
+    ax.grid(axis="x", linestyle="--", alpha=0.35)
+    ax.tick_params(
+        axis="both", which="major",
+        labelsize=ticksize,
+        top=False, right=False
+    )
+
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+
+    fig.tight_layout()
+
+    if savepath:
+        fig.savefig(savepath, dpi=600, bbox_inches="tight")
+
+    return ax
+def plotCorrelationBootstrapCI(
+    bootstrap_result, statistic="Pearson_r",
+    descriptors=None, figsize=(6, 4),
+    colors="black", savepath=None,
+    xlim=None, fontsize=12,
+    labelsize=None, ticksize=None,
+    showSE=False
+):
+    statistics = bootstrap_result["statistics"]
+
+    if descriptors is None:
+        descriptors = ["Centroid", "CompetitionIndex", "Skewness"]
+
+    if statistic not in ("Pearson_r", "R2"):
+        raise ValueError("statistic must be 'Pearson_r' or 'R2'")
+
+    labelsize = labelsize or fontsize
+    ticksize = ticksize or fontsize
+
+    labels = {
+        "Centroid": "Centroid",
+        "CompetitionIndex": "CompetitionIndex",
+        "Skewness": "Skewness"
+    }
+
+    rows = []
+    for descriptor in descriptors:
+        key = next(
+            (k for k in statistics
+             if descriptor in k and k.endswith(f"_{statistic}")),
+            None
+        )
+        if key is None:
+            continue
+
+        stats = statistics[key]
+        ci = stats["confidence_interval"]
+
+        rows.append({
+            "Descriptor": descriptor,
+            "Estimate": stats["estimate"],
+            "CI_Lower": ci[0],
+            "CI_Upper": ci[1],
+            "Bootstrap_SE": stats["bootstrap_standard_error"]
+        })
+
+    data = pd.DataFrame(rows)
+    if data.empty:
+        raise ValueError(f"No results found for {statistic}")
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    y = np.arange(len(data))
+    estimate = data["Estimate"].to_numpy()
+    lower = data["CI_Lower"].to_numpy()
+    upper = data["CI_Upper"].to_numpy()
+    xerr = np.vstack([estimate - lower, upper - estimate])
+
+    ax.errorbar(
+        estimate, y, xerr=xerr,
+        fmt="o", markersize=6, capsize=3,
+        elinewidth=1.3, linewidth=1.3,
+        color=colors, markeredgecolor="black",
+        markeredgewidth=0.5
+    )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels([
+        labels.get(d, d) for d in data["Descriptor"]
+    ])
+    ax.invert_yaxis()
+
+    ax.set_xlabel(
+        "Pearson correlation coefficient, $r$"
+        if statistic == "Pearson_r"
+        else "Coefficient of determination, $R^2$",
+        fontsize=labelsize
+    )
+    ax.set_ylabel("PSD descriptor", fontsize=labelsize)
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    else:
+        xmin = min(lower.min(), estimate.min())
+        xmax = max(upper.max(), estimate.max())
+        margin = max((xmax - xmin) * 0.25, 0.002)
+        ax.set_xlim(xmin - margin, xmax + margin)
+
+    if statistic == "Pearson_r":
+        ax.axvline(0, color="gray", linestyle=":", linewidth=1)
+
+    if showSE:
+        for yi, row in zip(y, data.itertuples()):
+            ax.annotate(
+                f"SE={row.Bootstrap_SE:.3g}",
+                (row.CI_Upper, yi),
+                xytext=(5, 0), textcoords="offset points",
+                va="center", fontsize=fontsize - 2
+            )
+
+    ax.grid(axis="x", linestyle="--", alpha=0.35)
+    ax.tick_params(
+        axis="both", which="major",
+        labelsize=ticksize,
+        top=False, right=False
+    )
+
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+
+    fig.tight_layout()
+
+    if savepath:
+        fig.savefig(savepath, dpi=600, bbox_inches="tight")
+
+    return ax
+def plotCorrelationWithValidation(
+    result, new_samples,
+    xlabel=None, ylabel=None,
+    text_position=(0.05, 0.95),
+    figsize=(4.5, 3.5),
+    colors=("orange", "red"),
+    marker="^", markersize=150,
+    edgecolor="black", linewidth=0.6,
+    labels=None, legend_loc="best"
+):
+    from matplotlib.lines import Line2D
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # 1. Original samples
+    myPlt._plotCorrelation(
+        ax, result, xlabel, ylabel,
+        text_position, figsize, "top",
+        "linear", "linear"
+    )
+
+    # Change original scatter points to gray
+    for collection in ax.collections:
+        collection.set_facecolor("0.65")
+        collection.set_edgecolor("none")
+
+    # 2. Validation samples
+    handles = [
+        Line2D(
+            [], [], marker="o", linestyle="none",
+            color="0.65", markeredgecolor="none",
+            markersize=8, label="Original samples"
+        )
+    ]
+
+    if labels is None:
+        labels = list(new_samples.keys())
+
+    for i, (name, (x, y)) in enumerate(new_samples.items()):
+        color = colors[i % len(colors)]
+
+        ax.scatter(
+            x, y, marker=marker, s=markersize,
+            color=color, edgecolor=edgecolor,
+            linewidth=linewidth, zorder=10
+        )
+
+        handles.append(
+            Line2D(
+                [], [], marker=marker, linestyle="none",
+                color=color, markeredgecolor=edgecolor,
+                markeredgewidth=linewidth,
+                markersize=np.sqrt(markersize),
+                label=labels[i] if i < len(labels) else name
+            )
+        )
+
+    ax.legend(handles=handles, loc=legend_loc)
+    fig.tight_layout()
+
+    return fig, ax
+def getValidationSamples(kineticdata, metrics, prefix="CC-"):
+    parameters = {
+        "E (J/mol)": kineticdata,
+        "SELE pyIAST": kineticdata,
+        "CompetitionIndex": metrics,
+        "Centroid": metrics,
+        "Skewness": metrics
+    }
+
+    def normalizeIndex(index):
+        return {
+            str(idx) if str(idx).startswith(prefix) else prefix + str(idx): idx
+            for idx in index
+        }
+
+    indices = {
+        name: normalizeIndex(data.index)
+        for name, data in {
+            "kinetic": kineticdata,
+            "metrics": metrics
+        }.items()
+    }
+
+    common = sorted(set(indices["kinetic"]) & set(indices["metrics"]))
+
+    result = pd.DataFrame(index=common)
+
+    for parameter, source in parameters.items():
+        source_index = indices[
+            "kinetic" if source is kineticdata else "metrics"
+        ]
+
+        result[parameter] = [
+            source.loc[source_index[sample], parameter]
+            for sample in common
+        ]
+
+    return result
 def flattenNestedResult(obj, analysis_name):
     """
     将嵌套的 PCA / VIF 结果整理为一张长表。
@@ -1385,7 +1719,7 @@ def main(file_path=None):
         "High": (0.3,0.50),
         "Middle": (0.5,0.65),
         "Low": (0.65,0.8)}
-    regions = regions_DFT
+    regions = regions_GCMC
     xColumns=[
         "HighLowRatio",
         "CompetitionIndex",
@@ -1485,13 +1819,31 @@ def main(file_path=None):
     # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
     #         target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
     #         n_bootstrap=10000, confidence_level=0.95, random_state=42, )
+    # folder= fl.getPathOnly(file_path=out_path)
+    # figName_r=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_r", expandPos=True, type="png", )
+    # figName_R2=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_R2", expandPos=True, type="png", )
+    # ax_r = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="Pearson_r", figsize=(6, 4),  
+    #                                 #   savepath=figName_r 
+    #                                   )
+    # ax_r2 = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="R2", figsize=(6, 4), xlim=(0.92, 1.02), 
+    #                                       savepath=figName_R2 
+    #                                       )
+    # figName_LOOr=fl.get_expanded_name(folder, fileName="GCMCLOO_E_r", expandPos=True, type="png", )
+    # figName_LOOR2=fl.get_expanded_name(folder, fileName="GCMCLOO_E_R2", expandPos=True, type="png", )
+    # ax_r = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="Pearson_r", figsize=(6, 4), 
+    #                                     #   savepath=figName_LOOr 
+    #                                       )
+    # ax_r2 = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="R2", figsize=(6, 4), xlim=(0.94, 1.00), 
+    #                                       savepath=figName_LOOR2
+    #                                       )
+    # plt.show(block=False)
     # offsets = (-0.1,-0.05, -0.025, 0.0, 0.025, 0.05,0.1)
     # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
     #         regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
     # savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
     #                        metrics=metrics, filename=out_path, correlation_export={ 
     #                            "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
-    #######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    ######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
 
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
@@ -1502,19 +1854,19 @@ def main(file_path=None):
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    core_E2SELE=myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
                                 # savepath="E-sele_henry"
                                 )
     myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["b-N2"], xlabel="bA", ylabel="b-N2", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
                                 # savepath="bA-sele_henry"
                                 )
-    myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    core_E2CI=myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
                                 # savepath="DFT-E-CI"
                                 )
-    myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
+    core_E2CD=myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
                                 # savepath="DFT-E-Centroid"
                                 )
-    myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    core_E2SK=myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
                                 # savepath="DFT-E-Skewness"
                                 )
     myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
@@ -1522,6 +1874,31 @@ def main(file_path=None):
                                 )
     myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 结束输出图片部分##############
+    
+    ######################进行验证样品补充###################################
+    psdData_check, out_path, _, _ = fl.readFileBySheetWithMultiLevelHeader(file, sheet_name="PSD-GCMC-CO2-CHECK", expand="newSample")
+    kineticdata_check, _ = fl.readTableBySheet(file, sheet_name="thermalkinetic-CHECK")
+    metrics_check = calculatePSDMetrics(psdData_check, regions = regions)
+    new_samples =  getValidationSamples( kineticdata_check, metrics_check )
+    new_samples0 = { sample: (row["E (J/mol)"], row["SELE pyIAST"]) for sample, row in new_samples.iterrows() }
+    plotCorrelationWithValidation( results_metrix["E (J/mol)"]["SELE pyIAST"], 
+                    new_samples0, xlabel="E", ylabel="sele", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    
+    new_samples2 = { sample: (row["Centroid"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    plotCorrelationWithValidation( results_metrix["Centroid"]["E (J/mol)"], 
+                    new_samples2, xlabel="Centroid", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    
+    new_samples3 = { sample: (row["CompetitionIndex"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    plotCorrelationWithValidation( results_metrix["CompetitionIndex"]["E (J/mol)"], 
+                    new_samples3, xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+        
+    new_samples3 = { sample: (row["Skewness"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    plotCorrelationWithValidation( results_metrix["Skewness"]["E (J/mol)"], 
+                    new_samples3, xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    
+    plt.show(block=False)
+    ######################结束进行验证样品补充###################################
+
     exclude = [
         "Variance",
         "Std"
