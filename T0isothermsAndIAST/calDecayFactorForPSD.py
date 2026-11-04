@@ -1241,11 +1241,13 @@ def staristicAnalysisForPSDdecay(
     # --------------------------------------------------
     # 10. Run PCA analysis
     # --------------------------------------------------
-    pca_result = dop.runPCAAnalysis( data=selected_metrics, )
+    pca_result =[]
+    # = dop.runPCAAnalysis( data=selected_metrics, )
     # --------------------------------------------------
     # 11. Run VIF analysis
     # --------------------------------------------------
-    vif_result = dop.runVIFAnalysis( data=selected_metrics, )
+    vif_result=[]
+    # = dop.runVIFAnalysis( data=selected_metrics, )
     # --------------------------------------------------
     # 12. Run Partial Correlation analysis
     # --------------------------------------------------
@@ -1709,7 +1711,7 @@ def runCompetitionIndexSensitivityAnalysis(
 ##########################################################################
 def main(file_path=None):
     # # 选择文件
-    psd_sheet = "PSD-DFT-CO2"
+    psd_sheet = "PSD-GCMC-CO2"
     kinetic_sheet = "thermalkinetic"
     regions_DFT = {
         "High": (0.3,0.65),
@@ -1731,7 +1733,7 @@ def main(file_path=None):
         "E (J/mol)"
     ]
     file = fl.getFile()
-    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation_stati2")
+    psdData, out_path, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet, expand="correlation_stati2_E VS HENRY")
     kineticdata, kineticMeta = fl.readTableBySheet(file, kinetic_sheet)
     # # # ##################### 用于分析指定样品##############
     # # =========================
@@ -1763,23 +1765,23 @@ def main(file_path=None):
     # )
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
-    # # ##################### 同时计算两个kernal的数据##############
-    # psd_sheet_dft = "PSD-DFT-CO2"
-    # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
-    # out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
-    # psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
-    # metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
-    # metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
-    # metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
-    # xColumns = [
-    #     "GCMC_Centroid",
-    #     "GCMC_CompetitionIndex",
-    #     "GCMC_Skewness",
-    #     "DFT_Centroid",
-    #     "DFT_CompetitionIndex",
-    #     "DFT_Skewness",
-    #     ]
-    # # ##################### 结束同时计算两个kernal的数据##############
+    # ##################### 同时计算两个kernal的数据##############
+    psd_sheet_dft = "PSD-DFT-CO2"
+    psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
+    out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
+    psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
+    metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
+    metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
+    metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
+    xColumns = [
+        "GCMC_Centroid",
+        "GCMC_CompetitionIndex",
+        "GCMC_Skewness",
+        "DFT_Centroid",
+        "DFT_CompetitionIndex",
+        "DFT_Skewness",
+        ]
+    # ##################### 结束同时计算两个kernal的数据##############
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
     # # ##################### 出传统porosity指标##############
@@ -1815,35 +1817,35 @@ def main(file_path=None):
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # # ##################### 结束保存数据到excel##############
 
-    # #######################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
-    # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics, kineticdata, metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
+    # # #######################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics=kineticdata, kineticdata=kineticdata, metric_names=[ "sel_henry",], 
     #         target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
     #         n_bootstrap=10000, confidence_level=0.95, random_state=42, )
-    # folder= fl.getPathOnly(file_path=out_path)
-    # figName_r=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_r", expandPos=True, type="png", )
-    # figName_R2=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_R2", expandPos=True, type="png", )
-    # ax_r = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="Pearson_r", figsize=(6, 4),  
-    #                                 #   savepath=figName_r 
-    #                                   )
-    # ax_r2 = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="R2", figsize=(6, 4), xlim=(0.92, 1.02), 
-    #                                       savepath=figName_R2 
-    #                                       )
-    # figName_LOOr=fl.get_expanded_name(folder, fileName="GCMCLOO_E_r", expandPos=True, type="png", )
-    # figName_LOOR2=fl.get_expanded_name(folder, fileName="GCMCLOO_E_R2", expandPos=True, type="png", )
-    # ax_r = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="Pearson_r", figsize=(6, 4), 
-    #                                     #   savepath=figName_LOOr 
-    #                                       )
-    # ax_r2 = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="R2", figsize=(6, 4), xlim=(0.94, 1.00), 
-    #                                       savepath=figName_LOOR2
-    #                                       )
-    # plt.show(block=False)
-    # offsets = (-0.1,-0.05, -0.025, 0.0, 0.025, 0.05,0.1)
-    # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
-    #         regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
-    # savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=ci_sensitivity_result, kineticdata=kineticdata,
+    # # folder= fl.getPathOnly(file_path=out_path)
+    # # figName_r=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_r", expandPos=True, type="png", )
+    # # figName_R2=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_R2", expandPos=True, type="png", )
+    # # ax_r = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="Pearson_r", figsize=(6, 4),  
+    # #                                 #   savepath=figName_r 
+    # #                                   )
+    # # ax_r2 = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="R2", figsize=(6, 4), xlim=(0.92, 1.02), 
+    # #                                       savepath=figName_R2 
+    # #                                       )
+    # # figName_LOOr=fl.get_expanded_name(folder, fileName="GCMCLOO_E_r", expandPos=True, type="png", )
+    # # figName_LOOR2=fl.get_expanded_name(folder, fileName="GCMCLOO_E_R2", expandPos=True, type="png", )
+    # # ax_r = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="Pearson_r", figsize=(6, 4), 
+    # #                                     #   savepath=figName_LOOr 
+    # #                                       )
+    # # ax_r2 = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="R2", figsize=(6, 4), xlim=(0.94, 1.00), 
+    # #                                       savepath=figName_LOOR2
+    # #                                       )
+    # # plt.show(block=False)
+    # # offsets = (-0.1,-0.05, -0.025, 0.0, 0.025, 0.05,0.1)
+    # # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
+    # #         regions=regions, target_names=["E (J/mol)"], boundary_offsets=offsets, prefix=None, )
+    # savePSDAnalysisResults( statisticAnalysis=statisticAnalysis, ci_sensitivity_result=None, kineticdata=kineticdata,
     #                        metrics=metrics, filename=out_path, correlation_export={ 
     #                            "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
-    ######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
+    # ######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
 
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
@@ -1854,49 +1856,49 @@ def main(file_path=None):
     # myPlt.plotBar(metrics.index, kineticdata["E (J/mol)"], xlabel="Sample",ylabel="E", figsize=(4, 3), gradientFlag=True,savepath="E")
     # myPlt.plotBar(metrics.index, kineticdata["bA-T25"], xlabel="Sample",ylabel="bA", figsize=(4, 3), gradientFlag=True,savepath="bA")
     # myPlt.plotBar(metrics.index, kineticdata["SELE pyIAST"], xlabel="Sample",ylabel="Selectivity (-)", gradientFlag=True,savepath="Sele")
-    core_E2SELE=myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="E-sele_henry"
-                                )
-    myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["b-N2"], xlabel="bA", ylabel="b-N2", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="bA-sele_henry"
-                                )
-    core_E2CI=myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-CI"
-                                )
-    core_E2CD=myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-Centroid"
-                                )
-    core_E2SK=myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-Skewness"
-                                )
-    myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
-                                # savepath="DFT-E-HighLowRatio"
-                                )
-    myPlt.plotBatchCorrelation(results, topN=9)
+    # core_E2SELE=myPlt.plotSingleCorrelation(results_metrix["E (J/mol)"]["SELE pyIAST"], xlabel="E", ylabel="sele", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="E-sele_henry"
+    #                             )
+    # myPlt.plotSingleCorrelation(results_metrix["bA-T25"]["b-N2"], xlabel="bA", ylabel="b-N2", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="bA-sele_henry"
+    #                             )
+    # core_E2CI=myPlt.plotSingleCorrelation(results_metrix["CompetitionIndex"]["E (J/mol)"], xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-CI"
+    #                             )
+    # core_E2CD=myPlt.plotSingleCorrelation(results_metrix["Centroid"]["E (J/mol)"], xlabel="Centroid", ylabel="E", text_position=(0.5, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-Centroid"
+    #                             )
+    # core_E2SK=myPlt.plotSingleCorrelation(results_metrix["Skewness"]["E (J/mol)"], xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-Skewness"
+    #                             )
+    # myPlt.plotSingleCorrelation(results_metrix["HighLowRatio"]["E (J/mol)"], xlabel="HighLowRatio", ylabel="E", text_position=(0.1, 0.95),figsize=(4.5, 3.5),
+    #                             # savepath="DFT-E-HighLowRatio"
+    #                             )
+    # myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 结束输出图片部分##############
     
     ######################进行验证样品补充###################################
-    psdData_check, out_path, _, _ = fl.readFileBySheetWithMultiLevelHeader(file, sheet_name="PSD-GCMC-CO2-CHECK", expand="newSample")
-    kineticdata_check, _ = fl.readTableBySheet(file, sheet_name="thermalkinetic-CHECK")
-    metrics_check = calculatePSDMetrics(psdData_check, regions = regions)
-    new_samples =  getValidationSamples( kineticdata_check, metrics_check )
-    new_samples0 = { sample: (row["E (J/mol)"], row["SELE pyIAST"]) for sample, row in new_samples.iterrows() }
-    plotCorrelationWithValidation( results_metrix["E (J/mol)"]["SELE pyIAST"], 
-                    new_samples0, xlabel="E", ylabel="sele", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    # psdData_check, out_path, _, _ = fl.readFileBySheetWithMultiLevelHeader(file, sheet_name="PSD-GCMC-CO2-CHECK", expand="newSample")
+    # kineticdata_check, _ = fl.readTableBySheet(file, sheet_name="thermalkinetic-CHECK")
+    # metrics_check = calculatePSDMetrics(psdData_check, regions = regions)
+    # new_samples =  getValidationSamples( kineticdata_check, metrics_check )
+    # new_samples0 = { sample: (row["E (J/mol)"], row["SELE pyIAST"]) for sample, row in new_samples.iterrows() }
+    # plotCorrelationWithValidation( results_metrix["E (J/mol)"]["SELE pyIAST"], 
+    #                 new_samples0, xlabel="E", ylabel="sele", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
     
-    new_samples2 = { sample: (row["Centroid"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
-    plotCorrelationWithValidation( results_metrix["Centroid"]["E (J/mol)"], 
-                    new_samples2, xlabel="Centroid", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    # new_samples2 = { sample: (row["Centroid"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    # plotCorrelationWithValidation( results_metrix["Centroid"]["E (J/mol)"], 
+    #                 new_samples2, xlabel="Centroid", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
     
-    new_samples3 = { sample: (row["CompetitionIndex"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
-    plotCorrelationWithValidation( results_metrix["CompetitionIndex"]["E (J/mol)"], 
-                    new_samples3, xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    # new_samples3 = { sample: (row["CompetitionIndex"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    # plotCorrelationWithValidation( results_metrix["CompetitionIndex"]["E (J/mol)"], 
+    #                 new_samples3, xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
         
-    new_samples3 = { sample: (row["Skewness"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
-    plotCorrelationWithValidation( results_metrix["Skewness"]["E (J/mol)"], 
-                    new_samples3, xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
+    # new_samples3 = { sample: (row["Skewness"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
+    # plotCorrelationWithValidation( results_metrix["Skewness"]["E (J/mol)"], 
+    #                 new_samples3, xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
     
-    plt.show(block=False)
+    # plt.show(block=False)
     ######################结束进行验证样品补充###################################
 
     exclude = [
@@ -1912,33 +1914,33 @@ def main(file_path=None):
         "ID/IG",
         "co2_hen",
         "n2_hen",
-        # "GCMC_High",
-        # # "GCMC_HighLowRatio",
-        # "GCMC_Centroid",
-        # "GCMC_CompetitionIndex",
-        # "GCMC_Skewness",
-        # "DFT_High",
-        # # "DFT_HighLowRatio",
-        # "DFT_Centroid",
-        # "DFT_CompetitionIndex",
-        # "DFT_Skewness",
-        "High",
-        "HighLowRatio",
-        "Centroid",
-        "CompetitionIndex",
-        "Skewness",
+        "GCMC_High",
+        # "GCMC_HighLowRatio",
+        "GCMC_Centroid",
+        "GCMC_CompetitionIndex",
+        "GCMC_Skewness",
+        "DFT_High",
+        # "DFT_HighLowRatio",
+        "DFT_Centroid",
+        "DFT_CompetitionIndex",
+        "DFT_Skewness",
+        # "High",
+        # "HighLowRatio",
+        # "Centroid",
+        # "CompetitionIndex",
+        # "Skewness",
         "bA-T25",
-        "b-N2",
+        # "b-N2",
         "E (J/mol)",
-        "Eave (J/mol)",
+        # "Eave (J/mol)",
         "SELE pyIAST",
         "sel_henry",
         #"sel_henry_numer",
     ]
     order = include
-    figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all", expandPos=True, type="png")
+    figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all1103", expandPos=True, type="png")
     myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-                        #   savePath = figureName
+                          savePath = figureName
                           )
     # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
     #                         #   savePath = figureName

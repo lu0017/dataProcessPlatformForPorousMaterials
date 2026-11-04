@@ -640,14 +640,14 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     else:
         ( DAPara, fits_data, DAPara_single, fits_data_single, ) = fit_result
     newPath = fl.check_or_create_folder(out_path, sub_folder_name=const.DA_FOLDER)
-    newFilePath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE)
-    export_DA_params_custom(DAPara, file_name=newFilePath, sheet_name=const.DA_PARA_SHEET, singleFlag=False)
-    fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
-    export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
-    fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
-    if run_bootstrap:
-        redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
-                metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
+    # newFilePath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE)
+    # export_DA_params_custom(DAPara, file_name=newFilePath, sheet_name=const.DA_PARA_SHEET, singleFlag=False)
+    # fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
+    # export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
+    # fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
+    # if run_bootstrap:
+    #     redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
+    #             metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
     if plotFlag:
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE, type="png",)
         poltDA(fits_data, rawData, newFigPath=newFigPath)
@@ -682,7 +682,7 @@ def main(file_path=None):
     # 模式一：单样品
     # =========================
     if singleFile:
-        sheet_name = "CC-Ca-800-2-1"
+        sheet_name = "CC-Hy-600-4-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
         result = runDAsimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         # 单样品模式不进行样品间比较

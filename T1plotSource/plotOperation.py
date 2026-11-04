@@ -59,6 +59,12 @@ LABEL_MAP_MATRIX = {
     "E (J/mol)": "$E$",
     "ID/IG": r"$I_{D}/I_{G}$",
     "O-EDS": "O (Wt%)",
+    "O(At)": "O (at.%)",
+    "C=O": "C=O (at.%)",
+    "C-O": "C-O (at.%)",
+    "O-C=O": "O-C=O (at.%)",
+    "co2_hen": r"$K_{H,\mathrm{CO}_2}$",
+    "n2_hen": r"$K_{H,\mathrm{N}_2}$",
     "SELE pyIAST": r"$S_{IAST}$",
     "sel_henry": r"$S_{Henry}$",
     "GCMC_High": "$V_{<0.5\,nm}$",
@@ -90,7 +96,7 @@ def formatLabel(label,Unicode=False):
     if label is None:
         return ""
     label = str(label)
-    label = LABEL_MAP.get(label, label)
+    label = LABEL_MAP_MATRIX.get(label, label)
     # import matplotlib as mpl
     # print(mpl.rcParams["font.family"])
     # print(mpl.rcParams["font.sans-serif"])
@@ -1715,11 +1721,11 @@ def plotCorrelogram(
     # _drawDiagonal( ax=ax, labels=order, mode=diagonalMode, fontSize=fontSize + 1 )
     if showGrid:
         _drawGrid( ax=ax, n=n )
-    _beautifyAxes( ax=ax, labels=order, fontSize=fontSize + 2 )
+    _beautifyAxes( ax=ax, labels=order, fontSize=fontSize + 3 )
     if showColorbar:
         kwargs = dict( label=colorbarLabel )
         kwargs.update(colorbarKwargs)
-        _drawColorbar( fig=fig, ax=ax, scatter=scatter, n=n*1.02, labelSize=fontSize + 4, tickSize=fontSize + 2, **kwargs )
+        _drawColorbar( fig=fig, ax=ax, scatter=scatter, n=n*1.02, labelSize=fontSize + 4, tickSize=fontSize + 3, **kwargs )
     # =====================================================
     # Save
     # =====================================================

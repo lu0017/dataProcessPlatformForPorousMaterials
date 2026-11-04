@@ -1248,26 +1248,26 @@ def runDslSimu(listData, out_path, plotFlag=True, sheet_name=None, run_bootstrap
     Qst_exp = qstByRawdata.runCalculateQstByRawData(listData)
     newPath = fl.check_or_create_folder(out_path, sub_folder_name=const.DSL_FOLDER)
     newFilePath = fl.get_expanded_name(newPath, sheet_name, expand=const.DSL_FILE)
-    export_dsl_params_custom(dsl, file_name=newFilePath, sheet_name=const.DSL_PARA_SHEET)
-    # export_dsl_params_custom(dsl_low, file_name=newFilePath, sheet_name=cn.DSL_LOW_PARA_SHEET)
-    fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DSL_FITS_SHEET)
-    # fl.export_to_excel_auto(fits_data_low, newFilePath, sheet_name=cn.DSL_LOW_FITS_SHEET)
-    fl.export_to_excel_auto(thermo_df, newFilePath, sheet_name=const.THERMO_SHEET)
-    fl.export_to_excel_auto(dg_df, newFilePath, sheet_name=const.GIBBS_SHEET)
-    fl.export_to_excel_auto(Qst_simuByCC, newFilePath, sheet_name=const.QST_SIM_CC_SHEET)
-    fl.export_to_excel_auto(Qst_simul, newFilePath, sheet_name=const.QST_SIM_SHEET)
-    fl.export_to_excel_auto(Qst_exp, newFilePath, sheet_name=const.QST_EXP_SHEET)
-    fl.export_to_excel_auto(n2_fit, newFilePath, sheet_name=const.N2_FITS_SHEET)
-    if run_bootstrap:
-        temperature_contrast_df = (
-            buildDSLTemperatureContrastCITable( contrast=b1_contrast, contrast_ci=b1_contrast_ci, ci_result=dsl_ci, sample_name=sheet_name,
-                parameter_key_a="b1_Pa_inv_T273.15K",
-                parameter_key_b="b1_Pa_inv_T298.15K",
-                metadata={ "Model": "DSL", "Analysis": "Within-sample temperature contrast", }, ) )
-        extra_tables = { "DSL_TemperatureContrast_CI": temperature_contrast_df, }
-        redBoots.exportBootstrapAnalysisResults( bootstrap_result=dsl_bootstrap, ci_result=dsl_ci, 
-                file_name=newFilePath, metadata={ "Sample": sheet_name, "Model": "DSL", "Analysis": "Joint fit", }, 
-                extra_tables=extra_tables, )
+    # export_dsl_params_custom(dsl, file_name=newFilePath, sheet_name=const.DSL_PARA_SHEET)
+    # # export_dsl_params_custom(dsl_low, file_name=newFilePath, sheet_name=cn.DSL_LOW_PARA_SHEET)
+    # fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DSL_FITS_SHEET)
+    # # fl.export_to_excel_auto(fits_data_low, newFilePath, sheet_name=cn.DSL_LOW_FITS_SHEET)
+    # fl.export_to_excel_auto(thermo_df, newFilePath, sheet_name=const.THERMO_SHEET)
+    # fl.export_to_excel_auto(dg_df, newFilePath, sheet_name=const.GIBBS_SHEET)
+    # fl.export_to_excel_auto(Qst_simuByCC, newFilePath, sheet_name=const.QST_SIM_CC_SHEET)
+    # fl.export_to_excel_auto(Qst_simul, newFilePath, sheet_name=const.QST_SIM_SHEET)
+    # fl.export_to_excel_auto(Qst_exp, newFilePath, sheet_name=const.QST_EXP_SHEET)
+    # fl.export_to_excel_auto(n2_fit, newFilePath, sheet_name=const.N2_FITS_SHEET)
+    # if run_bootstrap:
+    #     temperature_contrast_df = (
+    #         buildDSLTemperatureContrastCITable( contrast=b1_contrast, contrast_ci=b1_contrast_ci, ci_result=dsl_ci, sample_name=sheet_name,
+    #             parameter_key_a="b1_Pa_inv_T273.15K",
+    #             parameter_key_b="b1_Pa_inv_T298.15K",
+    #             metadata={ "Model": "DSL", "Analysis": "Within-sample temperature contrast", }, ) )
+    #     extra_tables = { "DSL_TemperatureContrast_CI": temperature_contrast_df, }
+    #     redBoots.exportBootstrapAnalysisResults( bootstrap_result=dsl_bootstrap, ci_result=dsl_ci, 
+    #             file_name=newFilePath, metadata={ "Sample": sheet_name, "Model": "DSL", "Analysis": "Joint fit", }, 
+    #             extra_tables=extra_tables, )
     if plotFlag:
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DSL_FILE, type="png",)
     # 1. DSL fitting
@@ -1293,7 +1293,7 @@ def main(file_path=None):
     # 运行配置
     # =========================
     singleFile = True
-    run_bootstrap = True
+    run_bootstrap = False
     n_bootstrap = 10000
     file = ( file_path if file_path is not None else fl.getFile() )
     all_sample_results = {}
@@ -1303,7 +1303,7 @@ def main(file_path=None):
     # 模式一：单样品拟合
     # =========================
     if singleFile:
-        sheet_name = "CC-Hy-600-1-1"
+        sheet_name = "CC-Hy-800-4-1"
         listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
         result = runDslSimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         # 单样品模式不执行样品间比较
