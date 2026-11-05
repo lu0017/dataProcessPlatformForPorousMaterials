@@ -1,6 +1,44 @@
 from common import *
 import constantsAndName as const
 import T1dataProcessSource.modelAndFit as mf
+def getAxisSegments(
+    data, margin_ratio=0.2,
+    min_margin=0.002, min_gap_ratio=3,
+):
+    values = np.concatenate([
+        data["Lower"].to_numpy(dtype=float),
+        data["Upper"].to_numpy(dtype=float),
+        data["Estimate"].to_numpy(dtype=float),
+    ])
+    values = values[np.isfinite(values)]
+    if len(values) < 4:
+        return None
+    values = np.sort(values)
+    gaps = np.diff(values)
+    if len(gaps) == 0:
+        return None
+    # Find the largest gap
+    split_idx = np.argmax(gaps)
+    gap = gaps[split_idx]
+    left = values[:split_idx + 1]
+    right = values[split_idx + 1:]
+    if len(left) == 0 or len(right) == 0:
+        return None
+    left_span = left[-1] - left[0]
+    right_span = right[-1] - right[0]
+    local_span = max(left_span, right_span, min_margin)
+    # Require a sufficiently large separation
+    if gap < min_gap_ratio * local_span:
+        return None
+    left_margin = max(left_span * margin_ratio, min_margin)
+    right_margin = max(right_span * margin_ratio, min_margin)
+    segments = [
+        (left[0] - left_margin, left[-1] + left_margin),
+        (right[0] - right_margin, right[-1] + right_margin),
+    ]
+    if segments[0][1] >= segments[1][0]:
+        return None
+    return segments
 def prepareIsothermPlotData(
     grouped_data,
     T_list_K,

@@ -110,7 +110,7 @@ def formatLabel(label,Unicode=False):
         )
     else: 
         return label
-def applyLabel(default, custom=None):
+def applyLabel(default, custom=None, Unicode=False):
     """
     Return formatted label.
     Parameters
@@ -123,7 +123,7 @@ def applyLabel(default, custom=None):
     -------
     str
     """
-    return formatLabel(default if custom is None else custom)
+    return formatLabel(default if custom is None else custom, Unicode=Unicode,)
 class ColorPalette:
     # -------- predefined palettes --------
     PAPER1 = [
@@ -842,6 +842,183 @@ def saveFigure( fig, savepath=None, dpi=300, transparent=False, ):
     if savepath is None:
         return
     fig.savefig( savepath, dpi=dpi, bbox_inches="tight", transparent=transparent, )
+def _drawErrorBarSegment(
+    ax, data, y, estimate, lower, upper,
+    xmin, xmax, colors, markersize,
+    linewidth, capsize, showAnnotation,
+    annotationPosition, annotationOffset, textSize,
+):
+    for i, (est, lo, hi) in enumerate(zip(estimate, lower, upper)):
+        lo_clip = max(lo, xmin)
+        hi_clip = min(hi, xmax)
+        if lo_clip <= hi_clip:
+            ax.hlines(
+                y[i], lo_clip, hi_clip,
+                color=colors, linewidth=linewidth, zorder=2,
+            )
+            ax.vlines(
+                [lo_clip, hi_clip],
+                y[i] - capsize, y[i] + capsize,
+                color=colors, linewidth=linewidth, zorder=2,
+            )
+        if xmin <= est <= xmax:
+            ax.scatter(
+                est, y[i], color=colors,
+                s=markersize ** 2, zorder=3,
+            )
+        if showAnnotation and "Annotation" in data.columns:
+            annotation = data.iloc[i]["Annotation"]
+            if pd.isna(annotation) or annotation == "":
+                continue
+            if annotationPosition == "right":
+                xpos, ha = hi + annotationOffset, "left"
+            elif annotationPosition == "left":
+                xpos, ha = lo - annotationOffset, "right"
+            else:
+                xpos, ha = est, "center"
+            if xmin <= xpos <= xmax:
+                ax.annotate(
+                    str(annotation), (xpos, y[i]),
+                    ha=ha, va="center", fontsize=textSize,
+                )
+def plotErrorBarTemplate(
+    data, ax=None, figsize=(6, 5),
+    xlabel=None, ylabel=None, xlim=None,
+    colors="black", markersize=7,
+    linewidth=1.5, capsize=0.08,
+    showAnnotation=False,
+    annotationPosition="right",
+    annotationOffset=0.02,
+    textSize=12, labelsize=None, ticksize=None,
+    Unicode=False, grid=True,
+    brokenAxis=False, xlimSegments=None,
+    breakMark=True, breakGap=0.08,
+    savepath=None,
+):
+    """
+    General horizontal confidence-interval plotting template.
+    Parameters
+    ----------
+    data : DataFrame
+        Required columns: Label, Estimate, Lower, Upper.
+        Optional column: Annotation.
+    brokenAxis : bool
+        Whether to use a two-segment broken x-axis.
+    xlimSegments : list of tuple
+        Two x-axis ranges, e.g. [(-1, -0.9), (0.9, 1)].
+    """
+    required = {"Label", "Estimate", "Lower", "Upper"}
+    missing = required - set(data.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    data = data.copy().dropna(
+        subset=["Estimate", "Lower", "Upper"]
+    )
+    if data.empty:
+        raise ValueError("No valid data available for plotting.")
+    estimate = data["Estimate"].to_numpy(dtype=float)
+    lower = data["Lower"].to_numpy(dtype=float)
+    upper = data["Upper"].to_numpy(dtype=float)
+    if np.any(lower > upper):
+        raise ValueError("Lower bounds must not exceed upper bounds.")
+    if brokenAxis:
+        if xlimSegments is None or len(xlimSegments) != 2:
+            raise ValueError(
+                "brokenAxis=True requires two xlimSegments."
+            )
+        segments = sorted(xlimSegments, key=lambda x: x[0])
+        if segments[0][1] >= segments[1][0]:
+            raise ValueError("The x-axis segments must not overlap.")
+        if ax is not None:
+            raise ValueError(
+                "Pass ax=None when using brokenAxis=True."
+            )
+        widths = [
+            max(xmax - xmin, 0.01)
+            for xmin, xmax in segments
+        ]
+        fig, axes = plt.subplots(
+            1, 2, sharey=True, figsize=figsize,
+            gridspec_kw={
+                "width_ratios": [1, 1],
+                "wspace": breakGap,
+            },
+        )
+        axes = list(axes)
+    else:
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = ax.figure
+        axes = [ax]
+        segments = [xlim] if xlim is not None else [None]
+    y = np.arange(len(data))
+    labels = [
+        formatLabel(v, Unicode=Unicode)
+        for v in data["Label"]
+    ]
+    for i, current_ax in enumerate(axes):
+        applyAxisStyle(current_ax)
+        if brokenAxis:
+            xmin, xmax = segments[i]
+            current_ax.set_xlim(xmin, xmax)
+        elif xlim is not None:
+            current_ax.set_xlim(xlim)
+        else:
+            xmin = min(lower.min(), estimate.min())
+            xmax = max(upper.max(), estimate.max())
+            margin = max((xmax - xmin) * 0.05, abs(xmin) * 0.01, 1e-12)
+            current_ax.set_xlim(xmin - margin, xmax + margin)
+        xmin, xmax = current_ax.get_xlim()
+        _drawErrorBarSegment(
+            current_ax, data, y,
+            estimate, lower, upper,
+            xmin, xmax, colors, markersize,
+            linewidth, capsize, showAnnotation,
+            annotationPosition, annotationOffset, textSize,
+        )
+        current_ax.grid(
+            axis="x", linestyle="--", alpha=0.4
+        )
+        for spine in current_ax.spines.values():
+            spine.set_visible(True)
+
+        current_ax.tick_params( axis="both", which="both", top=False, right=False, )
+        applyTextStyle(
+            ax=current_ax, fig=fig,
+            labelsize=textSize if labelsize is None else labelsize,
+            ticksize=textSize if ticksize is None else ticksize,
+            annotationsize=textSize,
+        )
+    axes[0].set_yticks(y)
+    axes[0].set_yticklabels(labels)
+    axes[0].invert_yaxis()
+    axes[0].set_ylabel(
+        applyLabel("", ylabel, Unicode=Unicode)
+    )
+    if brokenAxis:
+        axes[0].spines["right"].set_visible(False)
+        axes[1].spines["left"].set_visible(False)
+        axes[1].tick_params( axis="y", left=False, labelleft=False )
+        if breakMark:
+            d = 0.012
+            mark_kwargs = {
+                "color": "k",
+                "clip_on": False,
+                "linewidth": 1,
+            }
+            axes[0].plot(
+                (1-d, 1+d), (-d, +d),
+                transform=axes[0].transAxes, **mark_kwargs,
+            )
+            axes[0].plot( (1-d, 1+d), (1-d, 1+d), transform=axes[0].transAxes, **mark_kwargs, )
+            axes[1].plot( (-d, +d), (-d, +d), transform=axes[1].transAxes, **mark_kwargs, )
+            axes[1].plot( (-d, +d), (1-d, 1+d), transform=axes[1].transAxes, **mark_kwargs, )
+    fig.supxlabel( applyLabel("", xlabel, Unicode=Unicode) )
+    fig.tight_layout()
+    if savepath is not None:
+        saveFigure(fig=fig, savepath=savepath, dpi=300)
+    return axes if brokenAxis else axes[0]
 def plotSpectrum(
     data,
     ax=None,

@@ -47,14 +47,8 @@ def collectDABootstrapSummary( all_sample_results, parameter_names=("E_J_mol",),
                 "N_invalid": stat["n_invalid"],
             })
     return pd.DataFrame(rows)
-def printResidualBootstrapSummary(
-    bootstrap_result: Mapping[str, Any],
-    ci_result: Mapping[str, Any] | None = None,
-    *,
-    group_labels: Mapping[Hashable, str] | None = None,
-    response_unit: str = "mmol/g",
-    digits: int = 4,
-) -> None:
+def printResidualBootstrapSummary( bootstrap_result: Mapping[str, Any], ci_result: Mapping[str, Any] | None = None, *,
+    group_labels: Mapping[Hashable, str] | None = None, response_unit: str = "mmol/g", digits: int = 4, ) -> None:
     """Print a human-readable summary of a residual-bootstrap analysis.
     Parameters
     ----------
@@ -111,10 +105,8 @@ def printResidualBootstrapSummary(
     if residual_diagnostics:
         print("\nResidual diagnostics by group")
         print(f"Residual unit: {response_unit}; SD uses ddof=1")
-        headers = [
-            "Group", "N", "Mean before", "Center applied", "Mean after",
-            "SD before", "SD after", "Min centered", "Max centered",
-        ]
+        headers = [ "Group", "N", "Mean before", "Center applied", "Mean after",
+            "SD before", "SD after", "Min centered", "Max centered", ]
         rows = []
         for key, d in residual_diagnostics.items():
             label = _group_label(key)
@@ -126,8 +118,7 @@ def printResidualBootstrapSummary(
                 _fmt(d.get("residual_sd_before_centering")),
                 _fmt(d.get("residual_sd_after_centering")),
                 _fmt(d.get("residual_min_after_centering")),
-                _fmt(d.get("residual_max_after_centering")),
-            ])
+                _fmt(d.get("residual_max_after_centering")), ])
         widths = [max(len(headers[i]), max(len(row[i]) for row in rows)) for i in range(len(headers))]
         print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
         print("  ".join("-" * widths[i] for i in range(len(headers))))
@@ -160,15 +151,13 @@ def printResidualBootstrapSummary(
         rows = []
         for name, d in statistics.items():
             ci = d.get("confidence_interval", (float("nan"), float("nan")))
-            rows.append([
-                str(name),
+            rows.append([ str(name),
                 _fmt(d.get("estimate"), max(digits, 5)),
                 _fmt(d.get("bootstrap_standard_error"), max(digits, 5)),
                 _fmt(ci[0], max(digits, 5)),
                 _fmt(ci[1], max(digits, 5)),
                 str(d.get("n_valid", "NA")),
-                str(d.get("n_invalid", "NA")),
-            ])
+                str(d.get("n_invalid", "NA")), ])
         if rows:
             widths = [max(len(headers[i]), max(len(row[i]) for row in rows)) for i in range(len(headers))]
             print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
@@ -177,13 +166,48 @@ def printResidualBootstrapSummary(
                 print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
     print("=" * 88)
 FitPredictFunc = Callable[..., Mapping[str, Any]]
-def makeDAGlobalFitPredictFunc(
-    T_list,
-    *,
-    fit_DA0_func: Callable[..., Any],
-    getParaForDA_func: Callable[..., Any],
-    fit_kwargs: Optional[Dict[str, Any]] = None,
-) -> FitPredictFunc:
+def makeDASingleFitPredictFunc( T, *, fit_DA01_func: Callable[..., Any], getParaForDA_func: Callable[..., Any], 
+                               fit_kwargs: Optional[Dict[str, Any]] = None, ) -> FitPredictFunc:
+    """Build an adapter for independent single-temperature D-A fitting."""
+    fit_kwargs = dict(fit_kwargs or {})
+    def _fit_predict_func(grouped_data, *, initial_fit=None, verbose=False):
+        if T not in grouped_data:
+            raise KeyError(f"Temperature {T!r} is missing from grouped_data.")
+        da_results, fits_data, valid_sheet = fit_DA01_func( [T], grouped_data, verbose=verbose, **fit_kwargs, )
+        da_result = da_results[T]
+        source_df = grouped_data[T]
+        fit_group = fits_data[fits_data["T_K"] == T]
+        if len(fit_group) != len(source_df):
+            raise ValueError(f"Unexpected fitting row count for temperature {T!r}.")
+        input_p = source_df["P_Pa"].to_numpy(dtype=float)
+        fit_p = fit_group["P_Pa"].to_numpy(dtype=float)
+        if not np.allclose(input_p, fit_p, rtol=1e-10, atol=0.0):
+            raise ValueError(f"D-A fitted pressures do not align with input rows for T={T!r}.")
+        W0, E, n = getParaForDA_func(da_result.params)
+        boundary_hits = []
+        for name, param in da_result.params.items():
+            value = float(param.value)
+            tol = 1e-7 * max(1.0, abs(value))
+            if ((np.isfinite(param.min) and abs(value - float(param.min)) <= tol)
+                or (np.isfinite(param.max) and abs(value - float(param.max)) <= tol)):
+                boundary_hits.append(str(name))
+        diagnostics = {
+            "message": str(getattr(da_result, "message", "")),
+            "nfev": getattr(da_result, "nfev", None),
+            "chisqr": getattr(da_result, "chisqr", None),
+            "validSheet": valid_sheet,
+            "boundary_hits": boundary_hits, }
+        return {
+            "fit_result": da_results,
+            "fitted_values": { T: fit_group["q_fit_mmol_g"].to_numpy(dtype=float), },
+            "parameters": { "W0_cm3_g": float(W0),
+                            "E_J_mol": float(E),
+                            "n": float(n), },
+            "success": bool(getattr(da_result, "success", False)),
+            "diagnostics": diagnostics, }
+    return _fit_predict_func
+def makeDAGlobalFitPredictFunc( T_list, *, fit_DA0_func: Callable[..., Any], getParaForDA_func: Callable[..., Any], 
+                               fit_kwargs: Optional[Dict[str, Any]] = None, ) -> FitPredictFunc:
     """Build an adapter around the project's global ``fit_DA0`` function.
     ``fit_DA0_func`` must support the keyword arguments ``verbose`` and
     ``initial_params``. Its existing three-item return convention is retained:
@@ -244,26 +268,20 @@ def makeDAGlobalFitPredictFunc(
         return {
             "fit_result": da_result,
             "fitted_values": fitted_values,
-            "parameters": {
-                "W0_cm3_g": float(W0),
-                "E_J_mol": float(E),
-                "n": float(n),
-            },
+            "parameters": { "W0_cm3_g": float(W0),
+                            "E_J_mol": float(E),
+                            "n": float(n), },
             "success": bool(getattr(da_result, "success", False)),
-            "diagnostics": diagnostics,
-        }
+            "diagnostics": diagnostics, }
     return _fit_predict_func
 def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes = True):
     data = {}
-
     for T, gdf in fits_data.groupby("T_K"):
         label = f"{T - 273.15:.0f}°C"
         gdf = gdf.sort_values("P_Pa")
-
         data[label] = (
             gdf["P_Pa"].values * 1e-3,
             gdf["residuals"].values )
-
     ax = myPlt.plotCurve(
         data=data,
         x="Pressure",
@@ -280,7 +298,6 @@ def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes = True):
         legendPosition="upper left",
         # savepath=figPath,
     )
-
     ax.axhline(0, color="black", linestyle="--", linewidth=1)
     if logAxes:
         ax.set_xscale("log")
@@ -337,22 +354,12 @@ def export_DA_params_custom(DApara_or_dict, file_name="results.xlsx", sheet_name
     if not singleFlag:
         # 全局拟合
         W0, E, n = getParaForDA(DApara_or_dict.params)
-        rows.append({
-            "Temperature_K": "Global",
-            "W0_cm3_g": W0,
-            "E_J_mol": E,
-            "n": n
-        })
+        rows.append({ "Temperature_K": "Global", "W0_cm3_g": W0, "E_J_mol": E, "n": n })
     else:
         # 单温度拟合
         for T, daPara in DApara_or_dict.items():
             W0, E, n = getParaForDA(daPara.params)
-            rows.append({
-                "Temperature_K": T,
-                "W0_cm3_g": W0,
-                "E_J_mol": E,
-                "n": n
-            })
+            rows.append({ "Temperature_K": T, "W0_cm3_g": W0, "E_J_mol": E, "n": n })
     df_export = pd.DataFrame(rows)
     # 使用已有自动导出函数
     fl.export_to_excel_auto(df_export, file_name, sheet_name=sheet_name)
@@ -430,7 +437,7 @@ def residual_DA(params, grouped_data):
         # resid_list.append((q_obs - q_fit)/np.max(q_obs))
     # lmfit 要求一维残差向量
     return np.concatenate(resid_list)
-def fit_DA01(T_list, grouped_data, sheet=None, file=None):
+def fit_DA01(T_list, grouped_data, sheet=None, file=None, verbose=True):
     """
     对每个温度独立拟合 D-A 模型（W0, E, n 都单独拟合）。
     输入：
@@ -461,15 +468,14 @@ def fit_DA01(T_list, grouped_data, sheet=None, file=None):
         # 拟合
         daPara = minimize(residual_DA_single, params, args=(gdf, T), method="leastsq", max_nfev=20000)
         all_DA_results[T] = daPara
-        print(f"Temperature {T} K fit:")
-        print(report_fit(daPara))
+        if verbose:
+            print(f"Temperature {T} K fit:")
+            print(report_fit(daPara))
         # 构建拟合曲线
         W0, E, n = getParaForDA(daPara.params)
         q_fit, W = DA_model(rho, W0, A, E, n)
         # 计算拟合指标
-        residuals, relative_residuals, r2, rmsd = mf.compute_fit_metrics(
-            fit_x=P, fit_y=q_fit, exp_x=P, exp_y=q_exp
-        )
+        residuals, relative_residuals, r2, rmsd = mf.compute_fit_metrics( fit_x=P, fit_y=q_fit, exp_x=P, exp_y=q_exp )
         # 保存结果
         fits_rows.append(pd.DataFrame({
             "T_K": T,
@@ -527,9 +533,7 @@ def fit_DA0(T_list,  grouped_data, sheet = None, file = None,verbose=True, initi
         # 拟合曲线
         q_fit, W = DA_model(rho, W0, A, E, n)
          # 计算 R², RMSD
-        residuals, relative_residuals, r2, rmsd = mf.compute_fit_metrics(
-            fit_x=P, fit_y=q_fit, exp_x=P, exp_y=q_exp
-            )
+        residuals, relative_residuals, r2, rmsd = mf.compute_fit_metrics( fit_x=P, fit_y=q_fit, exp_x=P, exp_y=q_exp )
         all_P.append(P)
         all_q_exp.append(q_exp)
         all_q_fit.append(q_fit)
@@ -549,18 +553,12 @@ def fit_DA0(T_list,  grouped_data, sheet = None, file = None,verbose=True, initi
             "R2": r2,
             "residuals": residuals,
             "relative_residuals": relative_residuals,
-            "RMSD": rmsd
-        }))
+            "RMSD": rmsd }))
     P_all = np.concatenate(all_P)
     q_exp_all = np.concatenate(all_q_exp)
     q_fit_all = np.concatenate(all_q_fit)
     global_residuals, global_relative_residuals, global_r2, global_rmsd = mf.compute_fit_metrics(
-            fit_x=P_all,
-            fit_y=q_fit_all,
-            exp_x=P_all,
-            exp_y=q_exp_all,
-            use_interp=False   # 全局
-        )
+            fit_x=P_all, fit_y=q_fit_all, exp_x=P_all, exp_y=q_exp_all, use_interp=False)   # 全局
     fits_data = pd.concat(fits_rows, ignore_index=True)
     fits_data["global_R2"] = global_r2
     fits_data["global_RMSD"] = global_rmsd
@@ -568,63 +566,46 @@ def fit_DA0(T_list,  grouped_data, sheet = None, file = None,verbose=True, initi
     fits_data["global_relative_residuals"] = global_relative_residuals
     return daPara, fits_data, validSheet
 def fit_DA( rawData, out_path=None, sheet_name=None, run_bootstrap=False, n_bootstrap=1000, random_state=2026, ):
-    """
-    拟合全局 D-A 模型，并可选进行 residual bootstrap。
-    Parameters
-    ----------
-    rawData : DataFrame
-        包含 P_Pa、q_mmol_g、T_K。
-    run_bootstrap : bool
-        是否对全局 D-A 参数进行 residual bootstrap。
-    Returns
-    -------
-    run_bootstrap=False:
-        DAPara, fits_data, DAPara_single, fits_data_single
-    run_bootstrap=True:
-        DAPara, fits_data, DAPara_single, fits_data_single,
-        da_bootstrap, da_ci
-    """
-    # 按温度分组
-    grouped_data = { T: gdf for T, gdf in rawData.groupby("T_K") }
+    """Fit global and single-temperature D-A models with optional residual bootstrap."""
+    grouped_data = {T: gdf for T, gdf in rawData.groupby("T_K")}
     T_list = sorted(grouped_data.keys())
-    # ==================================================
-    # 1. 全局 D-A 拟合
-    # ==================================================
+    # 1. Global D-A fitting
     DAPara, fits_data, validSheet = fit_DA0( T_list, grouped_data, sheet=sheet_name, file=out_path, )
-    # 默认不进行 bootstrap
+    # 2. Single-temperature D-A fitting
+    DAPara_single, fits_data_single, validSheet_single = fit_DA01( T_list, grouped_data, sheet=sheet_name, file=out_path, )
     da_bootstrap = None
     da_ci = None
-    # ==================================================
-    # 2. 可选：全局 D-A 参数的 residual bootstrap
-    # ==================================================
+    da_bootstrap_single = None
+    da_ci_single = None
     if run_bootstrap:
+        # 3. Global D-A residual bootstrap
         da_fit_predict = makeDAGlobalFitPredictFunc( T_list, fit_DA0_func=fit_DA0, getParaForDA_func=getParaForDA, )
-        da_bootstrap = redBoots.runResidualBootstrapAnalysis( grouped_data, da_fit_predict, 
-            response_col="q_mmol_g", n_bootstrap=n_bootstrap, residual_centering="within_group", 
-            random_state=random_state, )
+        da_bootstrap = redBoots.runResidualBootstrapAnalysis( grouped_data, da_fit_predict, response_col="q_mmol_g",
+            n_bootstrap=n_bootstrap, residual_centering="within_group", random_state=random_state, )
         da_ci = redBoots.runResidualBootstrapCIAnalysis( da_bootstrap,
             confidence_interval_func=dop.runConfidenceIntervalAnalysis, confidence_level=0.95, )
-        # 输出 bootstrap 诊断
-        printResidualBootstrapSummary( da_bootstrap,
-            group_labels={ 273.15: "0 °C (273.15 K)",
-                288.15: "15 °C (288.15 K)",
-                298.15: "25 °C (298.15 K)", },
-            response_unit="mmol/g", )
-        printResidualBootstrapSummary( da_bootstrap, ci_result=da_ci,
-            group_labels={ 273.15: "0 °C (273.15 K)",
-                            288.15: "15 °C (288.15 K)",
-                            298.15: "25 °C (298.15 K)", },
-            response_unit="mmol/g", )
-    # ==================================================
-    # 3. 逐温度 D-A 拟合：保留原有逻辑
-    # ==================================================
-    DAPara_single, fits_data_single, validSheet_single = fit_DA01( T_list, grouped_data, sheet=sheet_name, file=out_path, )
-    # ==================================================
-    # 4. 根据是否开启 bootstrap 返回结果
-    # ==================================================
-    if run_bootstrap:
-        return ( DAPara, fits_data, DAPara_single, fits_data_single, da_bootstrap, da_ci, )
-    return ( DAPara, fits_data, DAPara_single, fits_data_single, )
+        # 4. Single-temperature D-A residual bootstrap
+        da_bootstrap_single = {}
+        da_ci_single = {}
+        for T in T_list:
+            single_group = {T: grouped_data[T]}
+            da_fit_predict = makeDASingleFitPredictFunc( T, fit_DA01_func=fit_DA01, getParaForDA_func=getParaForDA, )
+            da_bootstrap_single[T] = redBoots.runResidualBootstrapAnalysis( single_group, da_fit_predict, response_col="q_mmol_g",
+                n_bootstrap=n_bootstrap, residual_centering="within_group", random_state=random_state, )
+            da_ci_single[T] = redBoots.runResidualBootstrapCIAnalysis( da_bootstrap_single[T],
+                confidence_interval_func=dop.runConfidenceIntervalAnalysis, confidence_level=0.95, )
+        # 5. Bootstrap diagnostics
+        group_labels = { 273.15: "0 °C (273.15 K)", 288.15: "15 °C (288.15 K)", 298.15: "25 °C (298.15 K)", }
+        print("\nGlobal D-A Bootstrap:")
+        printResidualBootstrapSummary( da_bootstrap, group_labels=group_labels, response_unit="mmol/g", )
+        printResidualBootstrapSummary( da_bootstrap, ci_result=da_ci, group_labels=group_labels, response_unit="mmol/g", )
+        print("\nSingle-temperature D-A Bootstrap:")
+        for T in T_list:
+            print(f"\nTemperature: {T} K")
+            printResidualBootstrapSummary( da_bootstrap_single[T], response_unit="mmol/g", )
+            printResidualBootstrapSummary( da_bootstrap_single[T], ci_result=da_ci_single[T], response_unit="mmol/g", )
+        return ( DAPara, fits_data, DAPara_single, fits_data_single, da_bootstrap, da_ci, da_bootstrap_single, da_ci_single, )
+    return DAPara, fits_data, DAPara_single, fits_data_single
 def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstrap=False,n_bootstrap=1000):
     da_bootstrap = None
     da_ci = None
@@ -636,23 +617,33 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
     # 拟合 D-A
     fit_result = fit_DA( rawData, out_path, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
     if run_bootstrap:
-        ( DAPara, fits_data, DAPara_single, fits_data_single, da_bootstrap, da_ci, ) = fit_result
+        ( DAPara, fits_data, DAPara_single, fits_data_single, da_bootstrap, da_ci, 
+         da_bootstrap_single, da_ci_single,) = fit_result
     else:
         ( DAPara, fits_data, DAPara_single, fits_data_single, ) = fit_result
     newPath = fl.check_or_create_folder(out_path, sub_folder_name=const.DA_FOLDER)
-    # newFilePath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE)
-    # export_DA_params_custom(DAPara, file_name=newFilePath, sheet_name=const.DA_PARA_SHEET, singleFlag=False)
-    # fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
-    # export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
-    # fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
-    # if run_bootstrap:
-    #     redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
-    #             metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
+    newFilePath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE)
+    export_DA_params_custom(DAPara, file_name=newFilePath, sheet_name=const.DA_PARA_SHEET, singleFlag=False)
+    fl.export_to_excel_auto(fits_data, newFilePath, sheet_name=const.DA_FITS_SHEET)
+    export_DA_params_custom(DAPara_single, file_name=newFilePath, sheet_name=const.DA_BYT_PARA_SHEET, singleFlag=True)
+    fl.export_to_excel_auto(fits_data_single, newFilePath, sheet_name=const.DA_BYT_FITS_SHEET)
+    if run_bootstrap:
+        redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap, ci_result=da_ci, file_name=newFilePath, 
+                metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": "Global fit", }, )
+        for T in da_bootstrap_single:
+            temp_label = f"{int(round(T - 273.15))}C"
+            redBoots.exportBootstrapAnalysisResults( bootstrap_result=da_bootstrap_single[T], ci_result=da_ci_single[T], file_name=newFilePath,
+                metadata={ "Sample": sheet_name, "Model": "D-A", "Analysis": f"Single-temperature fit ({T} K)", },
+                distribution_sheet_name=f"DA_{temp_label}_Distribution", summary_sheet_name=f"DA_{temp_label}_CI", )
     if plotFlag:
         newFigPath = fl.get_expanded_name(newPath, sheet_name, expand=const.DA_FILE, type="png",)
-        poltDA(fits_data, rawData, newFigPath=newFigPath)
+        poltDA(fits_data, rawData, 
+            #    newFigPath=newFigPath
+               )
         newFigPath2 = fl.get_expanded_name(newPath, sheet_name, expand=const.RESIDUAL_FILE, type="png",)
-        plotDAResiduals(fits_data,logAxes=True,figPath=newFigPath2)
+        plotDAResiduals(fits_data,logAxes=True,
+                        # figPath=newFigPath2
+                        )
         poltDA(fits_data_single, rawData, fixedFlag = True)
     return {
         "sample_name": sheet_name,
@@ -671,7 +662,7 @@ def main(file_path=None):
     # 运行设置
     # =========================
     singleFile = True
-    run_bootstrap = False
+    run_bootstrap = True
     n_bootstrap = 10000
     file = ( file_path if file_path is not None else fl.getFile() )
     # 收集全部样品的拟合和 bootstrap 结果
@@ -683,7 +674,7 @@ def main(file_path=None):
     # =========================
     if singleFile:
         sheet_name = "CC-Hy-600-4-1"
-        listData, out_path, _ = fl.readFileBySheet( file, sheet_name, )
+        listData, out_path, _ = fl.readFileBySheet( file, sheet_name, expand="test", )
         result = runDAsimu( listData, out_path, plotFlag=True, sheet_name=sheet_name, run_bootstrap=run_bootstrap, n_bootstrap=n_bootstrap, )
         # 单样品模式不进行样品间比较
         return result
@@ -740,15 +731,8 @@ def main(file_path=None):
         # 方式 B：全部有效样品两两比较
         # 使用时注释掉方式 A，取消下面这部分的注释
         # ==================================================
-        sample_names = [
-            name
-            for name, result in all_sample_results.items()
-            if (
-                result.get("da_bootstrap") is not None
-                and result.get("da_ci") is not None
-            )
-        ]
-        
+        sample_names = [ name for name, result in all_sample_results.items()
+            if ( result.get("da_bootstrap") is not None and result.get("da_ci") is not None ) ]
         sample_pairs = list( combinations(sample_names, 2) )
         # ==================================================
         # 1. 计算 D-A 参数 E 的样品间差值 CI

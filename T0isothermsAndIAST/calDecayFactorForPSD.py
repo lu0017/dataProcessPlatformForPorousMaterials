@@ -12,6 +12,46 @@ import T1plotSource.plotOperation as myPlt
 import T1dataProcessSource.modelAndFit as mf
 def plotCorrelationLOOSensitivity(
     loo_result, statistic="Pearson_r",
+    figsize=(6, 4), xlabel=None, ylabel=None,
+    xlim=None, colors="black",
+    showAnnotation=True, annotationPosition="right",
+    brokenAxis=False, autoBreak=True, xlimSegments=None,
+    **kwargs
+):
+    summary = loo_result["summary"]
+    rows = []
+    for name, stats in summary.items():
+        if not name.endswith(f"_{statistic}"):
+            continue
+        rows.append({
+            "Label": name.replace(f"_{statistic}", ""),
+            "Estimate": stats["baseline"],
+            "Lower": stats["min"],
+            "Upper": stats["max"],
+            "Annotation": ( f"Δmax = {stats['absolute_changes']['max']:.3f}" ),
+        })
+    plot_data = pd.DataFrame(rows)
+    if plot_data.empty:
+        raise ValueError(f"No LOO results found for {statistic}.")
+    if brokenAxis and autoBreak and xlimSegments is None:
+        xlimSegments = dop.getAxisSegments(plot_data)
+        if xlimSegments is None:
+            brokenAxis = False
+    return myPlt.plotErrorBarTemplate(
+        plot_data,
+        figsize=figsize,
+        xlabel=statistic if xlabel is None else xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        colors=colors,
+        showAnnotation=showAnnotation,
+        annotationPosition=annotationPosition,
+        brokenAxis=brokenAxis,
+        xlimSegments=xlimSegments,
+        **kwargs,
+    )
+def plotCorrelationLOOSensitivity0(
+    loo_result, statistic="Pearson_r",
     descriptors=None, figsize=(6, 4),
     colors="black", savepath=None,
     xlim=None, fontsize=12,
@@ -19,22 +59,17 @@ def plotCorrelationLOOSensitivity(
     showChange=False
 ):
     summary = loo_result["summary"]
-
     if descriptors is None:
         descriptors = ["Centroid", "CompetitionIndex", "Skewness"]
-
     if statistic not in ("Pearson_r", "R2"):
         raise ValueError("statistic must be 'Pearson_r' or 'R2'")
-
     labelsize = labelsize or fontsize
     ticksize = ticksize or fontsize
-
     labels = {
         "Centroid": "Centroid",
         "CompetitionIndex": "CompetitionIndex",
         "Skewness": "Skewness"
     }
-
     rows = []
     for descriptor in descriptors:
         key = next(
@@ -44,7 +79,6 @@ def plotCorrelationLOOSensitivity(
         )
         if key is None:
             continue
-
         stats = summary[key]
         rows.append({
             "Descriptor": descriptor,
@@ -55,13 +89,10 @@ def plotCorrelationLOOSensitivity(
             "Mean_abs_change": stats["absolute_changes"]["mean"],
             "Sign_consistency": stats["sign_consistency"]
         })
-
     data = pd.DataFrame(rows)
     if data.empty:
         raise ValueError(f"No results found for {statistic}")
-
     fig, ax = plt.subplots(figsize=figsize)
-
     y = np.arange(len(data))
     estimate = data["Baseline"].to_numpy()
     lower = data["LOO_min"].to_numpy()
@@ -70,7 +101,6 @@ def plotCorrelationLOOSensitivity(
         estimate - lower,
         upper - estimate
     ])
-
     ax.errorbar(
         estimate, y, xerr=xerr,
         fmt="o", markersize=6, capsize=3,
@@ -78,13 +108,11 @@ def plotCorrelationLOOSensitivity(
         color=colors, markeredgecolor="black",
         markeredgewidth=0.5
     )
-
     ax.set_yticks(y)
     ax.set_yticklabels([
         labels.get(d, d) for d in data["Descriptor"]
     ])
     ax.invert_yaxis()
-
     ax.set_xlabel(
         "Pearson correlation coefficient, $r$"
         if statistic == "Pearson_r"
@@ -92,7 +120,6 @@ def plotCorrelationLOOSensitivity(
         fontsize=labelsize
     )
     ax.set_ylabel("PSD descriptor", fontsize=labelsize)
-
     if xlim is not None:
         ax.set_xlim(xlim)
     else:
@@ -100,10 +127,8 @@ def plotCorrelationLOOSensitivity(
         xmax = max(upper.max(), estimate.max())
         margin = max((xmax - xmin) * 0.25, 0.002)
         ax.set_xlim(xmin - margin, xmax + margin)
-
     if statistic == "Pearson_r":
         ax.axvline(0, color="gray", linestyle=":", linewidth=1)
-
     if showChange:
         for yi, row in zip(y, data.itertuples()):
             ax.annotate(
@@ -112,24 +137,82 @@ def plotCorrelationLOOSensitivity(
                 xytext=(5, 0), textcoords="offset points",
                 va="center", fontsize=fontsize - 2
             )
-
     ax.grid(axis="x", linestyle="--", alpha=0.35)
     ax.tick_params(
         axis="both", which="major",
         labelsize=ticksize,
         top=False, right=False
     )
-
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
-
     fig.tight_layout()
-
     if savepath:
         fig.savefig(savepath, dpi=600, bbox_inches="tight")
-
     return ax
 def plotCorrelationBootstrapCI(
+    bootstrap_result, statistic="Pearson_r",
+    descriptors=None, figsize=(6, 5),
+    xlabel=None, ylabel="PSD descriptors",
+    colors="black", xlim=None, showSE=False,
+    textSize=12, labelsize=None, ticksize=None,
+    Unicode=False, savepath=None,
+    brokenAxis=False, autoBreak=True,
+    xlimSegments=None, breakGap=0.08,
+    **kwargs,
+):
+    statistics = bootstrap_result["statistics"]
+    if descriptors is None:
+        descriptors = [
+            key.rsplit(f"_{statistic}", 1)[0]
+            for key in statistics
+            if key.endswith(f"_{statistic}")
+        ]
+    records = []
+    for descriptor in descriptors:
+        key = f"{descriptor}_{statistic}"
+        if key not in statistics:
+            continue
+        result = statistics[key]
+        ci = result["confidence_interval"]
+        records.append({
+            "Label": descriptor,
+            "Estimate": result["estimate"],
+            "Lower": ci[0],
+            "Upper": ci[1],
+            "Annotation": (
+                f"SE={result['bootstrap_standard_error']:.3f}"
+                if showSE else None
+            ),
+        })
+    plot_data = pd.DataFrame(records)
+    if plot_data.empty:
+        raise ValueError( f"No valid bootstrap results found for {statistic}." )
+    if xlabel is None:
+        xlabel = statistic
+    if brokenAxis and autoBreak and xlimSegments is None:
+        xlimSegments = dop.getAxisSegments(plot_data)
+        if xlimSegments is None:
+            brokenAxis = False
+    ax = myPlt.plotErrorBarTemplate(
+        plot_data,
+        figsize=figsize,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        colors=colors,
+        xlim=xlim,
+        showAnnotation=showSE,
+        textSize=textSize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+        Unicode=Unicode,
+        savepath=savepath,
+        brokenAxis=brokenAxis,
+        xlimSegments=xlimSegments,
+        breakGap=breakGap,
+        **kwargs,
+    )
+    return ax
+def plotCorrelationBootstrapCI0(
     bootstrap_result, statistic="Pearson_r",
     descriptors=None, figsize=(6, 4),
     colors="black", savepath=None,
@@ -138,22 +221,17 @@ def plotCorrelationBootstrapCI(
     showSE=False
 ):
     statistics = bootstrap_result["statistics"]
-
     if descriptors is None:
         descriptors = ["Centroid", "CompetitionIndex", "Skewness"]
-
     if statistic not in ("Pearson_r", "R2"):
         raise ValueError("statistic must be 'Pearson_r' or 'R2'")
-
     labelsize = labelsize or fontsize
     ticksize = ticksize or fontsize
-
     labels = {
         "Centroid": "Centroid",
         "CompetitionIndex": "CompetitionIndex",
         "Skewness": "Skewness"
     }
-
     rows = []
     for descriptor in descriptors:
         key = next(
@@ -163,10 +241,8 @@ def plotCorrelationBootstrapCI(
         )
         if key is None:
             continue
-
         stats = statistics[key]
         ci = stats["confidence_interval"]
-
         rows.append({
             "Descriptor": descriptor,
             "Estimate": stats["estimate"],
@@ -174,19 +250,15 @@ def plotCorrelationBootstrapCI(
             "CI_Upper": ci[1],
             "Bootstrap_SE": stats["bootstrap_standard_error"]
         })
-
     data = pd.DataFrame(rows)
     if data.empty:
         raise ValueError(f"No results found for {statistic}")
-
     fig, ax = plt.subplots(figsize=figsize)
-
     y = np.arange(len(data))
     estimate = data["Estimate"].to_numpy()
     lower = data["CI_Lower"].to_numpy()
     upper = data["CI_Upper"].to_numpy()
     xerr = np.vstack([estimate - lower, upper - estimate])
-
     ax.errorbar(
         estimate, y, xerr=xerr,
         fmt="o", markersize=6, capsize=3,
@@ -194,13 +266,11 @@ def plotCorrelationBootstrapCI(
         color=colors, markeredgecolor="black",
         markeredgewidth=0.5
     )
-
     ax.set_yticks(y)
     ax.set_yticklabels([
         labels.get(d, d) for d in data["Descriptor"]
     ])
     ax.invert_yaxis()
-
     ax.set_xlabel(
         "Pearson correlation coefficient, $r$"
         if statistic == "Pearson_r"
@@ -208,7 +278,6 @@ def plotCorrelationBootstrapCI(
         fontsize=labelsize
     )
     ax.set_ylabel("PSD descriptor", fontsize=labelsize)
-
     if xlim is not None:
         ax.set_xlim(xlim)
     else:
@@ -216,10 +285,8 @@ def plotCorrelationBootstrapCI(
         xmax = max(upper.max(), estimate.max())
         margin = max((xmax - xmin) * 0.25, 0.002)
         ax.set_xlim(xmin - margin, xmax + margin)
-
     if statistic == "Pearson_r":
         ax.axvline(0, color="gray", linestyle=":", linewidth=1)
-
     if showSE:
         for yi, row in zip(y, data.itertuples()):
             ax.annotate(
@@ -228,22 +295,17 @@ def plotCorrelationBootstrapCI(
                 xytext=(5, 0), textcoords="offset points",
                 va="center", fontsize=fontsize - 2
             )
-
     ax.grid(axis="x", linestyle="--", alpha=0.35)
     ax.tick_params(
         axis="both", which="major",
         labelsize=ticksize,
         top=False, right=False
     )
-
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
-
     fig.tight_layout()
-
     if savepath:
         fig.savefig(savepath, dpi=600, bbox_inches="tight")
-
     return ax
 def plotCorrelationWithValidation(
     result, new_samples,
@@ -256,21 +318,17 @@ def plotCorrelationWithValidation(
     labels=None, legend_loc="best"
 ):
     from matplotlib.lines import Line2D
-
     fig, ax = plt.subplots(figsize=figsize)
-
     # 1. Original samples
     myPlt._plotCorrelation(
         ax, result, xlabel, ylabel,
         text_position, figsize, "top",
         "linear", "linear"
     )
-
     # Change original scatter points to gray
     for collection in ax.collections:
         collection.set_facecolor("0.65")
         collection.set_edgecolor("none")
-
     # 2. Validation samples
     handles = [
         Line2D(
@@ -279,19 +337,15 @@ def plotCorrelationWithValidation(
             markersize=8, label="Original samples"
         )
     ]
-
     if labels is None:
         labels = list(new_samples.keys())
-
     for i, (name, (x, y)) in enumerate(new_samples.items()):
         color = colors[i % len(colors)]
-
         ax.scatter(
             x, y, marker=marker, s=markersize,
             color=color, edgecolor=edgecolor,
             linewidth=linewidth, zorder=10
         )
-
         handles.append(
             Line2D(
                 [], [], marker=marker, linestyle="none",
@@ -301,10 +355,8 @@ def plotCorrelationWithValidation(
                 label=labels[i] if i < len(labels) else name
             )
         )
-
     ax.legend(handles=handles, loc=legend_loc)
     fig.tight_layout()
-
     return fig, ax
 def getValidationSamples(kineticdata, metrics, prefix="CC-"):
     parameters = {
@@ -314,13 +366,11 @@ def getValidationSamples(kineticdata, metrics, prefix="CC-"):
         "Centroid": metrics,
         "Skewness": metrics
     }
-
     def normalizeIndex(index):
         return {
             str(idx) if str(idx).startswith(prefix) else prefix + str(idx): idx
             for idx in index
         }
-
     indices = {
         name: normalizeIndex(data.index)
         for name, data in {
@@ -328,21 +378,16 @@ def getValidationSamples(kineticdata, metrics, prefix="CC-"):
             "metrics": metrics
         }.items()
     }
-
     common = sorted(set(indices["kinetic"]) & set(indices["metrics"]))
-
     result = pd.DataFrame(index=common)
-
     for parameter, source in parameters.items():
         source_index = indices[
             "kinetic" if source is kineticdata else "metrics"
         ]
-
         result[parameter] = [
             source.loc[source_index[sample], parameter]
             for sample in common
         ]
-
     return result
 def flattenNestedResult(obj, analysis_name):
     """
@@ -1766,21 +1811,21 @@ def main(file_path=None):
     kineticdata = dop.naturalSortData(kineticdata)
     metrics = calculatePSDMetrics(psdData, regions)
     # ##################### 同时计算两个kernal的数据##############
-    psd_sheet_dft = "PSD-DFT-CO2"
-    psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
-    out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
-    psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
-    metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
-    metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
-    metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
-    xColumns = [
-        "GCMC_Centroid",
-        "GCMC_CompetitionIndex",
-        "GCMC_Skewness",
-        "DFT_Centroid",
-        "DFT_CompetitionIndex",
-        "DFT_Skewness",
-        ]
+    # psd_sheet_dft = "PSD-DFT-CO2"
+    # psdData_dft, out_path_dft0, validFile, pdsMeta = fl.readFileBySheetWithMultiLevelHeader(file, psd_sheet_dft )
+    # out_path = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all0809", expandPos=False)
+    # psdData_dft = dop.naturalSortData(psdData_dft,axis=1)
+    # metrics_GCMC = calculatePSDMetrics(psdData, regions_GCMC, prefix="GCMC")
+    # metrics_dft = calculatePSDMetrics(psdData_dft, regions_DFT, prefix="DFT")
+    # metrics = pd.concat( [metrics_GCMC, metrics_dft], axis=1 )
+    # xColumns = [
+    #     "GCMC_Centroid",
+    #     "GCMC_CompetitionIndex",
+    #     "GCMC_Skewness",
+    #     "DFT_Centroid",
+    #     "DFT_CompetitionIndex",
+    #     "DFT_Skewness",
+    #     ]
     # ##################### 结束同时计算两个kernal的数据##############
     X, Y, summary, results = dop.crossCorrelationAnalysis( metrics, kineticdata,xColumns,yColumns=None )
     X_metrix, Y_metrix, summary_metrix, results_metrix = dop.matrixCorrelationAnalysis( metrics, kineticdata)
@@ -1816,28 +1861,31 @@ def main(file_path=None):
     # fl.export_to_excel_auto( metrics, filename=out_path, sheet_name="metrics" )
     # fl.exportCorrelationExcel( out_path, X, Y, summary, X_matrix=None, Y_matrix=None, summary_matrix=summary_metrix )
     # # ##################### 结束保存数据到excel##############
-
     # # #######################进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
-    # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics=kineticdata, kineticdata=kineticdata, metric_names=[ "sel_henry",], 
-    #         target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
-    #         n_bootstrap=10000, confidence_level=0.95, random_state=42, )
+    # statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics=kineticdata, kineticdata=kineticdata, 
+    #         metric_names=[ "sel_henry",], target_names=["E (J/mol)"], regions = regions, 
+    #         statistic_names=("Pearson_r", "R2"), n_bootstrap=10000, confidence_level=0.95, random_state=42, )
+    statisticAnalysis=staristicAnalysisForPSDdecay( psdData, metrics=metrics, kineticdata=kineticdata, 
+                metric_names=[ "Centroid", "CompetitionIndex", "Skewness" ], 
+                target_names=["E (J/mol)"], regions = regions, statistic_names=("Pearson_r", "R2"), 
+                n_bootstrap=10000, confidence_level=0.95, random_state=42, )
     # # folder= fl.getPathOnly(file_path=out_path)
     # # figName_r=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_r", expandPos=True, type="png", )
     # # figName_R2=fl.get_expanded_name(folder, fileName="GCMCbootstrap_E_R2", expandPos=True, type="png", )
-    # # ax_r = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="Pearson_r", figsize=(6, 4),  
-    # #                                 #   savepath=figName_r 
-    # #                                   )
-    # # ax_r2 = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="R2", figsize=(6, 4), xlim=(0.92, 1.02), 
-    # #                                       savepath=figName_R2 
-    # #                                       )
+    ax_r = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="Pearson_r", figsize=(6, 4),  brokenAxis=True,
+                                    #   savepath=figName_r 
+                                      )
+    ax_r2 = plotCorrelationBootstrapCI( statisticAnalysis["bootstrap_result"], statistic="R2", figsize=(6, 4), xlim=(0.90, 1.02), 
+                                        #   savepath=figName_R2 
+                                          )
     # # figName_LOOr=fl.get_expanded_name(folder, fileName="GCMCLOO_E_r", expandPos=True, type="png", )
     # # figName_LOOR2=fl.get_expanded_name(folder, fileName="GCMCLOO_E_R2", expandPos=True, type="png", )
-    # # ax_r = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="Pearson_r", figsize=(6, 4), 
-    # #                                     #   savepath=figName_LOOr 
-    # #                                       )
-    # # ax_r2 = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="R2", figsize=(6, 4), xlim=(0.94, 1.00), 
-    # #                                       savepath=figName_LOOR2
-    # #                                       )
+    ax_r = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="Pearson_r", figsize=(6, 4), brokenAxis=True,
+                                        #   savepath=figName_LOOr 
+                                          )
+    ax_r2 = plotCorrelationLOOSensitivity( statisticAnalysis["loo_result"], statistic="R2", figsize=(6, 4), xlim=(0.94, 1.00), 
+                                        #   savepath=figName_LOOR2
+                                          )
     # # plt.show(block=False)
     # # offsets = (-0.1,-0.05, -0.025, 0.0, 0.025, 0.05,0.1)
     # # ci_sensitivity_result = runCompetitionIndexSensitivityAnalysis( psdData=psdData, target_data=kineticdata, 
@@ -1846,7 +1894,6 @@ def main(file_path=None):
     #                        metrics=metrics, filename=out_path, correlation_export={ 
     #                            "X": X, "Y": Y, "summary": summary, "X_matrix": None, "Y_matrix": None, "summary_matrix": summary_metrix, }, )
     # ######################结束进行bootstrap leave-one-out PCA VIF Partial_correlation分析###################################
-
     # # ##################### 输出图片部分##############
     # myPlt.plotBarByMetrics(metrics, columns=xColumns)
     # myPlt.plotBar(metrics.index, metrics["HighLowRatio"], xlabel="Sample",ylabel="HighLowRatio", figsize=(4.5, 3.5),gradientFlag=True,savepath="DFT-HighLowRatio")
@@ -1876,7 +1923,6 @@ def main(file_path=None):
     #                             )
     # myPlt.plotBatchCorrelation(results, topN=9)
     # # ##################### 结束输出图片部分##############
-    
     ######################进行验证样品补充###################################
     # psdData_check, out_path, _, _ = fl.readFileBySheetWithMultiLevelHeader(file, sheet_name="PSD-GCMC-CO2-CHECK", expand="newSample")
     # kineticdata_check, _ = fl.readTableBySheet(file, sheet_name="thermalkinetic-CHECK")
@@ -1885,22 +1931,17 @@ def main(file_path=None):
     # new_samples0 = { sample: (row["E (J/mol)"], row["SELE pyIAST"]) for sample, row in new_samples.iterrows() }
     # plotCorrelationWithValidation( results_metrix["E (J/mol)"]["SELE pyIAST"], 
     #                 new_samples0, xlabel="E", ylabel="sele", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
-    
     # new_samples2 = { sample: (row["Centroid"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
     # plotCorrelationWithValidation( results_metrix["Centroid"]["E (J/mol)"], 
     #                 new_samples2, xlabel="Centroid", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
-    
     # new_samples3 = { sample: (row["CompetitionIndex"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
     # plotCorrelationWithValidation( results_metrix["CompetitionIndex"]["E (J/mol)"], 
     #                 new_samples3, xlabel="CompetitionIndex", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
-        
     # new_samples3 = { sample: (row["Skewness"], row["E (J/mol)"]) for sample, row in new_samples.iterrows() }
     # plotCorrelationWithValidation( results_metrix["Skewness"]["E (J/mol)"], 
     #                 new_samples3, xlabel="Skewness", ylabel="E", text_position=(0.1, 0.95), figsize=(4.5, 3.5), colors=("orange", "red") )
-    
-    # plt.show(block=False)
+    plt.show(block=False)
     ######################结束进行验证样品补充###################################
-
     exclude = [
         "Variance",
         "Std"
@@ -1940,7 +1981,7 @@ def main(file_path=None):
     order = include
     figureName = fl.get_expanded_name(out_path, fileName = "correlationMetrix", expand="all1103", expandPos=True, type="png")
     myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",order= order, include=include,cmap="RdBu_r",decimals=2,
-                          savePath = figureName
+                        #   savePath = figureName
                           )
     # myPlt.plotCorrelogram(results = results_metrix, textValue="Pearson_r",cmap="RdBu_r",decimals=2,
     #                         #   savePath = figureName
