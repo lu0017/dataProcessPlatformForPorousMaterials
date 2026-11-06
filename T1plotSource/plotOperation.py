@@ -201,11 +201,7 @@ def sampleColors(colors, n):
         return []
     if n == 1:
         return [colors[0]]
-    idx = np.linspace(
-        0,
-        len(colors) - 1,
-        n
-    )
+    idx = np.linspace( 0, len(colors) - 1, n )
     # Interpolate between adjacent colors when necessary
     sampled = []
     for pos in idx:
@@ -339,25 +335,11 @@ def createAxes( ax=None, figsize=(5, 4), xbreak=None, xrange=None, reverse_x=Fal
     else:
         # 两段实际数据范围
         if reverse_x:
-            width_ratios = [
-                abs(xrange[1] - xbreak[1]),
-                abs(xbreak[0] - xrange[0]),
-            ]
+            width_ratios = [ abs(xrange[1] - xbreak[1]), abs(xbreak[0] - xrange[0]), ]
         else:
-            width_ratios = [
-                abs(xbreak[0] - xrange[0]),
-                abs(xrange[1] - xbreak[1]),
-            ]
-    fig, (ax1, ax2) = plt.subplots(
-        1,
-        2,
-        figsize=figsize,
-        sharey=True,
-        gridspec_kw={
-            "width_ratios": width_ratios,
-            "wspace": 0.04,
-        },
-    )
+            width_ratios = [ abs(xbreak[0] - xrange[0]), abs(xrange[1] - xbreak[1]), ]
+    fig, (ax1, ax2) = plt.subplots( 1, 2, figsize=figsize, sharey=True, 
+                                   gridspec_kw={ "width_ratios": width_ratios, "wspace": 0.04, }, )
     # 去掉中间边框
     ax1.spines["right"].set_visible(False)
     ax2.spines["left"].set_visible(False)
@@ -382,14 +364,8 @@ def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
         cmap = LinearSegmentedColormap.from_list( "bar_gradient", [ bottom_color, top_color, ] )
         y_start = 0 if height > 0 else height
         for i in range(steps):
-            rect = Rectangle(
-                ( x, y_start + abs(height)*i/steps ),
-                width,
-                abs(height)/steps,
-                facecolor=cmap(i/steps),
-                edgecolor="none",
-                zorder=1,
-            )
+            rect = Rectangle( ( x, y_start + abs(height)*i/steps ), width, abs(height)/steps, 
+                             facecolor=cmap(i/steps), edgecolor="none", zorder=1, )
             ax.add_patch(rect)
         bar.set_facecolor("none")
         bar.set_edgecolor("black")
@@ -443,17 +419,8 @@ def scatterSphere(
     x = np.asarray(x)
     y = np.asarray(y)
     # ---------- Base marker ----------
-    ax.scatter(
-        x,
-        y,
-        s=s,
-        c=color,
-        edgecolors=edgecolor,
-        linewidths=linewidth,
-        marker=marker,
-        label=label,
-        zorder=zorder,
-    )
+    ax.scatter( x, y, s=s, c=color, edgecolors=edgecolor, linewidths=linewidth, marker=marker, 
+               label=label, zorder=zorder, )
     if not highlight:
         return
     # ---------- Highlight ----------
@@ -465,16 +432,8 @@ def scatterSphere(
         dy = (y.max() - y.min()) * 0.0035
     else:
         dy = 0
-    ax.scatter(
-        x - dx,
-        y + dy,
-        s=s * highlight_size,
-        c="white",
-        alpha=highlight_alpha,
-        linewidths=0,
-        marker=marker,
-        zorder=zorder + 1,
-    )
+    ax.scatter( x - dx, y + dy, s=s * highlight_size, c="white", alpha=highlight_alpha, linewidths=0, 
+               marker=marker, zorder=zorder + 1, )
 def buildCurveLegend(
     sample_names,
     color_list,
@@ -524,43 +483,21 @@ def buildCurveLegend(
         # --------------------------
         # Experimental data
         # --------------------------
-        handles.append(
-            Line2D(
-                [],
-                [],
-                color=color if line else "none",
-                linestyle=linestyle if line else "None",
-                linewidth=linewidth,
-                marker="o" if marker else None,
-                markersize=ms if marker else 0,
-                markerfacecolor=color,
-                markeredgecolor=markeredgecolor,
-                label=display_name,
-            )
-        )
+        handles.append( Line2D( [], [], color=color if line else "none", linestyle=linestyle if line else "None", 
+                               linewidth=linewidth, marker="o" if marker else None, markersize=ms if marker else 0, 
+                               markerfacecolor=color, markeredgecolor=markeredgecolor, label=display_name, ) )
         # --------------------------
         # Fitted curve
         # --------------------------
         if fit:
             if isinstance(fit_label, dict):
                 # Dictionary value is the complete fit legend name.
-                fit_display_name = fit_label.get(
-                    name,
-                    f"{display_name} Fit",
-                )
+                fit_display_name = fit_label.get( name, f"{display_name} Fit", )
             else:
                 # String value is appended as a suffix.
                 fit_display_name = f"{display_name} {fit_label}"
-            handles.append(
-                Line2D(
-                    [],
-                    [],
-                    color=color,
-                    linestyle=fit_linestyle,
-                    linewidth=fit_linewidth,
-                    label=fit_display_name,
-                )
-            )
+            handles.append( Line2D( [], [], color=color, linestyle=fit_linestyle, linewidth=fit_linewidth, 
+                                   label=fit_display_name, ) )
     return handles
 def removeDuplicateLegend(handles):
     """
@@ -623,31 +560,16 @@ def annotateBars(
         values = [bar.get_height() for bar in bars]
     for bar, value in zip(bars, values):
         if inside:
-            xy = (
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() * position,
-            )
+            xy = ( bar.get_x() + bar.get_width() / 2, bar.get_height() * position, )
             xytext = (0, 0)
             textcoords = "offset points"
             va = "center"
         else:
-            xy = (
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height(),
-            )
+            xy = ( bar.get_x() + bar.get_width() / 2, bar.get_height(), )
             xytext = (0, offset)
             textcoords = "offset points"
-        text = ax.annotate(
-            f"{value:{fmt}}",
-            xy=xy,
-            xytext=xytext,
-            textcoords=textcoords,
-            ha=ha,
-            va=va,
-            rotation=rotation,
-            fontsize=fontsize,
-            color=color,
-        )
+        text = ax.annotate( f"{value:{fmt}}", xy=xy, xytext=xytext, textcoords=textcoords, ha=ha, va=va, 
+                           rotation=rotation, fontsize=fontsize, color=color, )
         # 标记为柱状图数值标签，避免 applyTextStyle 修改
         text.set_gid("barvalue")
 def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, ):
@@ -756,19 +678,10 @@ def applyLegend(
     # ==================================================
     # Draw
     # ==================================================
-    kwargs = dict(
-        frameon=frameon,
-        ncol=ncol,
-        fontsize=fontsize,
-    )
+    kwargs = dict( frameon=frameon, ncol=ncol, fontsize=fontsize, )
     if cfg["anchor"] is not None:
         kwargs["bbox_to_anchor"] = cfg["anchor"]
-    host.legend(
-        handles,
-        labels,
-        loc=cfg["loc"],
-        **kwargs,
-    )
+    host.legend( handles, labels, loc=cfg["loc"], **kwargs, )
 def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
     """
     Set fixed major tick interval and style.
@@ -828,13 +741,7 @@ def setMinorTicks( ax, axis="x", minor_step=None, direction="in", length=3, widt
     ax.tick_params( which="minor", direction=direction, length=length, width=width, )
 def applyAxisStyle(ax):
     """Apply default axis style."""
-    ax.tick_params(
-        axis="both",
-        which="both",
-        direction="in",
-        top=False,
-        right=False
-    )
+    ax.tick_params( axis="both", which="both", direction="in", top=False, right=False )
 def saveFigure( fig, savepath=None, dpi=300, transparent=False, ):
     """
     Save figure.
@@ -852,20 +759,10 @@ def _drawErrorBarSegment(
         lo_clip = max(lo, xmin)
         hi_clip = min(hi, xmax)
         if lo_clip <= hi_clip:
-            ax.hlines(
-                y[i], lo_clip, hi_clip,
-                color=colors, linewidth=linewidth, zorder=2,
-            )
-            ax.vlines(
-                [lo_clip, hi_clip],
-                y[i] - capsize, y[i] + capsize,
-                color=colors, linewidth=linewidth, zorder=2,
-            )
+            ax.hlines( y[i], lo_clip, hi_clip, color=colors, linewidth=linewidth, zorder=2, )
+            ax.vlines( [lo_clip, hi_clip], y[i] - capsize, y[i] + capsize, color=colors, linewidth=linewidth, zorder=2, )
         if xmin <= est <= xmax:
-            ax.scatter(
-                est, y[i], color=colors,
-                s=markersize ** 2, zorder=3,
-            )
+            ax.scatter( est, y[i], color=colors, s=markersize ** 2, zorder=3, )
         if showAnnotation and "Annotation" in data.columns:
             annotation = data.iloc[i]["Annotation"]
             if pd.isna(annotation) or annotation == "":
@@ -877,10 +774,7 @@ def _drawErrorBarSegment(
             else:
                 xpos, ha = est, "center"
             if xmin <= xpos <= xmax:
-                ax.annotate(
-                    str(annotation), (xpos, y[i]),
-                    ha=ha, va="center", fontsize=textSize,
-                )
+                ax.annotate( str(annotation), (xpos, y[i]), ha=ha, va="center", fontsize=textSize, )
 def plotErrorBarTemplate(
     data, ax=None, figsize=(6, 5),
     xlabel=None, ylabel=None, xlim=None,
@@ -911,9 +805,7 @@ def plotErrorBarTemplate(
     missing = required - set(data.columns)
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
-    data = data.copy().dropna(
-        subset=["Estimate", "Lower", "Upper"]
-    )
+    data = data.copy().dropna( subset=["Estimate", "Lower", "Upper"] )
     if data.empty:
         raise ValueError("No valid data available for plotting.")
     estimate = data["Estimate"].to_numpy(dtype=float)
@@ -923,27 +815,15 @@ def plotErrorBarTemplate(
         raise ValueError("Lower bounds must not exceed upper bounds.")
     if brokenAxis:
         if xlimSegments is None or len(xlimSegments) != 2:
-            raise ValueError(
-                "brokenAxis=True requires two xlimSegments."
-            )
+            raise ValueError( "brokenAxis=True requires two xlimSegments." )
         segments = sorted(xlimSegments, key=lambda x: x[0])
         if segments[0][1] >= segments[1][0]:
             raise ValueError("The x-axis segments must not overlap.")
         if ax is not None:
-            raise ValueError(
-                "Pass ax=None when using brokenAxis=True."
-            )
-        widths = [
-            max(xmax - xmin, 0.01)
-            for xmin, xmax in segments
-        ]
-        fig, axes = plt.subplots(
-            1, 2, sharey=True, figsize=figsize,
-            gridspec_kw={
-                "width_ratios": [1, 1],
-                "wspace": breakGap,
-            },
-        )
+            raise ValueError( "Pass ax=None when using brokenAxis=True." )
+        widths = [ max(xmax - xmin, 0.01) for xmin, xmax in segments ]
+        fig, axes = plt.subplots( 1, 2, sharey=True, figsize=figsize,
+            gridspec_kw={ "width_ratios": [1, 1], "wspace": breakGap, }, )
         axes = list(axes)
     else:
         if ax is None:
@@ -953,10 +833,7 @@ def plotErrorBarTemplate(
         axes = [ax]
         segments = [xlim] if xlim is not None else [None]
     y = np.arange(len(data))
-    labels = [
-        formatLabel(v, Unicode=Unicode)
-        for v in data["Label"]
-    ]
+    labels = [ formatLabel(v, Unicode=Unicode) for v in data["Label"] ]
     for i, current_ax in enumerate(axes):
         applyAxisStyle(current_ax)
         if brokenAxis:
@@ -970,47 +847,26 @@ def plotErrorBarTemplate(
             margin = max((xmax - xmin) * 0.05, abs(xmin) * 0.01, 1e-12)
             current_ax.set_xlim(xmin - margin, xmax + margin)
         xmin, xmax = current_ax.get_xlim()
-        _drawErrorBarSegment(
-            current_ax, data, y,
-            estimate, lower, upper,
-            xmin, xmax, colors, markersize,
-            linewidth, capsize, showAnnotation,
-            annotationPosition, annotationOffset, textSize,
-        )
-        current_ax.grid(
-            axis="x", linestyle="--", alpha=0.4
-        )
+        _drawErrorBarSegment( current_ax, data, y, estimate, lower, upper, xmin, xmax, colors, markersize,
+            linewidth, capsize, showAnnotation, annotationPosition, annotationOffset, textSize, )
+        current_ax.grid( axis="x", linestyle="--", alpha=0.4 )
         for spine in current_ax.spines.values():
             spine.set_visible(True)
-
         current_ax.tick_params( axis="both", which="both", top=False, right=False, )
-        applyTextStyle(
-            ax=current_ax, fig=fig,
-            labelsize=textSize if labelsize is None else labelsize,
-            ticksize=textSize if ticksize is None else ticksize,
-            annotationsize=textSize,
-        )
+        applyTextStyle( ax=current_ax, fig=fig, labelsize=textSize if labelsize is None else labelsize,
+            ticksize=textSize if ticksize is None else ticksize, annotationsize=textSize, )
     axes[0].set_yticks(y)
     axes[0].set_yticklabels(labels)
     axes[0].invert_yaxis()
-    axes[0].set_ylabel(
-        applyLabel("", ylabel, Unicode=Unicode)
-    )
+    axes[0].set_ylabel( applyLabel("", ylabel, Unicode=Unicode) )
     if brokenAxis:
         axes[0].spines["right"].set_visible(False)
         axes[1].spines["left"].set_visible(False)
         axes[1].tick_params( axis="y", left=False, labelleft=False )
         if breakMark:
             d = 0.012
-            mark_kwargs = {
-                "color": "k",
-                "clip_on": False,
-                "linewidth": 1,
-            }
-            axes[0].plot(
-                (1-d, 1+d), (-d, +d),
-                transform=axes[0].transAxes, **mark_kwargs,
-            )
+            mark_kwargs = { "color": "k", "clip_on": False, "linewidth": 1, }
+            axes[0].plot( (1-d, 1+d), (-d, +d), transform=axes[0].transAxes, **mark_kwargs, )
             axes[0].plot( (1-d, 1+d), (1-d, 1+d), transform=axes[0].transAxes, **mark_kwargs, )
             axes[1].plot( (-d, +d), (-d, +d), transform=axes[1].transAxes, **mark_kwargs, )
             axes[1].plot( (-d, +d), (1-d, 1+d), transform=axes[1].transAxes, **mark_kwargs, )
@@ -1089,14 +945,7 @@ def plotSpectrum(
             Y = Y + i * offset
         segments = splitSpectrum( X, Y, xbreak=xbreak, reverse_x=reverse_x, )
         for ax_i, (Xs, Ys) in zip(axes, segments):
-            ax_i.plot(
-                Xs,
-                Ys,
-                color=colors[i % len(colors)],
-                linewidth=linewidth,
-                linestyle=linestyle,
-                label=sample,
-            )
+            ax_i.plot( Xs, Ys, color=colors[i % len(colors)], linewidth=linewidth, linestyle=linestyle, label=sample, )
     # ==================================================
     # Axis Style
     # ==================================================
@@ -1274,20 +1123,9 @@ def plotCurve(
     # Legend
     # --------------------------------------------------
     if legend:
-        handles = buildCurveLegend(
-            sample_names=sample_names,
-            color_list=color_list,
-            marker=marker,
-            line=line,
-            fit=(fit is not None),
-            fit_label=fit_label,
-            linewidth=linewidth,
-            linestyle=linestyle,
-            fit_linewidth=fit_linewidth,
-            fit_linestyle=fit_linestyle,
-            markersize=markersize,
-            original_labels=original_labels,
-        )
+        handles = buildCurveLegend( sample_names=sample_names, color_list=color_list, marker=marker, line=line, 
+            fit=(fit is not None), fit_label=fit_label, linewidth=linewidth, linestyle=linestyle,
+            fit_linewidth=fit_linewidth, fit_linestyle=fit_linestyle, markersize=markersize, original_labels=original_labels, )
         applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, )
     # --------------------------------------------------
     # Text styling
@@ -1312,16 +1150,11 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
     applyAxisStyle(ax)
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
-    ax.text(
-        text_position[0],
+    ax.text( text_position[0],
         text_position[1],
-        (
-        f"{applyLabel('R2')} = {result['R2']:.3f}\n"
-        f"{applyLabel('Pearson_r')} = {result['Pearson_r']:.3f}"
-        ),
-        transform=ax.transAxes,
-        va=pos
-    )
+        ( f"{applyLabel('R2')} = {result['R2']:.3f}\n"
+        f"{applyLabel('Pearson_r')} = {result['Pearson_r']:.3f}" ),
+        transform=ax.transAxes, va=pos )
     ax.plot( x[idx], y_fit[idx], color="red", linewidth=2 )
     colors = ColorPalette.get(USING_COLOR, len(x))
     scatterSphere( ax, x, y, color=colors, s=70 )
@@ -1433,17 +1266,8 @@ def plotBar( x, y, xlabel=None, ylabel=None, title=None, rotation=45, ax=None, f
     ax.tick_params(axis="x", rotation=rotation)
     # 论文风格：刻度朝内，仅左、下有刻度
     if showValue:
-        annotateBars(
-            ax,
-            bars,
-            fmt=valueFmt,
-            offset=valueOffset,
-            fontsize=valueFontsize,
-            color="white",
-            rotation=valueRotation,
-            inside=valueInside,
-            position=valuePosition,
-        )
+        annotateBars( ax, bars, fmt=valueFmt, offset=valueOffset, fontsize=valueFontsize,
+            color="white", rotation=valueRotation, inside=valueInside, position=valuePosition, )
     applyAxisStyle(ax)
     applyTextStyle( ax=ax, labelsize=16, ticksize=14, annotationsize=16 )
     if savepath is not None:
@@ -1603,21 +1427,9 @@ def _drawLowerTriangle(
             elif sizeTransform == "none":
                 area = circleScale * size
             else:
-                raise ValueError(
-                    f"Unknown sizeTransform: {sizeTransform}"
-                )
-            scatter = ax.scatter(
-                j,
-                i,
-                s=area,
-                c=[color],
-                cmap=cmap,
-                norm=norm,
-                edgecolors=edgeColor,
-                linewidths=edgeWidth,
-                alpha=alpha,
-                zorder=3,
-            )
+                raise ValueError( f"Unknown sizeTransform: {sizeTransform}" )
+            scatter = ax.scatter( j, i, s=area, c=[color], cmap=cmap, norm=norm,
+                edgecolors=edgeColor, linewidths=edgeWidth, alpha=alpha, zorder=3, )
     return scatter
 def _drawUpperTriangle(
     ax,
@@ -1646,11 +1458,7 @@ def _drawUpperTriangle(
     if norm is None:
         norm = Normalize(vmin=-1, vmax=1)
     if significanceLevels is None:
-        significanceLevels = {
-            0.001: "***",
-            0.01: "**",
-            0.05: "*",
-        }
+        significanceLevels = { 0.001: "***", 0.01: "**", 0.05: "*", }
     cmapObj = plt.get_cmap(cmap)
     n = VALUE.shape[0]
     for i in range(n):
@@ -1668,17 +1476,7 @@ def _drawUpperTriangle(
                         if p <= level:
                             text += stars
                             break
-            ax.text(
-                j,
-                i,
-                text,
-                ha="center",
-                va="center",
-                fontsize=fontSize,
-                fontweight=fontWeight,
-                color=color,
-                zorder=4,
-            )
+            ax.text( j, i, text, ha="center", va="center", fontsize=fontSize, fontweight=fontWeight, color=color, zorder=4, )
 def _drawDiagonal(ax, labels, mode="label", fontSize=11, fontWeight="bold"):
     """
     Draw diagonal cells.
@@ -1698,16 +1496,7 @@ def _drawDiagonal(ax, labels, mode="label", fontSize=11, fontWeight="bold"):
         return
     n = len(labels)
     for i in range(n):
-        ax.text(
-            i,
-            i,
-            labels[i],
-            ha="center",
-            va="center",
-            fontsize=fontSize,
-            fontweight=fontWeight,
-            zorder=5
-        )
+        ax.text( i, i, labels[i], ha="center", va="center", fontsize=fontSize, fontweight=fontWeight, zorder=5 )
 def _drawGrid(ax, n, color="lightgray", linewidth=0.8):
     """
     Draw matrix grid.

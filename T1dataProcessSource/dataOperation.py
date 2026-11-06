@@ -359,20 +359,12 @@ def guessPeakParameters(
         # center
         # -----------------------------
         center = peak["center"]
-        params[prefix + "center"].set(
-            value=center,
-            min=peak.get("center_min", x.min()),
-            max=peak.get("center_max", x.max()),
-        )
+        params[prefix + "center"].set( value=center, min=peak.get("center_min", x.min()), max=peak.get("center_max", x.max()), )
         # -----------------------------
         # sigma
         # -----------------------------
         sigma = peak.get("sigma", 50)
-        params[prefix + "sigma"].set(
-            value=sigma,
-            min=peak.get("sigma_min", 1),
-            max=peak.get("sigma_max", 500),
-        )
+        params[prefix + "sigma"].set( value=sigma, min=peak.get("sigma_min", 1), max=peak.get("sigma_max", 500), )
         # -----------------------------
         # amplitude (area)
         # -----------------------------
@@ -382,10 +374,7 @@ def guessPeakParameters(
             amp = abs(y[idx]) * sigma
             if amp <= 0:
                 amp = ymax * sigma
-        params[prefix + "amplitude"].set(
-            value=amp,
-            min=0,
-        )
+        params[prefix + "amplitude"].set( value=amp, min=0, )
     return params
 def calculatePeakProperties( result, peaks, ):
     """
@@ -462,30 +451,15 @@ def fitPeak( x, y, peaks, model="Lorentzian", method="leastsq", weights=None, fi
     # -----------------------------
     # Build model
     # -----------------------------
-    peakModel = buildPeakModel(
-        peaks=peaks,
-        model=model,
-    )
+    peakModel = buildPeakModel( peaks=peaks, model=model, )
     # -----------------------------
     # Initial parameters
     # -----------------------------
-    params = guessPeakParameters(
-    peakModel,
-    x,
-    y,
-    peaks,
-    )
+    params = guessPeakParameters( peakModel, x, y, peaks, )
     # -----------------------------
     # Fit
     # -----------------------------
-    result = peakModel.fit(
-        y,
-        params=params,
-        x=x,
-        method=method,
-        weights=weights,
-        **({} if fit_kws is None else fit_kws),
-    )
+    result = peakModel.fit( y, params=params, x=x, method=method, weights=weights, **({} if fit_kws is None else fit_kws), )
     return result
 def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
     """
@@ -533,15 +507,9 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
     # Check lengths
     # -----------------------------
     if xTrue.size != yTrue.size:
-        raise ValueError(
-            f"xTrue ({xTrue.size}) and yTrue ({yTrue.size}) "
-            "must have the same length."
-        )
+        raise ValueError( f"xTrue ({xTrue.size}) and yTrue ({yTrue.size}) must have the same length." )
     if xPred.size != yPred.size:
-        raise ValueError(
-            f"xPred ({xPred.size}) and yPred ({yPred.size}) "
-            "must have the same length."
-        )
+        raise ValueError( f"xPred ({xPred.size}) and yPred ({yPred.size}) must have the same length." )
     if xTrue.size == 0:
         raise ValueError("Experimental data is empty.")
     if xPred.size == 0:
@@ -569,19 +537,10 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
     # -----------------------------
     # Interpolate if necessary
     # -----------------------------
-    if (
-        xTrue.size != xPred.size
-        or not np.allclose(xTrue, xPred)
-    ):
+    if ( xTrue.size != xPred.size or not np.allclose(xTrue, xPred) ):
         if allow_extrapolation:
             # Linear interpolation + extrapolation
-            interp_func = interp1d(
-                xPred,
-                yPred,
-                kind="linear",
-                fill_value="extrapolate",
-                bounds_error=False,
-            )
+            interp_func = interp1d( xPred, yPred, kind="linear", fill_value="extrapolate", bounds_error=False, )
             xEval = xTrue
             yTrueEval = yTrue
             yPredInterp = interp_func(xEval)
@@ -593,10 +552,7 @@ def calculateFitMetrics(xTrue, yTrue, xPred, yPred, allow_extrapolation=False):
             xEval = xTrue[mask]
             yTrueEval = yTrue[mask]
             if xEval.size < 2:
-                raise ValueError(
-                    "Less than two overlapping points between "
-                    "experimental and predicted data."
-                )
+                raise ValueError( "Less than two overlapping points between experimental and predicted data." )
             yPredInterp = np.interp(xEval, xPred, yPred)
     else:
         xEval = xTrue
@@ -748,31 +704,20 @@ def smooth( y, method="savgol", **kwargs, ):
             window_length = len(y) - 1
             if window_length % 2 == 0:
                 window_length -= 1
-        return savgol_filter(
-            y,
-            window_length=window_length,
-            polyorder=polyorder,
-        )
+        return savgol_filter( y, window_length=window_length, polyorder=polyorder, )
     # -----------------------------
     # Moving average
     # -----------------------------
     elif method == "moving":
         window = kwargs.get("window", 5)
         kernel = np.ones(window) / window
-        return np.convolve(
-            y,
-            kernel,
-            mode="same",
-        )
+        return np.convolve( y, kernel, mode="same", )
     # -----------------------------
     # Gaussian
     # -----------------------------
     elif method == "gaussian":
         sigma = kwargs.get("sigma", 1)
-        return gaussian_filter1d(
-            y,
-            sigma=sigma,
-        )
+        return gaussian_filter1d( y, sigma=sigma, )
     else:
         raise ValueError(f"Unknown smoothing method: {method}")
 def smoothSpectrum( data, y="Absorbance", method="savgol", **kwargs, ):
@@ -794,11 +739,7 @@ def smoothSpectrum( data, y="Absorbance", method="savgol", **kwargs, ):
     result = {}
     for sample, df in data.items():
         newdf = df.copy()
-        newdf[y] = smooth(
-            newdf[y].to_numpy(),
-            method=method,
-            **kwargs,
-        )
+        newdf[y] = smooth( newdf[y].to_numpy(), method=method, **kwargs, )
         result[sample] = newdf
     return result
 def normalize( y, method="vector", ):
@@ -841,10 +782,7 @@ def normalizeSpectrum( data, y="Absorbance", method="vector", ):
     result = {}
     for sample, df in data.items():
         newdf = df.copy()
-        newdf[y] = normalize(
-            newdf[y].to_numpy(),
-            method=method,
-        )
+        newdf[y] = normalize( newdf[y].to_numpy(), method=method, )
         result[sample] = newdf
     return result
 def baseline(x, y, method="rubberband", **kwargs):
@@ -871,18 +809,11 @@ def baseline(x, y, method="rubberband", **kwargs):
     if method == "rubberband":
         baseline, _ = fitter.rubberband(y, **kwargs)
     elif method == "asls":
-        baseline, _ = fitter.asls(
-            y,
-            lam=1e6,
-            p=0.001,
-            **kwargs,
-        )
+        baseline, _ = fitter.asls( y, lam=1e6, p=0.001, **kwargs, )
     elif method == "airpls":
         baseline, _ = fitter.airpls(y, **kwargs)
     else:
-        raise ValueError(
-            f"Unknown baseline method: {method}"
-        )
+        raise ValueError( f"Unknown baseline method: {method}" )
     return y - baseline
 def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
     """
@@ -891,11 +822,7 @@ def baselineCorrection( data, x="Wavenumber", y="Absorbance", method="asls", ):
     result = {}
     for sample, df in data.items():
         newdf = df.copy()
-        newdf[y] = baseline(
-            newdf[x].to_numpy(),
-            newdf[y].to_numpy(),
-            method=method,
-        )
+        newdf[y] = baseline( newdf[x].to_numpy(), newdf[y].to_numpy(), method=method, )
         result[sample] = newdf
     return result
 def generateCommonX(x_data, n_points=50):
@@ -923,9 +850,7 @@ def generateCommonX(x_data, n_points=50):
     x_min = max(np.min(x) for x in x_data.values())
     x_max = min(np.max(x) for x in x_data.values())
     if x_min >= x_max:
-        raise ValueError(
-            "No overlapping x range exists among the datasets."
-        )
+        raise ValueError( "No overlapping x range exists among the datasets." )
     return np.linspace(x_min, x_max, n_points)
 def cropX(data, xmin=None, xmax=None):
     """
@@ -1093,15 +1018,11 @@ def naturalSortData(data, index=None, axis=0, level=0):
         # MultiIndex columns
         columns = []
         for label in labels:
-            columns.extend(
-                [col for col in data.columns if col[level] == label]
-            )
+            columns.extend( [col for col in data.columns if col[level] == label] )
         return data.loc[:, columns]
     # index 参数仅支持 DataFrame
     if index is not None:
-        raise TypeError(
-            "'index' is only supported when data is a pandas.DataFrame."
-        )
+        raise TypeError( "'index' is only supported when data is a pandas.DataFrame." )
     # -----------------------------
     # Series
     # -----------------------------
@@ -1168,9 +1089,7 @@ def normalizeAxis(axis):
         return 0
     if axis in (1, "columns"):
         return 1
-    raise ValueError(
-        "axis must be 0, 1, 'index' or 'columns'."
-    )
+    raise ValueError( "axis must be 0, 1, 'index' or 'columns'." )
 def getLabels(data, axis=0, level=0, unique=True):
     """
     Extract labels from different data types.
@@ -1285,9 +1204,7 @@ def buildRegions(splitPoints, names=None, digits=2):
     dict
     """
     if len(splitPoints) < 2:
-        raise ValueError(
-            "splitPoints must contain at least two values."
-        )
+        raise ValueError( "splitPoints must contain at least two values." )
     n = len(splitPoints) - 1
     if names is None:
         names = []
@@ -1297,17 +1214,10 @@ def buildRegions(splitPoints, names=None, digits=2):
             if i == 0:
                 names.append(f"<{right:.{digits}f}")
             else:
-                names.append(
-                    f"{left:.{digits}f}-{right:.{digits}f}"
-                )
+                names.append( f"{left:.{digits}f}-{right:.{digits}f}" )
     elif len(names) != n:
-        raise ValueError(
-            "Number of names must equal len(splitPoints)-1."
-        )
-    return {
-        name: (splitPoints[i], splitPoints[i + 1])
-        for i, name in enumerate(names)
-    }
+        raise ValueError( "Number of names must equal len(splitPoints)-1." )
+    return { name: (splitPoints[i], splitPoints[i + 1]) for i, name in enumerate(names) }
 def cols_to_clean_df(cols, x_col, y_col):
     """
     将 dict of list 转为 DataFrame，自动去掉 NaN/Inf
@@ -1475,9 +1385,7 @@ def _prepareNumericAnalysisData( data, variable_names=None, ):
         try:
             X = data.loc[:, variable_names].to_numpy(dtype=float)
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(
-                "Selected variables must exist and contain numeric data."
-            ) from exc
+            raise ValueError( "Selected variables must exist and contain numeric data." ) from exc
     else:
         try:
             X = np.asarray(data, dtype=float)
@@ -1485,38 +1393,23 @@ def _prepareNumericAnalysisData( data, variable_names=None, ):
             raise ValueError("data must contain numeric values.") from exc
         sample_names = list(range(X.shape[0])) if X.ndim == 2 else []
         if variable_names is None and X.ndim == 2:
-            variable_names = [
-                f"Variable_{i + 1}"
-                for i in range(X.shape[1])
-            ]
+            variable_names = [ f"Variable_{i + 1}" for i in range(X.shape[1]) ]
     if X.ndim != 2:
         raise ValueError("data must be a two-dimensional matrix.")
     n_samples, n_variables = X.shape
     if n_samples < 2 or n_variables < 1:
-        raise ValueError(
-            "At least two samples and one variable are required."
-        )
+        raise ValueError( "At least two samples and one variable are required." )
     if not np.isfinite(X).all():
-        raise ValueError(
-            "data contains NaN or infinite values. "
-            "Handle missing values before analysis."
-        )
+        raise ValueError( "data contains NaN or infinite values. Handle missing values before analysis." )
     names = list(variable_names)
     if len(names) != n_variables:
-        raise ValueError(
-            "The number of variable names must match the number of columns."
-        )
+        raise ValueError( "The number of variable names must match the number of columns." )
     if len(set(names)) != len(names):
         raise ValueError("Variable names must be unique.")
     # PCA standardization and VIF require non-constant variables.
     if np.any(np.ptp(X, axis=0) == 0):
-        constant_names = [
-            names[i]
-            for i in np.flatnonzero(np.ptp(X, axis=0) == 0)
-        ]
-        raise ValueError(
-            f"Constant variables detected: {constant_names}"
-        )
+        constant_names = [ names[i] for i in np.flatnonzero(np.ptp(X, axis=0) == 0) ]
+        raise ValueError( f"Constant variables detected: {constant_names}" )
     return X, names, sample_names
 def _standardizeNumericAnalysisMatrix(X):
     """
@@ -1526,16 +1419,9 @@ def _standardizeNumericAnalysisMatrix(X):
     means = np.mean(X, axis=0)
     stds = np.std(X, axis=0, ddof=1)
     if np.any(stds == 0):
-        raise ValueError(
-            "Cannot standardize a constant variable."
-        )
+        raise ValueError( "Cannot standardize a constant variable." )
     return (X - means) / stds
-def calculatePairedPartialCorrelationStatistics(
-    data,
-    metric_names,
-    target_names,
-    control_names=None,
-):
+def calculatePairedPartialCorrelationStatistics( data, metric_names, target_names, control_names=None, ):
     """
     Calculate partial Pearson correlations for each metric-target pair.
     Parameters
@@ -1561,31 +1447,23 @@ def calculatePairedPartialCorrelationStatistics(
     target_names = dict(target_names)
     all_names = list(metric_names) + list(target_names)
     if len(set(all_names)) != len(all_names):
-        raise ValueError(
-            "Metric and target names must be unique and disjoint."
-        )
+        raise ValueError( "Metric and target names must be unique and disjoint." )
     # ------------------------------------------------------
     # Validate column indices
     # ------------------------------------------------------
     def _validate_indices(group):
         for name, index in group.items():
-            if (
-                isinstance(index, (bool, np.bool_))
-                or not isinstance(index, (int, np.integer))
-                or not 0 <= index < data.shape[1]
-            ):
-                raise ValueError(
-                    f"Invalid column index for '{name}': {index}"
-                )
+            if ( isinstance(index, (bool, np.bool_)) 
+                or not isinstance(index, (int, np.integer)) 
+                or not 0 <= index < data.shape[1] ):
+                raise ValueError( f"Invalid column index for '{name}': {index}" )
     _validate_indices(metric_names)
     _validate_indices(target_names)
     if control_names is not None:
         control_names = dict(control_names)
         _validate_indices(control_names)
         if set(control_names) & set(all_names):
-            raise ValueError(
-                "Control variables must differ from metrics and targets."
-            )
+            raise ValueError( "Control variables must differ from metrics and targets." )
     # ------------------------------------------------------
     # Calculate paired partial correlations
     # ------------------------------------------------------
@@ -1594,43 +1472,20 @@ def calculatePairedPartialCorrelationStatistics(
         for y_name, y_idx in target_names.items():
             # Use all other metrics as controls by default.
             if control_names is None:
-                controls = {
-                    name: index
-                    for name, index in metric_names.items()
-                    if name != x_name
-                }
+                controls = { name: index for name, index in metric_names.items() if name != x_name }
             else:
                 controls = control_names
             control_indices = list(controls.values())
-            control_matrix = (
-                data[:, control_indices]
-                if control_indices
-                else np.empty((data.shape[0], 0))
-            )
-            pair_result = mf.calculatePartialCorrelation(
-                x=data[:, x_idx],
-                y=data[:, y_idx],
-                controls=control_matrix,
-                x_name=x_name,
-                y_name=y_name,
-                control_names=list(controls.keys()),
-                dropna=True,
-            )
+            control_matrix = ( data[:, control_indices] if control_indices else np.empty((data.shape[0], 0)) )
+            pair_result = mf.calculatePartialCorrelation( x=data[:, x_idx], y=data[:, y_idx], controls=control_matrix,
+                x_name=x_name, y_name=y_name, control_names=list(controls.keys()), dropna=True, )
             pair_name = f"{x_name}_vs_{y_name}"
-            result[f"{pair_name}_Partial_r"] = (
-                pair_result["Partial_r"]
-            )
-            result[f"{pair_name}_Partial_p"] = (
-                pair_result["Partial_p"]
-            )
+            result[f"{pair_name}_Partial_r"] = ( pair_result["Partial_r"] )
+            result[f"{pair_name}_Partial_p"] = ( pair_result["Partial_p"] )
             result[f"{pair_name}_N"] = pair_result["N"]
             result[f"{pair_name}_DF"] = pair_result["DF"]
     return result
-def runPCAAnalysis(
-    data,
-    variable_names=None,
-    print_results=True,
-):
+def runPCAAnalysis( data, variable_names=None, print_results=True, ):
     """
     Run PCA on standardized variables.
     Returns
@@ -1639,10 +1494,7 @@ def runPCAAnalysis(
         Explained variance, components, loadings, scores,
         and the variable correlation matrix.
     """
-    X, names, sample_names = _prepareNumericAnalysisData(
-        data,
-        variable_names=variable_names,
-    )
+    X, names, sample_names = _prepareNumericAnalysisData( data, variable_names=variable_names, )
     Z = _standardizeNumericAnalysisMatrix(X)
     # PCA through eigenvalue decomposition of the correlation matrix.
     correlation_matrix = Z.T @ Z / (Z.shape[0] - 1)
@@ -1655,31 +1507,12 @@ def runPCAAnalysis(
         raise ValueError("PCA could not identify positive variance.")
     explained_ratio = eigenvalues / total_variance
     cumulative_ratio = np.cumsum(explained_ratio)
-    pc_names = [
-        f"PC{i + 1}"
-        for i in range(len(eigenvalues))
-    ]
-    components = pd.DataFrame(
-        eigenvectors,
-        index=names,
-        columns=pc_names,
-    )
+    pc_names = [ f"PC{i + 1}" for i in range(len(eigenvalues)) ]
+    components = pd.DataFrame( eigenvectors, index=names, columns=pc_names, )
     # Variable–principal component correlations.
-    loadings = pd.DataFrame(
-        eigenvectors * np.sqrt(eigenvalues)[None, :],
-        index=names,
-        columns=pc_names,
-    )
-    scores = pd.DataFrame(
-        Z @ eigenvectors,
-        index=sample_names,
-        columns=pc_names,
-    )
-    correlation_df = pd.DataFrame(
-        correlation_matrix,
-        index=names,
-        columns=names,
-    )
+    loadings = pd.DataFrame( eigenvectors * np.sqrt(eigenvalues)[None, :], index=names, columns=pc_names, )
+    scores = pd.DataFrame( Z @ eigenvectors, index=sample_names, columns=pc_names, )
+    correlation_df = pd.DataFrame( correlation_matrix, index=names, columns=names, )
     explained_variance = pd.DataFrame({
         "ExplainedVariance": eigenvalues,
         "ExplainedVarianceRatio": explained_ratio,
@@ -1700,29 +1533,16 @@ def runPCAAnalysis(
         print("\nPCA: Variable loadings")
         print(loadings.round(4).to_string())
     return pca_result
-def runVIFAnalysis(
-    data,
-    variable_names=None,
-    print_results=True,
-    tolerance=1e-12,
-):
+def runVIFAnalysis( data, variable_names=None, print_results=True, tolerance=1e-12, ):
     """
     Calculate variance inflation factors for a set of variables.
     """
-    X, names, _ = _prepareNumericAnalysisData(
-        data,
-        variable_names=variable_names,
-    )
+    X, names, _ = _prepareNumericAnalysisData( data, variable_names=variable_names, )
     n_samples, n_variables = X.shape
     if n_variables < 2:
-        raise ValueError(
-            "VIF requires at least two variables."
-        )
+        raise ValueError( "VIF requires at least two variables." )
     if n_samples <= n_variables:
-        raise ValueError(
-            "VIF is not reliably estimable with n_samples "
-            "less than or equal to n_variables."
-        )
+        raise ValueError( "VIF is not reliably estimable with n_samples less than or equal to n_variables." )
     # Standardization is not mathematically required for VIF,
     # but using the shared standardized matrix simplifies reuse.
     Z = _standardizeNumericAnalysisMatrix(X)
@@ -1730,37 +1550,24 @@ def runVIFAnalysis(
     for j, name in enumerate(names):
         y = Z[:, j]
         other_X = np.delete(Z, j, axis=1)
-        design_matrix = np.column_stack([
-            np.ones(n_samples),
-            other_X,
-        ])
-        coefficients, *_ = np.linalg.lstsq(
-            design_matrix,
-            y,
-            rcond=None,
-        )
+        design_matrix = np.column_stack([ np.ones(n_samples), other_X, ])
+        coefficients, *_ = np.linalg.lstsq( design_matrix, y, rcond=None, )
         residuals = y - design_matrix @ coefficients
         ss_residual = np.sum(residuals ** 2)
         ss_total = np.sum((y - y.mean()) ** 2)
         r_squared = 1.0 - ss_residual / ss_total
         r_squared = float(np.clip(r_squared, 0.0, 1.0))
         denominator = 1.0 - r_squared
-        vif = (
-            np.inf
-            if denominator <= tolerance
-            else 1.0 / denominator
-        )
+        vif = ( np.inf if denominator <= tolerance else 1.0 / denominator )
         rows.append({
             "Variable": name,
             "R_squared": r_squared,
             "VIF": vif,
         })
     vif_table = pd.DataFrame(rows).set_index("Variable")
-    vif_result = {
-        "n_samples": n_samples,
+    vif_result = { "n_samples": n_samples,
         "variable_names": names,
-        "vif": vif_table,
-    }
+        "vif": vif_table, }
     if print_results:
         print("\nVIF: Multicollinearity analysis")
         print(vif_table.to_string(float_format=lambda x: f"{x:.4f}"))
@@ -1893,19 +1700,12 @@ def calculatePercentileConfidenceInterval(
         "lower_bound": float(lower),
         "upper_bound": float(upper),
         "interval_width": float(upper - lower),
-        "standard_error": (
-            float(np.std(distribution, ddof=1))
-            if n >= 2
-            else None
-        ),
+        "standard_error": ( float(np.std(distribution, ddof=1)) if n >= 2 else None ),
         "sample_size": int(n),
         "degrees_of_freedom": None,
-        "diagnostics": {
-            "status": "success",
+        "diagnostics": { "status": "success",
             "warnings": [ "The percentile interval does not apply bias correction or acceleration correction." ],
-            "n_excluded": n_excluded,
-        },
-    }
+            "n_excluded": n_excluded, }, }
 # =========================================================
 # 5. Shared scalar and confidence-level validation
 # =========================================================
@@ -1974,47 +1774,29 @@ def runConfidenceIntervalAnalysis(
         raise ValueError( "method='percentile' accepts bootstrap_distribution, optional estimate, and confidence_level only." )
     if bootstrap_distribution is None:
         raise ValueError( "bootstrap_distribution is required for method='percentile'." )
-    return calculatePercentileConfidenceInterval(
-        bootstrap_distribution,
-        confidence_level=confidence_level,
-        estimate=estimate,
-        nan_policy=nan_policy,
-    )
+    return calculatePercentileConfidenceInterval( bootstrap_distribution, confidence_level=confidence_level,
+        estimate=estimate, nan_policy=nan_policy, )
 def _validatePairedBootstrapData( data, nan_policy: str = "raise", ) -> np.ndarray:
     """Validate paired observations stored in rows."""
     if nan_policy not in {"raise", "omit"}:
-        raise ValueError(
-            "nan_policy must be 'raise' or 'omit'."
-        )
+        raise ValueError( "nan_policy must be 'raise' or 'omit'." )
     try:
         data = np.asarray(data, dtype=float)
     except (TypeError, ValueError) as exc:
-        raise TypeError(
-            "data must contain numeric values."
-        ) from exc
+        raise TypeError( "data must contain numeric values." ) from exc
     if data.ndim != 2:
-        raise ValueError(
-            "data must be a two-dimensional array."
-        )
+        raise ValueError( "data must be a two-dimensional array." )
     if data.shape[0] < 2:
-        raise ValueError(
-            "At least two observations are required."
-        )
+        raise ValueError( "At least two observations are required." )
     if data.shape[1] < 2:
-        raise ValueError(
-            "data must contain at least two variables."
-        )
+        raise ValueError( "data must contain at least two variables." )
     valid_rows = np.isfinite(data).all(axis=1)
     if not valid_rows.all():
         if nan_policy == "raise":
-            raise ValueError(
-                "data contains NaN or infinite values."
-            )
+            raise ValueError( "data contains NaN or infinite values." )
         data = data[valid_rows]
     if data.shape[0] < 2:
-        raise ValueError(
-            "At least two complete observations are required."
-        )
+        raise ValueError( "At least two complete observations are required." )
     return data
 def _calculatePairedBootstrapDistributions(
     data: np.ndarray,
@@ -2034,41 +1816,23 @@ def _calculatePairedBootstrapDistributions(
         try:
             result = statistic_func(bootstrap_sample)
         except Exception as exc:
-            raise ValueError(
-                f"statistic_func failed during "
-                f"bootstrap iteration {i + 1}."
-            ) from exc
+            raise ValueError( f"statistic_func failed during " f"bootstrap iteration {i + 1}." ) from exc
         if not isinstance(result, dict) or not result:
-            raise TypeError(
-                "statistic_func must return a non-empty dictionary."
-            )
+            raise TypeError( "statistic_func must return a non-empty dictionary." )
         if expected_keys is None:
             expected_keys = tuple(result.keys())
-            distributions = {
-                key: np.full(n_bootstrap, np.nan, dtype=float)
-                for key in expected_keys
-            }
+            distributions = { key: np.full(n_bootstrap, np.nan, dtype=float) for key in expected_keys }
         elif set(result.keys()) != set(expected_keys):
-            raise ValueError(
-                f"Inconsistent statistic keys during "
-                f"bootstrap iteration {i + 1}."
-            )
+            raise ValueError( f"Inconsistent statistic keys during " f"bootstrap iteration {i + 1}." )
         for key in expected_keys:
             try:
                 value = float(result[key])
             except (TypeError, ValueError) as exc:
-                raise TypeError(
-                    f"Statistic '{key}' must be scalar and numeric."
-                ) from exc
+                raise TypeError( f"Statistic '{key}' must be scalar and numeric." ) from exc
             if np.isfinite(value):
                 distributions[key][i] = value
     return distributions
-def calculatePairedCorrelationStatistics(
-    data,
-    metric_names,
-    target_names,
-    statistic_names=("Pearson_r", "R2"),
-):
+def calculatePairedCorrelationStatistics( data, metric_names, target_names, statistic_names=("Pearson_r", "R2"), ):
     """
     Calculate selected correlation and linear-fitting statistics
     between two groups of variables.
@@ -2096,9 +1860,7 @@ def calculatePairedCorrelationStatistics(
     """
     data = np.asarray(data, dtype=float)
     if data.ndim != 2:
-        raise ValueError(
-            "data must be a two-dimensional array."
-        )
+        raise ValueError( "data must be a two-dimensional array." )
     metric_names = dict(metric_names)
     target_names = dict(target_names)
     # --------------------------------------------------
@@ -2119,51 +1881,30 @@ def calculatePairedCorrelationStatistics(
     }
     statistic_names = tuple(statistic_names)
     if not statistic_names:
-        raise ValueError(
-            "statistic_names must not be empty."
-        )
-    invalid_statistics = (
-        set(statistic_names) - available_statistics
-    )
+        raise ValueError( "statistic_names must not be empty." )
+    invalid_statistics = ( set(statistic_names) - available_statistics )
     if invalid_statistics:
-        raise ValueError(
-            f"Unsupported statistics: "
-            f"{sorted(invalid_statistics)}. "
-            f"Available statistics: "
-            f"{sorted(available_statistics)}"
-        )
+        raise ValueError( f"Unsupported statistics: " f"{sorted(invalid_statistics)}. " f"Available statistics: " f"{sorted(available_statistics)}" )
     # --------------------------------------------------
     # 2. Validate column indices
     # --------------------------------------------------
     for group in (metric_names, target_names):
         for name, index in group.items():
-            if (
-                isinstance(index, (bool, np.bool_))
+            if ( isinstance(index, (bool, np.bool_))
                 or not isinstance(index, (int, np.integer))
-                or not 0 <= index < data.shape[1]
-            ):
-                raise ValueError(
-                    f"Invalid column index for '{name}': {index}"
-                )
+                or not 0 <= index < data.shape[1] ):
+                raise ValueError( f"Invalid column index for '{name}': {index}" )
     # --------------------------------------------------
     # 3. Calculate paired statistics
     # --------------------------------------------------
     result = {}
     for x_name, x_idx in metric_names.items():
         for y_name, y_idx in target_names.items():
-            analysis = correlationAnalysis(
-                x=data[:, x_idx],
-                y=data[:, y_idx],
-                x_name=x_name,
-                y_name=y_name,
-                dropna=False,
-                fit_method="linear",
-            )
+            analysis = correlationAnalysis( x=data[:, x_idx], y=data[:, y_idx], x_name=x_name,
+                y_name=y_name, dropna=False, fit_method="linear", )
             pair_name = f"{x_name}_vs_{y_name}"
             for statistic_name in statistic_names:
-                result[
-                    f"{pair_name}_{statistic_name}"
-                ] = analysis[statistic_name]
+                result[ f"{pair_name}_{statistic_name}" ] = analysis[statistic_name]
     return result
 def runPairedBootstrapAnalysis(
     data,
@@ -2183,106 +1924,57 @@ def runPairedBootstrapAnalysis(
     one excample of Callable is def calculatePairedCorrelationStatistics()
     """
     if not callable(statistic_func):
-        raise TypeError(
-            "statistic_func must be callable."
-        )
-    if (
-        isinstance(n_bootstrap, (bool, np.bool_))
+        raise TypeError( "statistic_func must be callable." )
+    if ( isinstance(n_bootstrap, (bool, np.bool_))
         or not isinstance(n_bootstrap, (int, np.integer))
-        or n_bootstrap < 2
-    ):
-        raise ValueError(
-            "n_bootstrap must be an integer >= 2."
-        )
-    if (
-        isinstance(confidence_level, (bool, np.bool_))
-        or not isinstance(
-            confidence_level,
-            (int, float, np.integer, np.floating),
-        )
+        or n_bootstrap < 2 ):
+        raise ValueError( "n_bootstrap must be an integer >= 2." )
+    if ( isinstance(confidence_level, (bool, np.bool_))
+        or not isinstance( confidence_level, (int, float, np.integer, np.floating), )
         or not np.isfinite(confidence_level)
         or not 0.0 < confidence_level < 1.0
     ):
-        raise ValueError(
-            "confidence_level must be between 0 and 1."
-        )
+        raise ValueError( "confidence_level must be between 0 and 1." )
     # 1. Validate data
-    data = _validatePairedBootstrapData(
-        data=data,
-        nan_policy=nan_policy,
-    )
+    data = _validatePairedBootstrapData( data=data, nan_policy=nan_policy, )
     # 2. Calculate statistics from the original data
     try:
         original_result = statistic_func(data)
     except Exception as exc:
-        raise ValueError(
-            "statistic_func failed on the original data."
-        ) from exc
+        raise ValueError( "statistic_func failed on the original data." ) from exc
     if not isinstance(original_result, dict) or not original_result:
-        raise TypeError(
-            "statistic_func must return a non-empty dictionary."
-        )
+        raise TypeError( "statistic_func must return a non-empty dictionary." )
     estimates = {}
     for key, value in original_result.items():
         try:
             value = float(value)
         except (TypeError, ValueError) as exc:
-            raise TypeError(
-                f"Statistic '{key}' must be scalar and numeric."
-            ) from exc
+            raise TypeError( f"Statistic '{key}' must be scalar and numeric." ) from exc
         if not np.isfinite(value):
-            raise ValueError(
-                f"Statistic '{key}' is non-finite on original data."
-            )
+            raise ValueError( f"Statistic '{key}' is non-finite on original data." )
         estimates[key] = value
     # 3. Generate one shared set of bootstrap indices
-    indices = _generateBootstrapIndices(
-        n_samples=data.shape[0],
-        n_bootstrap=n_bootstrap,
-        random_state=random_state,
-    )
+    indices = _generateBootstrapIndices( n_samples=data.shape[0], n_bootstrap=n_bootstrap, random_state=random_state, )
     # 4. Calculate all statistics using the same resamples
-    distributions = _calculatePairedBootstrapDistributions(
-        data=data,
-        indices=indices,
-        statistic_func=statistic_func,
-    )
+    distributions = _calculatePairedBootstrapDistributions( data=data, indices=indices, statistic_func=statistic_func, )
     if set(distributions) != set(estimates):
-        raise ValueError(
-            "Statistics returned for bootstrap samples do not match "
-            "those returned for the original data."
-        )
+        raise ValueError( "Statistics returned for bootstrap samples do not match those returned for the original data." )
     # 5. Summarize each statistic and calculate its confidence interval
     statistics = {}
     for key, distribution in distributions.items():
-        valid_distribution = distribution[
-            np.isfinite(distribution)
-        ]
+        valid_distribution = distribution[ np.isfinite(distribution) ]
         n_valid = len(valid_distribution)
         n_invalid = n_bootstrap - n_valid
         if n_valid < 2:
-            raise ValueError(
-                f"Statistic '{key}' has fewer than two valid "
-                "bootstrap estimates; its uncertainty cannot "
-                "be estimated reliably."
-            )
-        ci_result = runConfidenceIntervalAnalysis(
-            method="percentile",
-            confidence_level=confidence_level,
-            estimate=estimates[key],
-            bootstrap_distribution=valid_distribution,
-        )
+            raise ValueError( f"Statistic '{key}' has fewer than two valid bootstrap estimates; its uncertainty cannot be estimated reliably." )
+        ci_result = runConfidenceIntervalAnalysis( method="percentile", confidence_level=confidence_level,
+            estimate=estimates[key], bootstrap_distribution=valid_distribution, )
         # print("ci_result:", ci_result)
         statistics[key] = {
             "estimate": estimates[key],
             "bootstrap_distribution": distribution,
-            "bootstrap_standard_error": float(
-                np.std(valid_distribution, ddof=1)
-            ),
-            "confidence_interval": (
-                ci_result["lower_bound"],
-                ci_result["upper_bound"],
-            ),
+            "bootstrap_standard_error": float( np.std(valid_distribution, ddof=1) ),
+            "confidence_interval": ( ci_result["lower_bound"], ci_result["upper_bound"], ),
             "confidence_level": confidence_level,
             "n_valid": n_valid,
             "n_invalid": n_invalid,
@@ -2297,42 +1989,26 @@ def runPairedBootstrapAnalysis(
         "random_state": random_state,
         "method": "paired_bootstrap_percentile",
     }
-def _validateBootstrapData(
-    data,
-    nan_policy: str = "raise",
-) -> np.ndarray:
+def _validateBootstrapData( data, nan_policy: str = "raise", ) -> np.ndarray:
     """Validate and prepare one-dimensional bootstrap data."""
     if nan_policy not in {"raise", "omit"}:
         raise ValueError("nan_policy must be 'raise' or 'omit'.")
     try:
         x = np.asarray(data, dtype=float)
     except (TypeError, ValueError) as exc:
-        raise TypeError(
-            "data must contain numeric values."
-        ) from exc
+        raise TypeError( "data must contain numeric values." ) from exc
     if x.ndim != 1:
-        raise ValueError(
-            "data must be a one-dimensional array."
-        )
+        raise ValueError( "data must be a one-dimensional array." )
     if x.size == 0:
         raise ValueError("data must not be empty.")
     finite_mask = np.isfinite(x)
     if not finite_mask.all():
-        if nan_policy == "raise":
-            raise ValueError(
-                "data contains NaN or infinite values."
-            )
+        if nan_policy == "raise": raise ValueError( "data contains NaN or infinite values." )
         x = x[finite_mask]
     if x.size < 2:
-        raise ValueError(
-            "At least two finite observations are required."
-        )
+        raise ValueError( "At least two finite observations are required." )
     return x
-def _generateBootstrapIndices(
-    n_samples: int,
-    n_bootstrap: int,
-    random_state: Optional[int] = None,
-) -> np.ndarray:
+def _generateBootstrapIndices( n_samples: int, n_bootstrap: int, random_state: Optional[int] = None, ) -> np.ndarray:
     """
     Generate bootstrap indices by sampling with replacement.
     Returns
@@ -2341,11 +2017,7 @@ def _generateBootstrapIndices(
         Array with shape (n_bootstrap, n_samples).
     """
     rng = np.random.default_rng(random_state)
-    return rng.integers(
-        low=0,
-        high=n_samples,
-        size=(n_bootstrap, n_samples),
-    )
+    return rng.integers( low=0, high=n_samples, size=(n_bootstrap, n_samples), )
 def _calculateBootstrapDistribution(
     data: np.ndarray,
     indices: np.ndarray,
@@ -2367,23 +2039,15 @@ def _calculateBootstrapDistribution(
     np.ndarray
         Bootstrap estimates with shape (n_bootstrap,).
     """
-    bootstrap_estimates = np.empty(
-        indices.shape[0],
-        dtype=float,
-    )
+    bootstrap_estimates = np.empty( indices.shape[0], dtype=float, )
     for i, sample_indices in enumerate(indices):
         bootstrap_sample = data[sample_indices]
         try:
             estimate = float(statistic_func(bootstrap_sample))
         except Exception as exc:
-            raise ValueError(
-                f"statistic_func failed during bootstrap iteration {i + 1}."
-            ) from exc
+            raise ValueError( f"statistic_func failed during bootstrap iteration {i + 1}." ) from exc
         if not np.isfinite(estimate):
-            raise ValueError(
-                f"statistic_func returned a non-finite estimate "
-                f"during bootstrap iteration {i + 1}."
-            )
+            raise ValueError( f"statistic_func returned a non-finite estimate " f"during bootstrap iteration {i + 1}." )
         bootstrap_estimates[i] = estimate
     return bootstrap_estimates
 def runBootstrapAnalysis(
@@ -2420,14 +2084,12 @@ def runBootstrapAnalysis(
     """
     if not callable(statistic_func):
         raise TypeError( "statistic_func must be callable." )
-    if (
-        isinstance(n_bootstrap, (bool, np.bool_))
+    if ( isinstance(n_bootstrap, (bool, np.bool_))
         or not isinstance(n_bootstrap, (int, np.integer))
         or n_bootstrap < 1
     ):
         raise ValueError( "n_bootstrap must be a positive integer." )
-    if (
-        isinstance(confidence_level, (bool, np.bool_))
+    if ( isinstance(confidence_level, (bool, np.bool_))
         or not isinstance( confidence_level, (int, float, np.integer, np.floating), )
         or not np.isfinite(confidence_level)
         or not 0.0 < confidence_level < 1.0
@@ -2462,12 +2124,7 @@ def runBootstrapAnalysis(
         "method": "bootstrap_percentile",
         "random_state": random_state,
     }
-def runPairedLeaveOneOutAnalysis(
-    data,
-    statistic_func: Callable,
-    *,
-    nan_policy: str = "raise",
-) -> Dict[str, Any]:
+def runPairedLeaveOneOutAnalysis( data, statistic_func: Callable, *, nan_policy: str = "raise", ) -> Dict[str, Any]:
     """
     Run paired leave-one-out (LOO) analysis for multiple scalar
     statistics.
@@ -2519,22 +2176,14 @@ def runPairedLeaveOneOutAnalysis(
     # 1. Validate configuration and input data
     # ---------------------------------------------------------
     if nan_policy not in {"raise", "omit"}:
-        raise ValueError(
-            "nan_policy must be either 'raise' or 'omit'."
-        )
+        raise ValueError( "nan_policy must be either 'raise' or 'omit'." )
     data = np.asarray(data, dtype=float)
     if data.ndim != 2:
-        raise ValueError(
-            "data must be a two-dimensional array."
-        )
+        raise ValueError( "data must be a two-dimensional array." )
     if data.shape[0] < 2:
-        raise ValueError(
-            "LOO analysis requires at least two observations."
-        )
+        raise ValueError( "LOO analysis requires at least two observations." )
     if data.shape[1] < 1:
-        raise ValueError(
-            "data must contain at least one variable."
-        )
+        raise ValueError( "data must contain at least one variable." )
     n_original = data.shape[0]
     original_indices = np.arange(n_original)
     # ---------------------------------------------------------
@@ -2543,49 +2192,33 @@ def runPairedLeaveOneOutAnalysis(
     finite_rows = np.all(np.isfinite(data), axis=1)
     if nan_policy == "raise":
         if not np.all(finite_rows):
-            raise ValueError(
-                "data contain NaN or Inf. "
-                "Use nan_policy='omit' to exclude affected rows."
-            )
+            raise ValueError( "data contain NaN or Inf. Use nan_policy='omit' to exclude affected rows." )
     else:
         data = data[finite_rows]
         original_indices = original_indices[finite_rows]
     n_observations = data.shape[0]
     if n_observations < 2:
-        raise ValueError(
-            "Fewer than two valid observations remain after "
-            "handling non-finite input rows."
-        )
+        raise ValueError( "Fewer than two valid observations remain after handling non-finite input rows." )
     # ---------------------------------------------------------
     # 3. Validate statistic_func output
     # ---------------------------------------------------------
     def evaluate_statistics(sample):
         result = statistic_func(sample)
         if not isinstance(result, dict) or not result:
-            raise TypeError(
-                "statistic_func must return a non-empty dictionary."
-            )
+            raise TypeError( "statistic_func must return a non-empty dictionary." )
         validated = {}
         for name, value in result.items():
             if not isinstance(name, str):
-                raise TypeError(
-                    "Statistic names must be strings."
-                )
+                raise TypeError( "Statistic names must be strings." )
             if isinstance(value, (bool, np.bool_)):
-                raise TypeError(
-                    f"Statistic '{name}' must be numeric, not boolean."
-                )
+                raise TypeError( f"Statistic '{name}' must be numeric, not boolean." )
             value_array = np.asarray(value)
             if value_array.ndim != 0:
-                raise TypeError(
-                    f"Statistic '{name}' must be a scalar."
-                )
+                raise TypeError( f"Statistic '{name}' must be a scalar." )
             try:
                 numeric_value = float(value_array)
             except (TypeError, ValueError, OverflowError) as exc:
-                raise TypeError(
-                    f"Statistic '{name}' must be a numeric scalar."
-                ) from exc
+                raise TypeError( f"Statistic '{name}' must be a numeric scalar." ) from exc
             validated[name] = numeric_value
         return validated
     # ---------------------------------------------------------
@@ -2599,44 +2232,23 @@ def runPairedLeaveOneOutAnalysis(
     loo_estimates = []
     for local_index in range(n_observations):
         original_index = int(original_indices[local_index])
-        reduced_data = np.delete(
-            data,
-            local_index,
-            axis=0,
-        )
+        reduced_data = np.delete( data, local_index, axis=0, )
         try:
             statistics = evaluate_statistics(reduced_data)
             if set(statistics.keys()) != set(statistic_names):
-                raise ValueError(
-                    "statistic_func returned inconsistent statistic "
-                    "names compared with the baseline."
-                )
-            non_finite_names = [
-                name
-                for name, value in statistics.items()
-                if not np.isfinite(value)
-            ]
+                raise ValueError( "statistic_func returned inconsistent statistic names compared with the baseline." )
+            non_finite_names = [ name for name, value in statistics.items() if not np.isfinite(value) ]
             if non_finite_names:
                 loo_estimates.append({
                     "excluded_index": original_index,
                     "statistics": statistics,
                     "valid": False,
-                    "error": (
-                        "Non-finite statistic values: "
-                        f"{non_finite_names}"
-                    ),
+                    "error": ( "Non-finite statistic values: " f"{non_finite_names}" ),
                 })
                 continue
-            absolute_changes = {
-                name: abs(statistics[name] - baseline[name])
-                for name in statistic_names
-            }
+            absolute_changes = { name: abs(statistics[name] - baseline[name]) for name in statistic_names }
             relative_changes = {
-                name: (
-                    absolute_changes[name] / abs(baseline[name])
-                    if baseline[name] != 0
-                    else None
-                )
+                name: ( absolute_changes[name] / abs(baseline[name]) if baseline[name] != 0 else None )
                 for name in statistic_names
             }
             loo_estimates.append({
