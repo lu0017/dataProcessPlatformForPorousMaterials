@@ -23,17 +23,12 @@ import T0isothermsAndIAST.isostericHeatQstForRawData as qstByRawdata
 def plotDSLResiduals(grouped_data, T_list_K, fits_data, figPath=None, logAxes=True):
     """Plot residuals of DSL fitting."""
     data = {}
-
     for T in T_list_K:
         label = f"{T - 273.15:.0f}°C"
         fdf = fits_data[np.isclose(fits_data["T_K"], T, atol=1e-6)].copy()
         fdf = fdf.sort_values("P_Pa")
 
-        data[label] = (
-            fdf["P_Pa"].values * 1e-3,
-            fdf["residuals"].values,
-        )
-
+        data[label] = ( fdf["P_Pa"].values * 1e-3, fdf["residuals"].values, )
     labels = {
         "0°C": "0°C",
         "15°C": "15°C",
@@ -58,7 +53,6 @@ def plotDSLResiduals(grouped_data, T_list_K, fits_data, figPath=None, logAxes=Tr
         title=None,
         # savepath=figPath,
     )
-
     ax.axhline(0, color="black", linestyle="--", linewidth=1)
     if logAxes:
         ax.set_xscale("log")
