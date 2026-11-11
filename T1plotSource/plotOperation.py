@@ -1021,6 +1021,7 @@ def plotCurve(
     markersize=70,
     legend=True,
     textSize=12,
+    legendSize=None,
     legendPosition="outside right",
     title=None,
     savepath=None,
@@ -1126,7 +1127,7 @@ def plotCurve(
         handles = buildCurveLegend( sample_names=sample_names, color_list=color_list, marker=marker, line=line, 
             fit=(fit is not None), fit_label=fit_label, linewidth=linewidth, linestyle=linestyle,
             fit_linewidth=fit_linewidth, fit_linestyle=fit_linestyle, markersize=markersize, original_labels=original_labels, )
-        applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, )
+        applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, fontsize=legendSize if legendSize is not None else textSize,)
     # --------------------------------------------------
     # Text styling
     # --------------------------------------------------

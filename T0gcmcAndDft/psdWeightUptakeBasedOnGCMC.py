@@ -2398,15 +2398,16 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
         myPlt.plotCurve(
             data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
             fit={ sample: ( pressures, uptake["total"] ), },
-            original_labels={sample: "experimental"},
-            fit_label="simulated",
-            xlabel="Pressure",
-            ylabel="Uptake",
+            original_labels={sample: "Experimental"},
+            fit_label={sample: "AIE-calculated"},
+            xlabel=r"Pressure (kPa)",
+            ylabel=r"CO$_2$ uptake (mmol g$^{-1}$)",
             marker=True,
             line=True,
-            textSize=18,
+            textSize=16,
+            legendSize=14,
             legendPosition="upper left",
-            # savepath=savepath,
+            savepath=savepath,
         )
         # --------------------------------------------------
         # 9.2 Experimental vs density-based simulation
@@ -3022,22 +3023,22 @@ def main(file_path=None):
     debug_samples = {
         "CC-Hy-600-1-1",
         "CC-Hy-800-1-1",
-        "CC-Hy-900-1-1",
+        "CC-Hy-800-4-1",
         "CC-Bi-800-2-1(5)",
     }
     sampleResults, simulationDetails, fitMetrics = \
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
                                        expData=expData, simPore=simPore, pressures=pressures, 
                                        simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
-                                         simData_density=simData_density, debug=True, debug_samples=debug_samples, export=False )
+                                         simData_density=simData_density, debug=False, debug_samples=debug_samples, export=False )
     validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
-    exportAnalysisToExcel(validation,out_path2)
+    # exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
     modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
-    exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
+    # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############训练模型###################
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
@@ -3046,14 +3047,14 @@ def main(file_path=None):
         calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
             expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, 
             ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
-            simData_density=simData_density, debug=False, export=True, expand="PSD_check" )
+            simData_density=simData_density, debug=False, export=False, expand="PSD_check" )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-2-1","CC-Hy-800-0.5-1"]
     plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
