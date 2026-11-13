@@ -2376,31 +2376,12 @@ def correlationAnalysis(
     # Fitting
     # ======================================================
     if fit_method == "linear":
-        fitting = mf.fitLinear(
-            x=x,
-            y=y,
-            x_name=x_name,
-            y_name=y_name,
-            dropna=dropna
-        )
+        fitting = mf.fitLinear( x=x, y=y, x_name=x_name, y_name=y_name, dropna=dropna )
     elif fit_method == "nonlinear":
         if fit_func is None:
-            raise ValueError(
-                "fit_func must be provided "
-                "when fit_method='nonlinear'."
-            )
-        fitting = mf.fitNonlinear(
-            x=x,
-            y=y,
-            func=fit_func,
-            p0=p0,
-            bounds=bounds,
-            param_names=param_names,
-            x_name=x_name,
-            y_name=y_name,
-            dropna=dropna,
-            weights=weights
-        )
+            raise ValueError( "fit_func must be provided when fit_method='nonlinear'." )
+        fitting = mf.fitNonlinear( x=x, y=y, func=fit_func, p0=p0, bounds=bounds, param_names=param_names,
+            x_name=x_name, y_name=y_name, dropna=dropna, weights=weights )
     elif fit_method is None:
         fitting = {}
     else:

@@ -4,7 +4,9 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+OUTPUT_DIR = None
 from common import *
+from path import *
 import constantsAndName as const
 import T1fileSource.fileOperation as fl
 import T1dataProcessSource.dataOperation as dop
@@ -675,18 +677,8 @@ def fitParameterBySingleModel( df_parameter, parameter_col, parameter_name, pres
     y = df_fit[parameter_col].to_numpy(dtype=float)
     weights = None
     weights = 0.01 + 0.99 * x / np.max(x)
-    fit_result = dop.correlationAnalysis(
-        x=x,
-        y=y,
-        x_name=pressure_col,
-        y_name=parameter_name,
-        fit_method=fit_method,
-        fit_func=model,
-        p0=p0,
-        bounds=bounds,
-        param_names=param_names,
-        weights=weights
-    )
+    fit_result = dop.correlationAnalysis( x=x, y=y, x_name=pressure_col, y_name=parameter_name, fit_method=fit_method,
+        fit_func=model, p0=p0, bounds=bounds, param_names=param_names, weights=weights )
     # ==========================================================
     # 4. Plot
     # ==========================================================
@@ -803,31 +795,16 @@ def fitParameterByMultiModel( df_parameter, parameter_col, parameter_name, press
             # --------------------------------------------------
             # Validate configuration
             # --------------------------------------------------
-            required_config = [
-                "fit_method",
-                "model",
-                "p0",
-                "bounds",
-                "param_names"
-            ]
+            required_config = [ "fit_method", "model", "p0", "bounds", "param_names" ]
             missing_config = [ key for key in required_config if key not in config ]
             if missing_config:
                 raise KeyError( f"Missing model configuration for " f"{model_name}: {missing_config}" )
             # --------------------------------------------------
             # Fit model
             # --------------------------------------------------
-            fit_result = fitParameterBySingleModel(
-                df_parameter=df_fit,
-                parameter_col=parameter_col,
-                parameter_name=parameter_name,
-                pressure_col=pressure_col,
-                fit_method=config["fit_method"],
-                model=config.get("model"),
-                p0=config.get("p0"),
-                bounds=config.get( "bounds", (-np.inf, np.inf) ),
-                param_names=config.get( "param_names" ),
-                plotflag=False
-            )
+            fit_result = fitParameterBySingleModel( df_parameter=df_fit, parameter_col=parameter_col, parameter_name=parameter_name, 
+                pressure_col=pressure_col, fit_method=config["fit_method"], model=config.get("model"), p0=config.get("p0"),
+                bounds=config.get( "bounds", (-np.inf, np.inf) ), param_names=config.get( "param_names" ), plotflag=False )
             if fit_result is None:
                 continue
             # --------------------------------------------------
@@ -944,9 +921,17 @@ def fitParameterByMultiModel( df_parameter, parameter_col, parameter_name, press
     # 11. Plot best model
     # ==========================================================
     if plotflag:
-        myPlt.plotSingleCorrelation( best_fit, xlabel=pressure_col, ylabel=parameter_name, text_position=(0.5, 0.95)
-                                    # pos="bottom"
-                                    )
+        figPath1= None
+        figPath2= None
+        figPath1= getOutputPath(fileName=f"{parameter_name}", sub_folder="fig")
+        figPath2= getOutputPath(fileName=f"{parameter_name}", expand="Residual", expandPos=False, sub_folder="fig")
+        ylabel = { "Slope": "Slope (-)", "Intercept": r"Intercept (mmol g$^{-1}$)" }.get(parameter_name, parameter_name)
+        myPlt.plotSingleCorrelation( best_fit, xlabel=pressure_col, ylabel=ylabel, text_position=(0.35, 0.95),markersize=40,
+                                     metrics=("R2","RMSE"), savepath=figPath1, legend=True,legendPosition="upper right")
+        best_fit_data = pd.DataFrame({ "X": best_fit["X"], "Residual": best_fit["Residual"] })
+        ax = myPlt.plotResidual( data={"Best fit": best_fit_data}, logAxes=True,figsize=(5, 2),
+                                    savepath=figPath2, )
+        plt.show(block=False)
     # ==========================================================
     # 12. Return
     # ==========================================================
@@ -1248,7 +1233,7 @@ def analyzeUptakeAtPressure( df, plotflag=False,figPath=None):
     if plotflag:
         myPlt.plotSingleCorrelation( metrics, xlabel=r"AIE-calculated uptake (mmol g$^{-1}$)", markersize=40, 
                                     ylabel=r"Experimental uptake (mmol g$^{-1}$)" ,figsize=(5, 4),sphereMarker=2,
-                                    labelsize=15,savepath=figPath)
+                                    labelsize=14.5,annotationsize=14,savepath=figPath,metrics=("R2", "Pearson_r"),showFit=True)
     return df, metrics
 def validationSimAndExp( sampleResults, expData, pressures, plotflag=False,debug_pressure=None):
     """
@@ -1300,8 +1285,8 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False,debug
         # ======================================================
         figPath = None
         if debug_pressure is None or pressure in debug_pressure:
-            figPath= rf"F:\0_Academic\3_experiment\3\{pressure}kPa.png"
-        df_absolute, absolute_metrics = analyzeUptakeAtPressure( df=df_uptake, plotflag=True, figPath=None)
+            figPath=getOutputPath(f"{pressure}kPa", sub_folder="fig")
+        df_absolute, absolute_metrics = analyzeUptakeAtPressure( df=df_uptake, plotflag=plotflag, figPath=figPath)
         if not df_absolute.empty:
             results["absolute"]["data"].append( df_absolute )
         if absolute_metrics is not None:
@@ -1312,8 +1297,7 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False,debug
         # vs
         # q_sim(P) / q_sim,max
         # ======================================================
-        df_normalized, normalized_metrics = analyzeNormalizedIsotherm( df=df_uptake, 
-                                               df_uptake_all=df_uptake_all, plotflag=plotflag )
+        df_normalized, normalized_metrics = analyzeNormalizedIsotherm( df=df_uptake, df_uptake_all=df_uptake_all, plotflag=plotflag )
         if not df_normalized.empty:
             results["normalized"]["data"].append( df_normalized )
         if normalized_metrics is not None:
@@ -1328,9 +1312,7 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False,debug
             if not df_differential.empty:
                 results["differential"]["data"].append( df_differential )
             if differential_metrics is not None:
-                results["differential"]["metrics"].append(
-                    mf.fittingResultToRecord(differential_metrics, extra={"Pressure (kPa)": pressure}, n_name="N_pairs")
-                )
+                results["differential"]["metrics"].append( mf.fittingResultToRecord(differential_metrics, extra={"Pressure (kPa)": pressure}, n_name="N_pairs") )
     # ==========================================================
     # 4. Combine results
     # ==========================================================
@@ -1485,7 +1467,7 @@ def plotGCMCDatabase(pressures, poreSize, loading, xlabel="Pressure (kPa)", ylab
     # Each curve corresponds to one pressure
     # ==================================================
     data = {}
-    savepath = r"F:\0_Academic\3_experiment\3\GCMCresult.png"
+    savepath=getOutputPath(fileName="GCMCresult", sub_folder="fig")
     if ylabel == "Adsorption Density": 
         STP_MOLAR_VOLUME = 22.414  # cm3(STP)/mmol
         loading = loading / STP_MOLAR_VOLUME
@@ -1496,20 +1478,9 @@ def plotGCMCDatabase(pressures, poreSize, loading, xlabel="Pressure (kPa)", ylab
     # ==================================================
     # Plot
     # ==================================================
-    axes = myPlt.plotSpectrum(
-        data=data,
-        x="Pressure",
-        y="loading",
-        xlabel=xlabel,
-        ylabel=ylabel,
-        figsize=(5, 4),
-        # xRange=xRange,
-        # yRange=yRange,
-        reverse_x=False,
-        linewidth=1.5,
-        textSize=12,
-        # savepath=savepath,
-        dpi=600,
+    axes = myPlt.plotSpectrum( data=data, x="Pressure", y="loading", xlabel=xlabel, ylabel=ylabel, figsize=(5, 4),
+        reverse_x=False, linewidth=1.5, textSize=12,dpi=600,
+        # savepath=savepath,   
     )
     plt.show(block=False)
 def plotContribution(simPore,contributionPercent,pressureIndex=-1):
@@ -1604,6 +1575,12 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # ======================================================
     # 3. Prepare data for all selected samples
     # ======================================================
+    sample_labels = { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+
+    original_labels = { sample: f"{sample_labels.get(sample, sample)} Exp" for sample in samples }
+
+    fit_label = { sample: f"{sample_labels.get(sample, sample)} Pred" for sample in samples }
+
     data = {}
     fit = {}
     for sample_name in samples:
@@ -1615,8 +1592,9 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # ======================================================
     # 4. Plot all samples in one figure
     # ======================================================
-    savepath = r"F:\0_Academic\3_experiment\3\compare2samples.png"
-    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,figsize=(7, 5),sphereMarker=2,
+    savepath=getOutputPath(fileName="compare2samples", sub_folder="fig")
+    myPlt.plotCurve( data=data, fit=fit, original_labels=original_labels, fit_label=fit_label, marker=True, line=line, 
+                    legendPosition=legendPosition,figsize=(7, 5),sphereMarker=2,
                     # savepath=savepath 
                     )
     plt.show(block=False)
@@ -1645,6 +1623,8 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
         # ======================================================
     # 1. Select pressure data
     # ======================================================
+    df_fit_metrics = predictionAnalysis["fit_metrics"]
+    metric_results = { row["Sample"]: row.to_dict() for _, row in df_fit_metrics.iterrows() }
     if pressure_type == "merge":
         df_plot = predictionAnalysis["data_all"]
         line = True
@@ -1662,15 +1642,14 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
         # Dense interpolated curves
         # ======================================================
         df_sample = df_plot[ df_plot["Sample"] == sample_name ]
+        savepath = None
+        savepath = getOutputPath(fileName=f"{sample_name}", sub_folder="fig",)
         myPlt.plotCurve(
             data={ sample_name: ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Experimental"].to_numpy() ) },
             fit={ sample_name: ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Predicted"].to_numpy() ) },
-            fit_label=fit_label,
-            marker=True,
-            # markersize=70,
-            sphereMarker=2,
-            line=line,
-            legendPosition=legendPosition )
+            original_labels={sample_name: "Experimental data"},fit_label={sample_name: "Predicted curve"}, marker=True,sphereMarker=2,
+            results=metric_results,metricPosition=(0.55, 0.35),line=line,# markersize=70,
+            legendPosition=legendPosition, savepath= savepath)
     plt.show(block=False)
 def processPerturbationPlotIndex( plotIndex, operation, simPore, sample, defaultAdditionIndex=18, defaultTransferPair=(0, 18)):
     if operation not in ["addition", "transfer"]:
@@ -2372,7 +2351,7 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
     # 9. Experimental vs simulation
     # ======================================================
     if expData is not None and sample in expData:
-        savepath = rf"F:\0_Academic\3_experiment\3\{sample}.png"
+        savepath=getOutputPath(fileName=f"{sample}", sub_folder="fig")
         plt.ion()
         # --------------------------------------------------
         # 9.1 Experimental vs PSD-weighted simulation
@@ -2381,17 +2360,8 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
             data={ sample: ( expData[sample]["pressure"], expData[sample]["expUptake"] ), },
             fit={ sample: ( pressures, uptake["total"] ), },
             original_labels={sample: "Experimental"},
-            fit_label={sample: "AIE-calculated"},
-            xlabel=r"Pressure (kPa)",
-            ylabel=r"CO$_2$ uptake (mmol g$^{-1}$)",
-            marker=True,
-            line=True,
-            textSize=16,
-            legendSize=14,
-            legendPosition="upper left",
-            sphereMarker=2,
-            savepath=savepath,
-        )
+            fit_label={sample: "AIE-calculated"}, xlabel=r"Pressure (kPa)", ylabel=r"CO$_2$ uptake (mmol g$^{-1}$)",
+            marker=True, line=True, textSize=16, legendSize=14, legendPosition="upper left", sphereMarker=2, savepath=savepath, )
         return
         # --------------------------------------------------
         # 9.2 Experimental vs density-based simulation
@@ -2988,8 +2958,8 @@ def calculatePerturbation( sample, simulationDetails, predictionResults, simData
 
     figsize=(5, 4)
     textSize=18
-    savepath1 = r"F:\0_Academic\3_experiment\3\Delta05.png"
-    savepath2 = r"F:\0_Academic\3_experiment\3\Modified05.png"
+    savepath1=getOutputPath(fileName="Delta05", sub_folder="fig")
+    savepath2=getOutputPath(fileName="Modified05", sub_folder="fig")
     ax=None,
     originalData = {
     "Original": pd.DataFrame({ "Pressure": np.asarray( perturbationResults["pressure"], dtype=float ),
@@ -3014,6 +2984,7 @@ def main(file_path=None):
     pressure_min = 0.01 #kPa
     ########### 读取数据 ###########
     file_path = select_folder()   # 改成你的文件路径
+    setOutputDir(file_path)
     HeliumFraction, ModelVolumeAcc = readVolumeAndHeliumVoidFraction(file_path,sheet_name="volume")
     if flagUsingDensity:
         simPore,pressures,density_simu_acc = readSimulationDensity(file_path,HeliumFraction,pressure_min=pressure_min)
@@ -3040,7 +3011,7 @@ def main(file_path=None):
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
     modelfixed = "Exponential Saturation"
     modelfixed = None
-    modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
+    modelfit = fitValidationParameters(validation,validation_types=("absolute", ),plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
     # exportAnalysisToExcel(validation,out_path2)
     # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
@@ -3055,7 +3026,7 @@ def main(file_path=None):
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
-    plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
+    # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
     exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )

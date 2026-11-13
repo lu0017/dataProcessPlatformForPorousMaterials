@@ -6,6 +6,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 from common import *
+from path import *
 
 其它方法
 方法一：需要在根目录luDataProcess下配置json文件，定义为工作文件夹，否则下层子文件无法启动 "cwd": "${workspaceFolder}",

@@ -1,7 +1,9 @@
 from common import *
 from T1dataProcessSource import dataOperation as dop
+import T1dataProcessSource.modelAndFit as mf
 LABEL_MAP = {
     "R2": r"$R^2$",
+    "RMSE": r"$RMSE$",
     "Pearson_r": r"$r$",
     # -------- Spectrum --------
     "Wavenumber": r"Wavenumber (cm$^{-1}$)",
@@ -772,17 +774,18 @@ def annotateBars(
                            rotation=rotation, fontsize=fontsize, color=color, )
         # 标记为柱状图数值标签，避免 applyTextStyle 修改
         text.set_gid("barvalue")
-def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, ):
+def applyTextStyle( ax=None, fig=None, labelsize=12, ticksize=12, annotationsize=12, annotationInLayout=None, ):
     if ax is not None:
         ax.xaxis.label.set_size(labelsize)
         ax.yaxis.label.set_size(labelsize)
         ax.tick_params(axis="both", labelsize=ticksize)
         if annotationsize is not None:
             for text in ax.texts:
-                # 保留柱状图数值标签原始字号
                 if text.get_gid() == "barvalue":
                     continue
                 text.set_fontsize(annotationsize)
+                if annotationInLayout is not None:
+                    text.set_in_layout(annotationInLayout)
     if fig is not None:
         if getattr(fig, "_supxlabel", None) is not None:
             fig._supxlabel.set_fontsize(labelsize)
@@ -834,6 +837,11 @@ def applyLegend(
     # Position configuration
     # ==================================================
     config = {
+        "best": {
+            "loc": "best",
+            "anchor": None,
+            "side": "right",
+        },
         "upper left": {
             "loc": "upper left",
             "anchor": None,
@@ -1208,6 +1216,38 @@ def _getLabelInfo(name,original_labels):
         display_label = info
         origin_name = name
     return display_label, origin_name
+def plotResidual(
+    data,
+    ax=None,
+    figsize=(5, 2),
+    x="X",
+    y="Residual",
+    xlabel="Pressure (kPa)",
+    ylabel="Residual",
+    logAxes=True,
+    marker=True,
+    line=True,
+    markersize=45,
+    sphereMarker=2,
+    legend=None,
+    textSize=16,
+    zeroLine=True,
+    zeroLineColor="black",
+    zeroLineStyle="--",
+    zeroLineWidth=1,
+    zeroLineAlpha=0.7,
+    savepath=None,
+    **kwargs
+):
+    ax = plotCurve( data=data, ax=ax, figsize=figsize, x=x, y=y, xlabel=xlabel, ylabel=ylabel, marker=marker, line=line, 
+                   markersize=markersize, sphereMarker=sphereMarker, legend=legend, textSize=textSize, savepath=None, **kwargs )
+    if zeroLine:
+        ax.axhline( y=0, color=zeroLineColor, linestyle=zeroLineStyle, linewidth=zeroLineWidth, alpha=zeroLineAlpha, zorder=1 )
+    if logAxes:
+        ax.set_xscale("log")
+    if savepath is not None:
+        saveFigure( fig=ax.figure, savepath=savepath, dpi=300, )
+    return ax
 def plotCurve(
     data,
     ax=None,
@@ -1226,6 +1266,12 @@ def plotCurve(
     linestyle="-",
     fit_linewidth=2,
     fit_linestyle="--",
+    results=None,
+    metrics=("R2", "RMSE"),
+    showMetrics=True,
+    metricPosition=(0.05, 0.95),
+    metricVA="top",
+    metricSize=None,
     markersize=70,
     sphereMarker=True,
     legend=True,
@@ -1335,6 +1381,14 @@ def plotCurve(
             else:
                 fit_display_name = f"{display_name} {fit_label}"
             ax.plot( fx, fy, color=color, linewidth=fit_linewidth, linestyle=fit_linestyle, label=fit_display_name, zorder=1, )
+        # --------------------------
+        # Fitting metrics
+        # --------------------------
+        if showMetrics and results is not None and name in results:
+            metricText = _getCorrelationMetrics(results[name], metrics)
+            if metricText:
+                ax.text( metricPosition[0], metricPosition[1], metricText, transform=ax.transAxes, va=metricVA, 
+                        fontsize=metricSize if metricSize is not None else textSize, )
     # --------------------------------------------------
     # Axis labels
     # --------------------------------------------------
@@ -1366,49 +1420,125 @@ def plotCurve(
     if savepath is not None:
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300, )
     return ax
-def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
-                     pos="top", xscale="linear", yscale="linear",sphereMarker=2, markersize=70,
-                     labelsize=16, ticksize=14, annotationsize=16):
+def _getCorrelationMetrics(result, metrics=("R2", "Pearson_r")):
+    values = []
+    for key in metrics:
+        if key not in result:
+            continue
+        value = result[key]
+        if value is None:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(value):
+            values.append(f"{applyLabel(key)} = {value:.3f}")
+    return "\n".join(values)
+def _getFitEquation(result, precision=3):
+    fit_func = result.get("FitFunc", result.get("FitFunction"))
+    parameters = result.get("Parameters", {})
+    if not isinstance(parameters, dict) or not parameters:
+        return None
+    if fit_func is mf.linearModel:
+        if not all(k in parameters for k in ("slope", "intercept")):
+            return None
+        slope = parameters["slope"]
+        intercept = parameters["intercept"]
+        if not np.all(np.isfinite([slope, intercept])):
+            return None
+        return (f"y = {slope:.{precision}f}x "
+                f"{'+' if intercept >= 0 else '-'} "
+                f"{abs(intercept):.{precision}f}")
+    # Nonlinear model
+    equation = getattr(fit_func, "equation", None)
+    if equation is None:
+        return None
+    param_names = result.get("ParameterNames", [])
+    if not param_names or any(k not in parameters for k in param_names):
+        return None
+    values = [parameters[k] for k in param_names]
+    try:
+        values = np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if not np.all(np.isfinite(values)):
+        return None
+    for name, value in zip(param_names, values):
+        equation = equation.replace(name, f"{value:.{precision}f}")
+    return equation
+def _plotCorrelation(ax, result, xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
+        pos="top", xscale="linear", yscale="linear", sphereMarker=2, markersize=70,
+        labelsize=16, ticksize=14, annotationsize=16,
+        metrics=("R2", "Pearson_r"), showFit=True, legend=True,
+        data_label="Experimental data", fit_label="Fit", legendSize=None, legendPosition="best", textSize=12,):
+
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
+
     x = np.asarray(result["X"])
     y = np.asarray(result["Y"])
     y_fit = np.asarray(result["Y_fit"])
     idx = np.argsort(x)
+
     applyAxisStyle(ax)
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
-    ax.text( text_position[0],
-        text_position[1],
-        ( f"{applyLabel('R2')} = {result['R2']:.3f}\n"
-        f"{applyLabel('Pearson_r')} = {result['Pearson_r']:.3f}" ),
-        transform=ax.transAxes, va=pos )
-    ax.plot( x[idx], y_fit[idx], color="red", linewidth=2 )
+    ax.plot(x[idx], y_fit[idx], color="red", linewidth=2, label=fit_label)
+    metricText = _getCorrelationMetrics(result, metrics)
+    if showFit:
+        fitText = _getFitEquation(result)
+        if fitText is not None:
+            metricText = f"{fitText}\n{metricText}" if metricText else fitText
+    if metricText:
+        ax.text(text_position[0], text_position[1], metricText,
+                transform=ax.transAxes, va=pos)
     colors = ColorPalette.get(USING_COLOR, len(x))
     markerMode = getSphereMarkerMode(sphereMarker)
+    sphereRenderer = SphereRenderer(scale=0.8, resolution=128)
+    legacyRenderer = LegacySphereRenderer()
+
     if markerMode == 0:
-        ax.scatter(x, y, c=colors, s=markersize, zorder=3)
+        ax.scatter(x, y, c=colors, s=markersize, zorder=3, label=data_label)
     elif markerMode == 1:
-        scatterSphereLegacy( ax, x, y, color=colors, s=markersize )
+        scatterSphereLegacy(ax, x, y, color=colors, s=markersize, label=data_label)
     elif markerMode == 2:
-        scatterSphere( ax, x, y, color=colors, s=markersize )
-    ax.set_xlabel( applyLabel(result["x_name"], xlabel) )
-    ax.set_ylabel( applyLabel(result["y_name"], ylabel) )
-    applyTextStyle(ax,labelsize=labelsize, ticksize=ticksize, annotationsize=annotationsize)
-    print("Figure size:", fig.get_size_inches())
-    print("Figure DPI:", fig.dpi)
-    print("Axes position:", ax.get_position().bounds)
-    print("X limits:", ax.get_xlim())
-    print("Y limits:", ax.get_ylim())
-    print("Axes aspect:", ax.get_aspect())
+        scatterSphere(ax, x, y, color=colors, s=markersize, label=data_label)
+    else:
+        raise ValueError("sphereMarker must be 0, 1, 2, False, or True.")
+
+    ax.set_xlabel(applyLabel(result["x_name"], xlabel))
+    ax.set_ylabel(applyLabel(result["y_name"], ylabel))
+    if legend:
+        handler_map = { SphereLegendHandle: HandlerSphere( markersize=markersize, renderer=sphereRenderer, ), 
+                       LegacySphereLegendHandle: HandlerLegacySphere( markersize=markersize, renderer=legacyRenderer, ), }
+        applyLegend( fig=fig, axes=[ax], position=legendPosition, fontsize=legendSize if legendSize is not None else textSize, handler_map=handler_map,)
+
+    applyTextStyle(ax, labelsize=labelsize, ticksize=ticksize,
+                   annotationsize=annotationsize, annotationInLayout=False)
+    return fig, ax
 def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4),
-                           pos="top", xscale="linear", yscale="linear", sphereMarker=2, markersize=70, 
-                           labelsize=16, ticksize=14, annotationsize=16,savepath=None):
+        pos="top", xscale="linear", yscale="linear", sphereMarker=2, markersize=70, labelsize=16, ticksize=14, 
+        annotationsize=16,savepath=None, metrics=("R2", "Pearson_r"), showFit=False,legend=False,
+        data_label="Experimental data", fit_label="Fit", legendSize=None, legendPosition="best", textSize=12,):
     fig, ax = plt.subplots(figsize=figsize)
-    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos, xscale, yscale, 
-                     sphereMarker=sphereMarker, markersize=markersize,labelsize=labelsize, ticksize=ticksize, annotationsize=annotationsize,)
+    _plotCorrelation(
+        ax, result, xlabel, ylabel, text_position, figsize, pos, xscale, yscale,
+        sphereMarker=sphereMarker,
+        markersize=markersize,
+        labelsize=labelsize,
+        ticksize=ticksize,
+        annotationsize=annotationsize,
+        metrics=metrics,
+        showFit=showFit,
+        legend=legend,
+        data_label=data_label,
+        fit_label=fit_label,
+        legendSize=legendSize if legendSize is not None else textSize,
+        legendPosition=legendPosition,
+    )
     plt.tight_layout()
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=600)
