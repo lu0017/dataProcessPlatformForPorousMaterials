@@ -96,7 +96,7 @@ def formatLabel(label,Unicode=False):
     if label is None:
         return ""
     label = str(label)
-    label = LABEL_MAP_MATRIX.get(label, label)
+    label = LABEL_MAP.get(label, label)
     # import matplotlib as mpl
     # print(mpl.rcParams["font.family"])
     # print(mpl.rcParams["font.sans-serif"])
@@ -373,67 +373,285 @@ def drawGradientBars( ax, bars, colors, bottom_color="#d9d9d9", steps=100, ):
         bar.set_zorder(2)
     ax.relim()
     ax.autoscale_view()
-def scatterSphere(
-    ax,
-    x,
-    y,
-    color="#d62728",
-    edgecolor="black",
-    s=60,
-    linewidth=0.6,
-    marker="o",
-    label=None,
-    zorder=2,
-    highlight=True,
-    highlight_size=0.28,
-    highlight_alpha=0.55,
+class LegacySphereLegendHandle:
+    def __init__(self, color, line=True, linestyle="-", linewidth=2):
+        self.color = color
+        self.line = line
+        self.linestyle = linestyle
+        self.linewidth = linewidth
+class SphereLegendHandle:
+    def __init__( self, color, label=None, line=False, linestyle="-", linewidth=2 ):
+        self.color = color
+        self.label = label
+        self.line = line
+        self.linestyle = linestyle
+        self.linewidth = linewidth
+
+def _createSphereImage(
+    color,
+    resolution=128,
+    highlightSize=0.20,
+    highlightOffsetX=0.35,
+    highlightOffsetY=0.35,
 ):
-    """
-    Draw sphere-like scatter markers.
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-    x, y : array-like
-        Coordinates.
-    color : color-like
-        Marker face color.
-    edgecolor : color-like
-        Marker edge color.
-    s : float
-        Marker size.
-    linewidth : float
-        Marker edge width.
-    marker : str
-        Marker style, e.g. "o", "s", "^", "D".
-    label : str, optional
-        Legend label.
-    zorder : int
-        Drawing order.
-    highlight : bool
-        Whether to draw the specular highlight.
-    highlight_size : float
-        Relative size of the highlight.
-    highlight_alpha : float
-        Highlight transparency.
-    """
+    base = np.array(mcolors.to_rgb(color))
+    t = np.linspace(-1, 1, resolution)
+    X, Y = np.meshgrid(t, t[::-1])
+    R2 = X**2 + Y**2
+    R = np.sqrt(R2)
+    Z = np.sqrt(np.clip(1 - R2, 0, 1))
+    mask = R2 <= 1
+
+    # 1. Soft base shading
+    light = np.array([-0.45, 0.55, 0.7])
+    light /= np.linalg.norm(light)
+    normals = np.stack([X, Y, Z], axis=-1)
+    diffuse = np.clip(normals @ light, 0, 1)
+    shade = 0.88 + 0.12 * diffuse
+    rgb = base * shade[..., None]
+
+    # 2. Highlight geometry
+    scale = np.sqrt(highlightSize / 0.20)
+    hx = -highlightOffsetX
+    hy = highlightOffsetY
+
+    # 3. Broad diffuse highlight
+    broad = np.exp(
+        -(((X - hx) / (0.32 * scale))**2
+          + ((Y - hy) / (0.30 * scale))**2) / 2
+    )
+    rgb = rgb * (1 - 0.48 * broad[..., None]) + 0.48 * broad[..., None]
+
+    # 4. Small specular highlight
+    specular = np.exp(
+        -(((X - hx) / (0.09 * scale))**2
+          + ((Y - hy) / (0.09 * scale))**2) / 2
+    )
+    rgb = rgb * (1 - 0.65 * specular[..., None]) + 0.65 * specular[..., None]
+
+    rgb = np.clip(rgb, 0, 1)
+
+    # 5. Smooth antialiased boundary
+    alpha = np.clip((1 - R) * resolution / 2, 0, 1)
+
+    rgba = np.zeros((resolution, resolution, 4))
+    rgba[..., :3] = rgb
+    rgba[..., 3] = alpha
+
+    return rgba
+
+
+def _createSphereImage_dark(
+    color,
+    resolution=128,
+    highlightSize=0.20,
+    highlightOffsetX=0.35,
+    highlightOffsetY=0.35,
+):
+    base = np.array(mcolors.to_rgb(color))
+    t = np.linspace(-1, 1, resolution)
+    X, Y = np.meshgrid(t, t[::-1])
+    R2 = X**2 + Y**2
+    mask = R2 <= 1
+    Z = np.sqrt(np.clip(1 - R2, 0, 1))
+
+    normals = np.stack([X, Y, Z], axis=-1)
+    normals /= np.maximum(
+        np.linalg.norm(normals, axis=-1, keepdims=True), 1e-8
+    )
+
+    # 1. Diffuse shading
+    light = np.array([-0.65, -0.95, 0.8])
+    light /= np.linalg.norm(light)
+    diffuse = np.clip(normals @ light, 0, 1)
+
+    shade = 0.82 + 0.18 * diffuse
+    rgb = base * shade[..., None]
+
+    # 2. Specular highlight position and size
+    scale = np.sqrt(highlightSize / 0.20)
+    hx = -highlightOffsetX
+    hy = highlightOffsetY
+
+    specular = np.exp(
+        -(((X - hx) / (0.09 * scale))**2
+          + ((Y - hy) / (0.09 * scale))**2) / 2
+    )
+
+    rgb += 0.45 * specular[..., None]
+
+    # 3. Very subtle edge shading
+    rim = np.clip((1 - Z) * 0.05, 0, 0.05)
+    rgb *= (1 - rim[..., None])
+    rgb = np.clip(rgb, 0, 1)
+
+    # 4. Alpha
+    rgba = np.zeros((resolution, resolution, 4))
+    rgba[..., :3] = rgb
+    rgba[..., 3] = mask.astype(float)
+
+    return rgba
+
+class HandlerSphere(HandlerBase):
+    def __init__(self, markersize=70, renderer=None):
+        self.markersize = markersize
+        self.renderer = renderer or SphereRenderer()
+        super().__init__()
+    def create_artists( self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans, ):
+        artists = []
+        cy = ydescent + height / 2
+
+        if orig_handle.line:
+            line = Line2D( [xdescent, xdescent + width], [cy, cy], color=orig_handle.color, linewidth=orig_handle.linewidth, 
+                          linestyle=orig_handle.linestyle, transform=trans, )
+            artists.append(line)
+
+        rgba = self.renderer.getImage(orig_handle.color)
+        zoom = min( height * 0.9 * legend.figure.dpi / 72 / self.renderer.resolution,
+            self.renderer.getZoom(self.markersize, legend.figure.dpi), )
+
+        sphere = self.renderer.createArtist( rgba, (xdescent + width / 2, cy), zoom, xycoords=trans, clip=False, )
+        artists.append(sphere)
+
+        return artists
+class HandlerLegacySphere(HandlerBase):
+    def __init__(self, markersize=70, renderer=None):
+        self.markersize = markersize
+        self.renderer = renderer or LegacySphereRenderer()
+        super().__init__()
+    def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
+        artists = []
+        cy = ydescent + height / 2
+        if orig_handle.line:
+            artists.append( Line2D( [xdescent, xdescent + width], [cy, cy], color=orig_handle.color,
+                    linewidth=orig_handle.linewidth, linestyle=orig_handle.linestyle, transform=trans, ) )
+        artists.extend( self.renderer.createLegendArtists( orig_handle, xdescent + width / 2, cy, trans, self.markersize, ) )
+        return artists
+class SphereRenderer:
+    def __init__( self, scale=1.0, resolution=128, highlightSize=1, highlightOffsetX=0.35, highlightOffsetY=0.35, ):
+        self.scale = scale
+        self.resolution = resolution
+        self.highlightSize = highlightSize
+        self.highlightOffsetX = highlightOffsetX
+        self.highlightOffsetY = highlightOffsetY
+    def getImage(self, color):
+        return _createSphereImage( color, resolution=self.resolution, highlightSize=self.highlightSize, 
+                                  highlightOffsetX=self.highlightOffsetX, highlightOffsetY=self.highlightOffsetY, )
+    def getZoom(self, s, dpi):
+        return np.sqrt(s) * dpi / 72 / self.resolution * self.scale
+    def createArtist(self, rgba, xy, zoom, xycoords="data", zorder=2, clip=True):
+        image = OffsetImage(rgba, zoom=zoom)
+        artist = AnnotationBbox( image, xy, xycoords=xycoords, frameon=False, box_alignment=(0.5, 0.5), pad=0, annotation_clip=clip, )
+        artist.set_zorder(zorder)
+        return artist
+class LegacySphereRenderer:
+    def __init__(self, highlightSize=0.15, highlightAlpha=0.45, highlightOffsetX=0.20, highlightOffsetY=0.20):
+        self.highlightSize = highlightSize
+        self.highlightAlpha = highlightAlpha
+        self.highlightOffsetX = highlightOffsetX
+        self.highlightOffsetY = highlightOffsetY
+
+    def createArtist(self, ax, x, y, color, s, edgecolor="black", linewidth=0.6, zorder=2):
+        artists = []
+        artists.append(ax.scatter( x, y, s=s, c=color, edgecolors=edgecolor, linewidths=linewidth, marker="o", zorder=zorder, ))
+
+        offsetX = np.sqrt(s) * self.highlightOffsetX
+        offsetY = np.sqrt(s) * self.highlightOffsetY
+
+        highlight = ax.scatter( x, y, s=s*self.highlightSize, c="white", alpha=self.highlightAlpha, linewidths=0, marker="o", 
+                               zorder=zorder+1, )
+
+        highlight.set_offset_transform( ax.transData + ScaledTranslation( -offsetX/72, offsetY/72, ax.figure.dpi_scale_trans, ) )
+
+        artists.append(highlight)
+        return artists
+    def createLegendArtists(self, orig_handle, x, y, trans, markersize, zorder=2):
+        ms = np.sqrt(markersize)
+        artists = [
+            Line2D(
+                [x], [y], linestyle="None", marker="o",
+                markersize=ms,
+                markerfacecolor=orig_handle.color,
+                markeredgecolor="black",
+                transform=trans, zorder=zorder,
+            ),
+            Line2D(
+                [x-self.highlightOffsetX*ms],
+                [y+self.highlightOffsetY*ms],
+                linestyle="None", marker="o",
+                markersize=ms*np.sqrt(self.highlightSize),
+                markerfacecolor="white",
+                markeredgecolor="none",
+                alpha=self.highlightAlpha,
+                transform=trans, zorder=zorder+1,
+            ),
+        ]
+        return artists
+def scatterSphereLegacy(ax, x, y, color, s=35, label=None, zorder=3, renderer=None):
+    renderer = renderer or LegacySphereRenderer()
     x = np.asarray(x)
     y = np.asarray(y)
-    # ---------- Base marker ----------
-    ax.scatter( x, y, s=s, c=color, edgecolors=edgecolor, linewidths=linewidth, marker=marker, 
-               label=label, zorder=zorder, )
-    if not highlight:
-        return
-    # ---------- Highlight ----------
-    if len(x) > 1:
-        dx = (x.max() - x.min()) * 0.0035
+    colorArray = np.asarray(color)
+    if colorArray.ndim == 1:
+        colors = [color] * len(x)
+    elif colorArray.ndim == 2 and colorArray.shape[1] in (3, 4):
+        if len(colorArray) == 1:
+            colors = [colorArray[0]] * len(x)
+        elif len(colorArray) == len(x):
+            colors = colorArray
+        else:
+            raise ValueError("The number of colors must be 1 or equal to the number of data points.")
     else:
-        dx = 0
-    if len(y) > 1:
-        dy = (y.max() - y.min()) * 0.0035
+        colors = [color] * len(x)
+    artists = []
+    for xi, yi, ci in zip(x, y, colors):
+        current = renderer.createArtist( ax, [xi], [yi], ci, s, zorder=zorder )
+        artists.extend(current)
+    if label is not None and artists:
+        artists[0].set_label(label)
+    return artists
+def scatterSphere( ax, x, y, color, s=35, label=None, zorder=3, renderer=None ):
+    renderer = renderer or SphereRenderer()
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    colorArray = np.asarray(color)
+
+    if colorArray.ndim == 1:
+        colors = [color] * len(x)
+    elif colorArray.ndim == 2 and colorArray.shape[1] in (3, 4):
+        if len(colorArray) == 1:
+            colors = [colorArray[0]] * len(x)
+        elif len(colorArray) == len(x):
+            colors = colorArray
+        else:
+            raise ValueError( "The number of colors must be 1 or equal to the number of data points." )
     else:
-        dy = 0
-    ax.scatter( x - dx, y + dy, s=s * highlight_size, c="white", alpha=highlight_alpha, linewidths=0, 
-               marker=marker, zorder=zorder + 1, )
+        colors = [color] * len(x)
+
+    artists = []
+    zoom = renderer.getZoom(s, ax.figure.dpi)
+
+    for xi, yi, ci in zip(x, y, colors):
+        rgba = renderer.getImage(ci)
+        artist = renderer.createArtist( rgba, (xi, yi), zoom, zorder=zorder )
+        ax.add_artist(artist)
+        artists.append(artist)
+
+    if label is not None and artists:
+        artists[0].set_label(label)
+
+    ax.update_datalim(np.column_stack([x, y]))
+    ax.autoscale_view()
+    return artists
+def getSphereMarkerMode(sphereMarker):
+    if sphereMarker is True:
+        return 1
+    if sphereMarker is False:
+        return 0
+    if sphereMarker not in (0,1,2):
+        raise ValueError("sphereMarker must be 0, 1, or 2.")
+    return sphereMarker
 def buildCurveLegend(
     sample_names,
     color_list,
@@ -448,76 +666,58 @@ def buildCurveLegend(
     markersize=70,
     markeredgecolor="black",
     original_labels=None,
+    sphereMarker=2,
 ):
     """
     Build legend handles for curve plots.
-    Parameters
-    ----------
-    sample_names : list[str]
-        Original data keys. These keys also determine fit correspondence.
-    color_list : list
-        Colors returned by ColorPalette.get().
-    marker : bool
-        Whether experimental markers are shown.
-    line : bool
-        Whether experimental lines are shown.
-    fit : bool
-        Whether fitted curves are shown.
-    fit_label : str or dict
-        If str, append it to the original/display name.
-        If dict, use the specified complete fit legend name for each key.
-    original_labels : dict or None
-        Optional mapping from original data keys to experimental legend names.
-    Returns
-    -------
-    list
-        Legend handles.
     """
     handles = []
     original_labels = original_labels or {}
-    # scatter() uses marker area; Line2D uses marker diameter.
+    markerMode = getSphereMarkerMode(sphereMarker)
     ms = np.sqrt(markersize)
+
     for name, color in zip(sample_names, color_list):
-        # Experimental display name
         display_name = original_labels.get(name, name)
-        # --------------------------
-        # Experimental data
-        # --------------------------
-        handles.append( Line2D( [], [], color=color if line else "none", linestyle=linestyle if line else "None", 
-                               linewidth=linewidth, marker="o" if marker else None, markersize=ms if marker else 0, 
-                               markerfacecolor=color, markeredgecolor=markeredgecolor, label=display_name, ) )
-        # --------------------------
+
+                # Experimental data
+        if marker and markerMode == 2:
+            handle = SphereLegendHandle( color=color, line=line, linestyle=linestyle, linewidth=linewidth, )
+            handle.label = display_name
+            handles.append(handle)
+
+        elif marker and markerMode == 1:
+            handle = LegacySphereLegendHandle( color=color, line=line, linestyle=linestyle, linewidth=linewidth, )
+            handle.label = display_name
+            handles.append(handle)
+
+        else:
+            handles.append( Line2D( [], [], color=color if line else "none", linestyle=linestyle if line else "None", 
+                    linewidth=linewidth, marker="o" if marker else None, markersize=ms if marker else 0,
+                    markerfacecolor=color, markeredgecolor=markeredgecolor, label=display_name, ) )
         # Fitted curve
-        # --------------------------
         if fit:
             if isinstance(fit_label, dict):
-                # Dictionary value is the complete fit legend name.
-                fit_display_name = fit_label.get( name, f"{display_name} Fit", )
+                fit_display_name = fit_label.get( name, f"{display_name} Fit" )
             else:
-                # String value is appended as a suffix.
                 fit_display_name = f"{display_name} {fit_label}"
-            handles.append( Line2D( [], [], color=color, linestyle=fit_linestyle, linewidth=fit_linewidth, 
-                                   label=fit_display_name, ) )
+
+            handles.append( Line2D( [], [], color=color, linestyle=fit_linestyle, linewidth=fit_linewidth, label=fit_display_name, ) )
+
     return handles
 def removeDuplicateLegend(handles):
     """
     Remove duplicated legend handles according to labels.
-    Parameters
-    ----------
-    handles : list
-        Legend handles.
-    Returns
-    -------
-    unique_handles : list
-    labels : list[str]
     """
     unique_handles = []
     labels = []
+
     for h in handles:
-        label = h.get_label()
+        label = h.get_label() if hasattr(h, "get_label") else h.label
+
         if label not in labels:
             labels.append(label)
             unique_handles.append(h)
+
     return unique_handles, labels
 def annotateBars(
     ax,
@@ -597,6 +797,7 @@ def applyLegend(
     frameon=False,
     ncol=1,
     fontsize=None,
+    handler_map=None,
 ):
     """
     Apply legend automatically.
@@ -607,19 +808,15 @@ def applyLegend(
         Axes list. Support normal and broken axis.
     show : bool
     handles : list, optional
-        Custom legend handles. If None, legend handles will be collected
-        automatically from axes.
+        Legend handles.
     position : str
-        Legend position:
-        - "upper left"
-        - "upper right"
-        - "lower left"
-        - "lower right"
-        - "outside right"
-        - "outside left"
+        Legend position.
+    handler_map : dict, optional
+        Custom legend handler mapping.
     """
     if not show:
         return
+
     # ==================================================
     # Collect handles
     # ==================================================
@@ -628,14 +825,15 @@ def applyLegend(
         for ax in axes:
             h, _ = ax.get_legend_handles_labels()
             handles.extend(h)
+
     handles, labels = removeDuplicateLegend(handles)
     if not handles:
         return
+
     # ==================================================
     # Position configuration
     # ==================================================
     config = {
-        # inside
         "upper left": {
             "loc": "upper left",
             "anchor": None,
@@ -656,7 +854,6 @@ def applyLegend(
             "anchor": None,
             "side": "right",
         },
-        # outside
         "outside right": {
             "loc": "upper left",
             "anchor": (1, 1.03),
@@ -668,20 +865,31 @@ def applyLegend(
             "side": "left",
         },
     }
+
     if position not in config:
         raise ValueError(f"Unknown legend position: {position}")
+
     cfg = config[position]
+
     # ==================================================
     # Choose host axis
     # ==================================================
     host = axes[0] if cfg["side"] == "left" else axes[-1]
+
     # ==================================================
     # Draw
     # ==================================================
-    kwargs = dict( frameon=frameon, ncol=ncol, fontsize=fontsize, )
+    kwargs = dict(
+        frameon=frameon,
+        ncol=ncol,
+        fontsize=fontsize,
+        handler_map=handler_map,
+    )
+
     if cfg["anchor"] is not None:
         kwargs["bbox_to_anchor"] = cfg["anchor"]
-    host.legend( handles, labels, loc=cfg["loc"], **kwargs, )
+
+    host.legend(handles, labels, loc=cfg["loc"], **kwargs)
 def setMajorTicks( ax, axis="x", major_step=None, direction="in", length=5, width=1, ):
     """
     Set fixed major tick interval and style.
@@ -1019,6 +1227,7 @@ def plotCurve(
     fit_linewidth=2,
     fit_linestyle="--",
     markersize=70,
+    sphereMarker=True,
     legend=True,
     textSize=12,
     legendSize=None,
@@ -1088,6 +1297,9 @@ def plotCurve(
     # --------------------------------------------------
     # Plot experimental data and corresponding fit
     # --------------------------------------------------
+    markerMode = getSphereMarkerMode(sphereMarker)
+    sphereRenderer = SphereRenderer(scale=0.8, resolution=128)
+    legacyRenderer = LegacySphereRenderer()
     for color, name in zip(color_list, sample_names):
         xx, yy = _extract_xy(data[name])
         # Experimental display name
@@ -1102,8 +1314,16 @@ def plotCurve(
         # Experimental markers
         # --------------------------
         if marker:
-            scatterSphere( ax, xx, yy, color=color, s=markersize,
-                label=( display_name if not line and fit is None else None ), zorder=3, )
+            marker_label = display_name if not line and fit is None else None
+
+            if markerMode == 0:
+                ax.scatter(xx,yy,s=markersize,c=color,edgecolors="black",linewidths=0.6,marker="o",label=marker_label,zorder=3)
+            elif markerMode == 1:
+                scatterSphereLegacy( ax, xx, yy, color=color, s=markersize, label=marker_label, zorder=3, renderer=legacyRenderer, )
+            elif markerMode == 2:
+                scatterSphere( ax, xx, yy, color=color, s=markersize, label=marker_label, zorder=3, renderer=sphereRenderer, )
+            else:
+                raise ValueError("sphereMarker must be 0, 1, 2, False, or True.")
         # --------------------------
         # Corresponding fitted curve
         # --------------------------
@@ -1124,10 +1344,18 @@ def plotCurve(
     # Legend
     # --------------------------------------------------
     if legend:
-        handles = buildCurveLegend( sample_names=sample_names, color_list=color_list, marker=marker, line=line, 
-            fit=(fit is not None), fit_label=fit_label, linewidth=linewidth, linestyle=linestyle,
-            fit_linewidth=fit_linewidth, fit_linestyle=fit_linestyle, markersize=markersize, original_labels=original_labels, )
-        applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, fontsize=legendSize if legendSize is not None else textSize,)
+        markerMode=getSphereMarkerMode(sphereMarker)
+
+        handles = buildCurveLegend( sample_names=list(data.keys()), color_list=color_list, marker=marker, 
+                                   line=line, fit=fit, original_labels=original_labels, fit_label=fit_label, 
+                                   linewidth=linewidth, linestyle=linestyle, fit_linewidth=fit_linewidth, 
+                                   fit_linestyle=fit_linestyle, markersize=markersize, sphereMarker=markerMode )
+
+        handler_map = { SphereLegendHandle: HandlerSphere( markersize=markersize, renderer=sphereRenderer, ),
+                        LegacySphereLegendHandle: HandlerLegacySphere( markersize=markersize, renderer=legacyRenderer, ), }
+
+        applyLegend( fig=ax.figure, axes=[ax], handles=handles, position=legendPosition, 
+                    fontsize=legendSize if legendSize is not None else textSize, handler_map=handler_map )
     # --------------------------------------------------
     # Text styling
     # --------------------------------------------------
@@ -1139,7 +1367,8 @@ def plotCurve(
         saveFigure( fig=ax.figure, savepath=savepath, dpi=300, )
     return ax
 def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95), figsize=(5, 4), 
-                     pos="top", xscale="linear", yscale="linear"):
+                     pos="top", xscale="linear", yscale="linear",sphereMarker=2, markersize=70,
+                     labelsize=16, ticksize=14, annotationsize=16):
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -1158,14 +1387,28 @@ def _plotCorrelation(ax, result,  xlabel=None, ylabel=None, text_position=(0.05,
         transform=ax.transAxes, va=pos )
     ax.plot( x[idx], y_fit[idx], color="red", linewidth=2 )
     colors = ColorPalette.get(USING_COLOR, len(x))
-    scatterSphere( ax, x, y, color=colors, s=70 )
+    markerMode = getSphereMarkerMode(sphereMarker)
+    if markerMode == 0:
+        ax.scatter(x, y, c=colors, s=markersize, zorder=3)
+    elif markerMode == 1:
+        scatterSphereLegacy( ax, x, y, color=colors, s=markersize )
+    elif markerMode == 2:
+        scatterSphere( ax, x, y, color=colors, s=markersize )
     ax.set_xlabel( applyLabel(result["x_name"], xlabel) )
     ax.set_ylabel( applyLabel(result["y_name"], ylabel) )
-    applyTextStyle(ax,labelsize=16, ticksize=14, annotationsize=16)
+    applyTextStyle(ax,labelsize=labelsize, ticksize=ticksize, annotationsize=annotationsize)
+    print("Figure size:", fig.get_size_inches())
+    print("Figure DPI:", fig.dpi)
+    print("Axes position:", ax.get_position().bounds)
+    print("X limits:", ax.get_xlim())
+    print("Y limits:", ax.get_ylim())
+    print("Axes aspect:", ax.get_aspect())
 def plotSingleCorrelation(result,  xlabel=None, ylabel=None, text_position=(0.05, 0.95),figsize=(5, 4),
-                           pos="top", xscale="linear", yscale="linear",savepath=None):
+                           pos="top", xscale="linear", yscale="linear", sphereMarker=2, markersize=70, 
+                           labelsize=16, ticksize=14, annotationsize=16,savepath=None):
     fig, ax = plt.subplots(figsize=figsize)
-    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos, xscale, yscale)
+    _plotCorrelation(ax, result, xlabel, ylabel, text_position, figsize, pos, xscale, yscale, 
+                     sphereMarker=sphereMarker, markersize=markersize,labelsize=labelsize, ticksize=ticksize, annotationsize=annotationsize,)
     plt.tight_layout()
     if savepath is not None:
         saveFigure( fig, savepath=savepath, dpi=600)

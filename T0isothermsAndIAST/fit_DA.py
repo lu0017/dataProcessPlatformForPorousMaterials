@@ -274,14 +274,16 @@ def makeDAGlobalFitPredictFunc( T_list, *, fit_DA0_func: Callable[..., Any], get
             "success": bool(getattr(da_result, "success", False)),
             "diagnostics": diagnostics, }
     return _fit_predict_func
-def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes = True):
+def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes=True):
     data = {}
     for T, gdf in fits_data.groupby("T_K"):
         label = f"{T - 273.15:.0f}°C"
         gdf = gdf.sort_values("P_Pa")
         data[label] = (
             gdf["P_Pa"].values * 1e-3,
-            gdf["residuals"].values )
+            gdf["residuals"].values,
+        )
+
     ax = myPlt.plotCurve(
         data=data,
         x="Pressure",
@@ -292,18 +294,18 @@ def plotDAResiduals(fits_data, fixedFlag=False, figPath=None, logAxes = True):
         line=False,
         colors="PAPER1",
         markersize=45,
+        # sphereMarker=False,
         figsize=(6, 4),
         textSize=12,
         legend=True,
+        sphereMarker=2,
         legendPosition="upper left",
-        # savepath=figPath,
+        savepath=figPath,
     )
-    ax.axhline(0, color="black", linestyle="--", linewidth=1)
+
     if logAxes:
         ax.set_xscale("log")
-    if figPath is not None:
-            myPlt.saveFigure( fig=ax.figure, savepath=figPath, dpi=300, )
-    plt.show(block=fixedFlag)
+    ax.axhline( y=0, color="black", linestyle="--", linewidth=1, alpha=0.7, zorder=1, )
     return ax
 def poltDA(fits_data, rawData, fixedFlag=False, newFigPath=None):
     grouped_data = { T: gdf for T, gdf in rawData.groupby("T_K") }
@@ -327,6 +329,7 @@ def poltDA(fits_data, rawData, fixedFlag=False, newFigPath=None):
         line=False,
         colors="PAPER1",
         markersize=45,
+        # sphereMarker=False,
         fit_linewidth=2,
         fit_linestyle="-",
         figsize=(6, 4),
@@ -641,7 +644,7 @@ def runDAsimu(listData, out_path, plotFlag=True, sheet_name = None, run_bootstra
             #    newFigPath=newFigPath
                )
         newFigPath2 = fl.get_expanded_name(newPath, sheet_name, expand=const.RESIDUAL_FILE, type="png",)
-        plotDAResiduals(fits_data,logAxes=True,
+        plotDAResiduals(fits_data,logAxes=False,
                         # figPath=newFigPath2
                         )
         poltDA(fits_data_single, rawData, fixedFlag = True)
@@ -662,7 +665,7 @@ def main(file_path=None):
     # 运行设置
     # =========================
     singleFile = True
-    run_bootstrap = True
+    run_bootstrap = False
     n_bootstrap = 10000
     file = ( file_path if file_path is not None else fl.getFile() )
     # 收集全部样品的拟合和 bootstrap 结果

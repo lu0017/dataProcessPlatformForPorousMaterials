@@ -51,14 +51,11 @@ def plotDSLResiduals(grouped_data, T_list_K, fits_data, figPath=None, logAxes=Tr
         legend=True,
         legendPosition="upper left",
         title=None,
-        # savepath=figPath,
+        savepath=figPath,
     )
-    ax.axhline(0, color="black", linestyle="--", linewidth=1)
     if logAxes:
         ax.set_xscale("log")
-    if figPath is not None:
-            myPlt.saveFigure( fig=ax.figure, savepath=figPath, dpi=300, )
-    plt.show(block=False)
+    ax.axhline( y=0, color="black", linestyle="--", linewidth=1, alpha=0.7, zorder=1, )
     return ax
 def plotDSLResults( grouped_data, T_list_K, fits_data, newFigPath=None):
     """Plot experimental isotherms and DSL fitting curves."""
@@ -491,43 +488,28 @@ def pname(prefix, T):
     else:
         return f"{prefix}_{str(T).replace('.', '_')}"
 def get_dslparams_from_origin(params, T_list, sheet, file):
-    path = fl.getPathOnly(file)  # current folder
+    path = fl.getPathOnly(file)
     file_name = "DslOriginFit"
     file = fl.get_expanded_name(path, file_name, type="xlsx")
-    # -----------------------------
-    # 检查文件是否存在
-    # -----------------------------
-    if file is None:
+
+    if file is None or not os.path.isfile(file):
         print(f"[Warning] File not found: {file}")
         return params, False
-    cols, _, validSheet = fl.readFileBySheet(file, sheet, header=[0,1])
-    if validSheet:
-        # 先构建 dict: 行名 -> 列数据索引
-        # 这里假设 cols 的所有 list 长度相同
-        n_rows = len(next(iter(cols.values())))
-        # -----------------------------
-        # 遍历温度 T_list，赋值 b1, b2
-        # -----------------------------
-        for i, T in enumerate(T_list):
-            T_label = f"T{int(T - 273.15)}_interp"
-            # 找到行索引
-            if i >= n_rows:
-                raise ValueError(f"Missing data for {T_label} in Excel")
-            # bA 和 bB
-            b1_name = pname("b1", T)
-            b2_name = pname("b2", T)
-            bA_col = ('bA', 'Value')
-            bB_col = ('bB', 'Value')
-            params[b1_name].value = float(cols[bA_col][i])
-            params[b2_name].value = float(cols[bB_col][i])
-        # -----------------------------
-        # q1 和 q2 用平均值
-        # -----------------------------
-        q1_col = ('qA', 'Value')
-        q2_col = ('qB', 'Value')
-        params["q1"].value = float(np.mean(cols[q1_col]))
-        params["q2"].value = float(np.mean(cols[q2_col]))
-    return params, validSheet
+    cols, _, validSheet = fl.readFileBySheet(file, sheet, header=[0, 1])
+    if not validSheet:
+        return params, False
+    n_rows = len(next(iter(cols.values())))
+    for i, T in enumerate(T_list):
+        T_label = f"T{int(T - 273.15)}_interp"
+        if i >= n_rows:
+            raise ValueError(f"Missing data for {T_label} in Excel")
+        b1_name = pname("b1", T)
+        b2_name = pname("b2", T)
+        params[b1_name].value = float(cols[("bA", "Value")][i])
+        params[b2_name].value = float(cols[("bB", "Value")][i])
+    params["q1"].value = float(np.mean(cols[("qA", "Value")]))
+    params["q2"].value = float(np.mean(cols[("qB", "Value")]))
+    return params, True
 def build_paramsBySL(T_list, grouped_data, flagForQ1less=True):
     params = Parameters()
     init_params, sl_summary = sl.get_initial_dsl_params_multitemp(T_list, grouped_data)

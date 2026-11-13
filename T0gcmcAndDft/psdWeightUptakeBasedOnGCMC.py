@@ -1240,15 +1240,17 @@ def analyzeUptakeResponse( df, pressure_kPa, pair_mode="all", plotflag=False):
     if plotflag:
         myPlt.plotSingleCorrelation( metrics, xlabel=r"Simulation $\Delta q$", ylabel=r"Experimental $\Delta q$" )
     return df_delta, metrics
-def analyzeUptakeAtPressure( df, plotflag=False):
+def analyzeUptakeAtPressure( df, plotflag=False,figPath=None):
     if len(df) < 3:
         return df, None
     metrics = dop.correlationAnalysis( x=df["q_sim"], y=df["q_exp"], x_name="Simulation uptake", 
                                       y_name="Experimental uptake", )
     if plotflag:
-        myPlt.plotSingleCorrelation( metrics, xlabel="Simulation", ylabel="Experimental" )
+        myPlt.plotSingleCorrelation( metrics, xlabel=r"AIE-calculated uptake (mmol g$^{-1}$)", markersize=40, 
+                                    ylabel=r"Experimental uptake (mmol g$^{-1}$)" ,figsize=(5, 4),sphereMarker=2,
+                                    labelsize=15,savepath=figPath)
     return df, metrics
-def validationSimAndExp( sampleResults, expData, pressures, plotflag=False):
+def validationSimAndExp( sampleResults, expData, pressures, plotflag=False,debug_pressure=None):
     """
     Analyze simulation vs. experiment at all pressures.
     Validation relationships
@@ -1296,7 +1298,10 @@ def validationSimAndExp( sampleResults, expData, pressures, plotflag=False):
         # 3.1 Absolute uptake
         # q_exp(P) vs q_sim(P)
         # ======================================================
-        df_absolute, absolute_metrics = analyzeUptakeAtPressure( df=df_uptake, plotflag=plotflag )
+        figPath = None
+        if debug_pressure is None or pressure in debug_pressure:
+            figPath= rf"F:\0_Academic\3_experiment\3\{pressure}kPa.png"
+        df_absolute, absolute_metrics = analyzeUptakeAtPressure( df=df_uptake, plotflag=True, figPath=None)
         if not df_absolute.empty:
             results["absolute"]["data"].append( df_absolute )
         if absolute_metrics is not None:
@@ -1611,7 +1616,7 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # 4. Plot all samples in one figure
     # ======================================================
     savepath = r"F:\0_Academic\3_experiment\3\compare2samples.png"
-    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,
+    myPlt.plotCurve( data=data, fit=fit, fit_label=fit_label, marker=True, line=line, legendPosition=legendPosition,figsize=(7, 5),sphereMarker=2,
                     # savepath=savepath 
                     )
     plt.show(block=False)
@@ -1662,6 +1667,8 @@ def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None,
             fit={ sample_name: ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Predicted"].to_numpy() ) },
             fit_label=fit_label,
             marker=True,
+            # markersize=70,
+            sphereMarker=2,
             line=line,
             legendPosition=legendPosition )
     plt.show(block=False)
@@ -2361,32 +2368,7 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
         print(f"Weight sum                  : {np.sum(weight):.6g}")
     uptake_total = np.asarray( uptake["total"], dtype=float )
     print(f"Uptake array shape          : {uptake_total.shape}")
-    # ======================================================
-    # 3. Find contribution threshold
-    # ======================================================
-    findThreshold( simPore, uptake["cumulative"], uptake["percent"] )
-    # ======================================================
-    # 4. Contribution distribution
-    # ======================================================
-    plotContribution( simPore, uptake["percent"] )
-    # ======================================================
-    # 5. Cumulative contribution
-    # ======================================================
-    plotCumulative( simPore, uptake["cumulative"] )
-    # ======================================================
-    # 6. PSD-weighted contribution
-    # ======================================================
-    if weight is not None:
-        plotPSDContribution( simPore, weight, uptake["percent"] )
-    # ======================================================
-    # 7. Contribution heatmap
-    # ======================================================
-    plotContributionHeatmap( simPore, pressures, uptake["contribution"] )
-    # ======================================================
-    # 8. Reconstructed isotherm
-    # ======================================================
-    plotReconstructedIsotherm( pressures, uptake["total"] )
-    # ======================================================
+
     # 9. Experimental vs simulation
     # ======================================================
     if expData is not None and sample in expData:
@@ -2407,8 +2389,10 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
             textSize=16,
             legendSize=14,
             legendPosition="upper left",
+            sphereMarker=2,
             savepath=savepath,
         )
+        return
         # --------------------------------------------------
         # 9.2 Experimental vs density-based simulation
         # --------------------------------------------------
@@ -2432,6 +2416,32 @@ def debugPsdWeightedSimulation( sample, simPore, pressures, uptake, weight=None,
                 line=False,
                 legendPosition="upper left"
             )
+            # ======================================================
+        # 3. Find contribution threshold
+        # ======================================================
+        findThreshold( simPore, uptake["cumulative"], uptake["percent"] )
+        # ======================================================
+        # 4. Contribution distribution
+        # ======================================================
+        plotContribution( simPore, uptake["percent"] )
+        # ======================================================
+        # 5. Cumulative contribution
+        # ======================================================
+        plotCumulative( simPore, uptake["cumulative"] )
+        # ======================================================
+        # 6. PSD-weighted contribution
+        # ======================================================
+        if weight is not None:
+            plotPSDContribution( simPore, weight, uptake["percent"] )
+        # ======================================================
+        # 7. Contribution heatmap
+        # ======================================================
+        plotContributionHeatmap( simPore, pressures, uptake["contribution"] )
+        # ======================================================
+        # 8. Reconstructed isotherm
+        # ======================================================
+        plotReconstructedIsotherm( pressures, uptake["total"] )
+        # ======================================================
     elif expData is not None:
         print( f"[Debug] Experimental data not found for sample: " f"{sample}" )
     print("-" * 70)
@@ -3020,41 +3030,34 @@ def main(file_path=None):
     # plotGCMCDatabase(pressures, simPore, simData,ylabel="Uptake")
     ########### 读取数据 ###########
     #############训练模型###################
-    debug_samples = {
-        "CC-Hy-600-1-1",
-        "CC-Hy-800-1-1",
-        "CC-Hy-800-4-1",
-        "CC-Bi-800-2-1(5)",
-    }
-    sampleResults, simulationDetails, fitMetrics = \
-        calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleAll, 
-                                       expData=expData, simPore=simPore, pressures=pressures, 
-                                       simData=simData, ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity,
-                                         simData_density=simData_density, debug=False, debug_samples=debug_samples, export=False )
-    validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures, )
+    debug_samples = { "CC-Hy-600-1-1", "CC-Hy-800-1-1", "CC-Hy-800-4-1", "CC-Bi-800-2-1(5)", }
+    debug_pressure =  [0.01, 1, 10, 101.325,] 
+    sampleResults, simulationDetails, fitMetrics = calculatePsdWeightedSimulation(file_path=file_path, sampleAll=sampleAll, 
+                    expData=expData, simPore=simPore, pressures=pressures, simData=simData, ModelVolumeAcc=ModelVolumeAcc, 
+                    flagUsingDensity=flagUsingDensity, simData_density=simData_density, debug=False, debug_samples=debug_samples, 
+                    export=False)
+    validation = validationSimAndExp( sampleResults=sampleResults, expData=expData, pressures=pressures,debug_pressure=debug_pressure)
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
-    # exportAnalysisToExcel(validation,out_path2)
     modelfixed = "Exponential Saturation"
     modelfixed = None
     modelfit = fitValidationParameters(validation,plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
                                        intercept_models=modelfixed)
+    # exportAnalysisToExcel(validation,out_path2)
     # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############训练模型###################
     #############使用新的样品验证模型拟合是否合适###################
     sampleCheck = readPSD(file_path, sheet_name="checkPSD")
     expDataCheck = readExpUptake(file_path, sheet_name="checkExp")
-    sampleResultsCheck, simulationDetailsCheck, _ = \
-        calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
-            expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, 
-            ModelVolumeAcc=ModelVolumeAcc, flagUsingDensity=flagUsingDensity, 
-            simData_density=simData_density, debug=False, export=False, expand="PSD_check" )
+    sampleResultsCheck, simulationDetailsCheck, _ = calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
+            expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, ModelVolumeAcc=ModelVolumeAcc, 
+            flagUsingDensity=flagUsingDensity, simData_density=simData_density, debug=False, export=False, expand="PSD_check" )
     predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
-    # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
+    plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-2-1","CC-Hy-800-0.5-1"]
     plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
@@ -3062,15 +3065,9 @@ def main(file_path=None):
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
         sample=samples[0]
-        perturbationResult = calculatePerturbation(
-            sample=sample,
-            simulationDetails=simulationDetailsCheck,
-            predictionResults=predictionResults,
-            simData=simData,
-            ModelVolumeAcc=ModelVolumeAcc,
-            flagUsingDensity=flagUsingDensity,
-            simData_density=simData_density,
-            modelfit=modelfit,
+        perturbationResult = calculatePerturbation( sample=sample, simulationDetails=simulationDetailsCheck,
+            predictionResults=predictionResults, simData=simData, ModelVolumeAcc=ModelVolumeAcc,
+            flagUsingDensity=flagUsingDensity, simData_density=simData_density, modelfit=modelfit,
             validation_type="absolute",
             operation="transfer",
             source_index=2,

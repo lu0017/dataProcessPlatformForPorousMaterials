@@ -49,13 +49,17 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import MultipleLocator
 from matplotlib.colors import  ListedColormap, to_hex, to_rgb
+from matplotlib.legend_handler import HandlerBase
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+import matplotlib.ticker as mticker
+import matplotlib.colors as mcolors
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.transforms import ScaledTranslation
 import random
 from itertools import cycle
 from itertools import product
 from itertools import combinations
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
-import matplotlib.ticker as mticker
 # ======================
 # Scipy
 # ======================
