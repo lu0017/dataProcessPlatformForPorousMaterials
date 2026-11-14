@@ -354,6 +354,7 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
         pressure_pred = np.asarray( predictionResults[sample]["pressure"], dtype=float )
         simUptake_pred = np.asarray( predictionResults[sample]["simUptake"], dtype=float )
         uptake_pred = np.asarray( predictionResults[sample]["predicted"], dtype=float )
+        slopeXsim = np.asarray( predictionResults[sample]["slopeXsim"], dtype=float )
         # Prediction interpolation
         _, _, pred_interp = mf.interpolateData( pressure_pred, uptake_pred, extrapolate=True )
         metrics = mf.computeFitMetrics( fit_x=pressure_pred, fit_y=uptake_pred, exp_x=pressure_exp, exp_y=uptake_exp)
@@ -369,7 +370,6 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
         uptake_pred_all = pred_interp( pressure_all )
         # ======================================================
         # 5. Point-wise prediction results
-        #
         #    Use prediction pressure as the original
         #    model calculation points.
         # ======================================================
@@ -377,7 +377,7 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
         difference = ( exp_at_pred - uptake_pred )
         ratio = np.divide( uptake_pred, exp_at_pred, 
                           out=np.full_like( uptake_pred, np.nan, dtype=float ), where=exp_at_pred != 0 )
-        for p, sim_q, exp_q, pred_q, diff, rat in zip( pressure_pred, simUptake_pred, exp_at_pred, uptake_pred, difference, ratio):
+        for p, sim_q, exp_q, pred_q, diff, rat, slo in zip( pressure_pred, simUptake_pred, exp_at_pred, uptake_pred, difference, ratio, slopeXsim):
             data_pred.append({
                 "Sample": sample,
                 "Validation type": validation_type,
@@ -387,6 +387,7 @@ def preparePredictionAnalysisData( predictionResults, expData, modelfit=None, va
                 "Predicted": pred_q,
                 "Difference": diff,
                 "Ratio": rat,
+                "SlopeXsim": slo
             })
         # ======================================================
         # 6. Plot data
@@ -1530,7 +1531,82 @@ def plotReconstructedIsotherm(pressures,totalUptake):
     plt.title("Reconstructed Isotherm")
     plt.tight_layout()
     plt.show(block=False)
-def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type="merge", fit_label="pred", legendPosition="upper left"):
+def filterDataByXRange(data, xlim=None):
+    if xlim is None:
+        return data
+
+    xmin, xmax = xlim
+    filteredData = {}
+
+    for key, (x, y) in data.items():
+        x = np.asarray(x)
+        y = np.asarray(y)
+        mask = (x >= xmin) & (x <= xmax)
+        filteredData[key] = (x[mask], y[mask])
+
+    return filteredData
+def plotPSDComparisonBySamples( simulationDetails, samples, sample_labels=None, colors="PAPER1", figsize=(7, 5), 
+                               legendPosition="upper right", sphereMarker=2,xlim=None,savepath=None, ):
+    if isinstance(samples, str):
+        samples = [samples]
+
+    sample_labels = sample_labels or { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+
+    data = {}
+    original_labels = {}
+
+    for sample in samples:
+        detail = simulationDetails[sample]
+        data[sample] = ( np.asarray(detail["simPore"]), np.asarray(detail["volume"]), )
+        original_labels[sample] = sample_labels.get(sample, sample)
+    data = filterDataByXRange(data, xlim)
+    ax = myPlt.plotCurve( data=data, original_labels=original_labels, colors=colors, 
+        x="Pore size", y="Pore volume", xlabel="Pore size (nm)", ylabel=r"Pore volume (cm$^3$ g$^{-1}$)", 
+        figsize=figsize, sphereMarker=sphereMarker, legendPosition=legendPosition,savepath=savepath)
+        # title="PSD",
+    plt.show(block=False)
+    return ax
+def plotSlopeContributionByPressure( predictionResults, samples, pressure, sample_labels=None, colors="PAPER1",
+    figsize=(7, 5), legendPosition="upper right", sphereMarker=2, ultramicropore_boundary=0.5,xlim=None,savepath=None ):
+    if isinstance(samples, str):
+        samples = [samples]
+
+    sample_labels = sample_labels or { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+
+    data = {}
+    original_labels = {}
+    actual_pressures = []
+
+    for sample in samples:
+        result = predictionResults[sample]
+        poreData = result["poreContribution"]
+
+        pressures = np.asarray(result["pressure"], dtype=float)
+        poreSize = np.asarray(poreData["simPore"], dtype=float)
+        contribution = np.asarray( poreData["slopeContribution"], dtype=float )
+
+        pressure_idx = np.argmin(np.abs(pressures - pressure))
+        actual_pressure = pressures[pressure_idx]
+
+        if not np.isclose(actual_pressure, pressure, rtol=1e-6, atol=1e-8):
+            raise ValueError( f"Pressure {pressure} kPa is unavailable for {sample}. " f"Nearest pressure: {actual_pressure} kPa." )
+
+        data[sample] = ( poreSize, contribution[:, pressure_idx], )
+        original_labels[sample] = sample_labels.get(sample, sample)
+        actual_pressures.append(actual_pressure)
+
+    # ======================================================
+    # 1. Plot contribution
+    # ======================================================
+    data = filterDataByXRange(data, xlim)
+    ax = myPlt.plotCurve( data=data, original_labels=original_labels, marker=True, line=False, colors=colors, 
+        x="Pore size", y="Slope contribution", xlabel="Pore size (nm)", ylabel=r"Pore-size-resolved predicted uptake (mmol g$^{-1}$)", 
+        figsize=figsize, sphereMarker=sphereMarker, legendPosition=legendPosition, showMetrics=False,savepath=savepath) 
+        # title=f"{actual_pressures[0]:g} kPa", 
+    plt.show(block=False)
+    return ax
+def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type="merge", fit_label="pred", 
+                                    legendPosition="upper left",savepath=None):
     """
     Plot prediction analysis results for specified samples
     on the same figure.
@@ -1592,12 +1668,44 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # ======================================================
     # 4. Plot all samples in one figure
     # ======================================================
-    savepath=getOutputPath(fileName="compare2samples", sub_folder="fig")
     myPlt.plotCurve( data=data, fit=fit, original_labels=original_labels, fit_label=fit_label, marker=True, line=line, 
-                    legendPosition=legendPosition,figsize=(7, 5),sphereMarker=2,
-                    # savepath=savepath 
-                    )
+                    legendPosition=legendPosition,figsize=(7, 5),sphereMarker=2, savepath=savepath )
     plt.show(block=False)
+def plotPoreAnalysisBySamples( predictionAnalysis, simulationDetails, predictionResults, samples, pressures, 
+            pressure_type="sim", sample_labels=None, colors="PAPER1", figsize=(7, 5), 
+            legendPosition="upper left", ultramicropore_boundary=0.5, sphereMarker=2, ):
+    if isinstance(samples, str):
+        samples = [samples]
+    xlim=[0.3,2]
+    # ======================================================
+    # 1. Prediction comparison
+    # ======================================================
+    savepath1=getOutputPath(fileName="compare2samples_uptake", sub_folder="fig")
+    plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type=pressure_type, 
+            legendPosition=legendPosition, savepath=savepath1)
+
+    # ======================================================
+    # 2. PSD comparison
+    # ======================================================
+    savepath2=getOutputPath(fileName="compare2samples_PSD03-2", sub_folder="fig")
+    savepath3=getOutputPath(fileName="compare2samples_PSDall", sub_folder="fig")
+    axPSD = plotPSDComparisonBySamples( simulationDetails=simulationDetails, samples=samples, 
+            sample_labels=sample_labels, colors=colors, figsize=figsize, legendPosition=legendPosition, 
+            sphereMarker=sphereMarker, xlim=xlim,savepath= savepath2)
+    axPSDall = plotPSDComparisonBySamples( simulationDetails=simulationDetails, samples=samples, 
+                sample_labels=sample_labels, colors=colors, figsize=figsize, legendPosition="upper right", 
+                sphereMarker=sphereMarker, savepath= savepath3)
+
+     # ======================================================
+    # 3. Slope contribution at specified pressures
+    # ======================================================
+    contributionAxes = {}
+    for p in pressures:
+        savepath4=getOutputPath(fileName=f"compare2samples_P{p}", sub_folder="fig")
+        axContribution = plotSlopeContributionByPressure( predictionResults=predictionResults, samples=samples, 
+                            pressure=p, sample_labels=sample_labels, colors=colors, figsize=figsize, 
+                            legendPosition="upper right", sphereMarker=sphereMarker, 
+                            ultramicropore_boundary=ultramicropore_boundary, xlim=xlim,savepath=savepath4 )
 def plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, 
                            pressure_type="merge", fit_label="exp=f(sim)", legendPosition="upper left"):
     """
@@ -2184,6 +2292,14 @@ def exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_pa
                 analysis_data[f"Fit {col}"] = pd.Series( current_fit[col].values )
         df_analysis = pd.DataFrame(analysis_data)
         fl.export_to_excel_auto( df_analysis, filename=out_path, sheet_name="Analysis", )
+         # ==================================================
+        # 4. Slope Contribution Heatmap
+        # ==================================================
+        poreData = result.get("poreContribution")
+        if poreData is not None:
+            heatmap = pd.DataFrame( poreData["slopeContribution"], index=poreData["simPore"], columns=result["pressure"], )
+            heatmap.index.name = "Pore Size"
+            fl.export_to_excel_auto( heatmap, filename=out_path, sheet_name="SlopeContribution", index=True, )
         # ==================================================
         # 4. Metrics
         # ==================================================
@@ -2505,7 +2621,7 @@ def calculatePsdWeightedSimulation( file_path, sampleAll, expData, simPore,
             exportPsdWeightedSimulationResult( file_path=file_path, sample=sample, 
                         simulationDetails=simulationDetails, expData=expData, fitMetrics=fitMetrics,expand=expand)
     return sampleResults, simulationDetails, fitMetrics
-def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type="absolute"):
+def predictExperimentalFromSimulation( sampleResults, modelfit, simulationDetails=None, validation_type="absolute"):
     """
     Predict experimental uptake from simulation uptake using
     the fitted pressure-dependent Slope and Intercept models.
@@ -2571,6 +2687,19 @@ def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type=
         # q_exp = Slope(P) * q_sim + Intercept(P)
         # ------------------------------------------------------
         q_pred = mf.linearModel( q_sim, slope, intercept )
+        # Slope(P) * q_sim
+        slopeXsim = slope * q_sim
+        poreContribution = None
+        if simulationDetails is not None:
+            uptakeDetails = simulationDetails[sample]["uptake"]
+            simContribution = uptakeDetails["contribution"]
+            slopeContribution = slope[None, :] * simContribution
+            poreContribution = {
+                "simPore": simulationDetails[sample]["simPore"],
+                "simContribution": simContribution,
+                "slopeContribution": slopeContribution,
+                "percent": uptakeDetails["percent"],
+                "cumulative": uptakeDetails["cumulative"], }
         # ------------------------------------------------------
         # 4.4 Store
         # ------------------------------------------------------
@@ -2579,7 +2708,9 @@ def predictExperimentalFromSimulation( sampleResults, modelfit, validation_type=
             "simUptake": q_sim,
             "slope": slope,
             "intercept": intercept,
+            "slopeXsim": slopeXsim,
             "predicted": q_pred,
+            "poreContribution": poreContribution,
         }
     return predictionResults
 def preparePerturbationData( sample, simulationDetails, predictionResults, operation, delta_volume, source_index=None):
@@ -3011,8 +3142,8 @@ def main(file_path=None):
     out_path2 = fl.get_expanded_name(file_path, fileName="sim2exp-report", expandPos=True, type="xlsx")
     modelfixed = "Exponential Saturation"
     modelfixed = None
-    modelfit = fitValidationParameters(validation,validation_types=("absolute", ),plotflag=False,slope_models=modelfixed, pressure_min=pressure_min,
-                                       intercept_models=modelfixed)
+    modelfit = fitValidationParameters(validation,validation_types=("absolute", ),plotflag=False,slope_models=modelfixed, 
+                                       pressure_min=pressure_min, intercept_models=modelfixed)
     # exportAnalysisToExcel(validation,out_path2)
     # exportParameterFittingToExcel(modelfit,out_path2,prefix="fit2")
     #############训练模型###################
@@ -3022,15 +3153,18 @@ def main(file_path=None):
     sampleResultsCheck, simulationDetailsCheck, _ = calculatePsdWeightedSimulation( file_path=file_path, sampleAll=sampleCheck, 
             expData=expDataCheck, simPore=simPore, pressures=pressures, simData=simData, ModelVolumeAcc=ModelVolumeAcc, 
             flagUsingDensity=flagUsingDensity, simData_density=simData_density, debug=False, export=False, expand="PSD_check" )
-    predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, 
+    predictionResults = predictExperimentalFromSimulation( sampleResults=sampleResultsCheck, simulationDetails=simulationDetailsCheck,
                         modelfit=modelfit, validation_type="absolute" )
     predictionAnalysis = preparePredictionAnalysisData( predictionResults=predictionResults, 
                          expData=expDataCheck, modelfit=modelfit, validation_type="absolute" )
     # plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="merge",)
     plotPredictionAnalysisByPressure( predictionAnalysis, sample=None, pressure_type="sim",)
-    exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
+    # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-2-1","CC-Hy-800-0.5-1"]
+    check_pressure = [10,40,101.325]
+    plotPoreAnalysisBySamples( predictionAnalysis=predictionAnalysis, simulationDetails=simulationDetailsCheck, 
+            predictionResults=predictionResults, samples=samples, pressures=check_pressure, pressure_type="sim", )
     plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################
