@@ -1550,7 +1550,7 @@ def plotPSDComparisonBySamples( simulationDetails, samples, sample_labels=None, 
     if isinstance(samples, str):
         samples = [samples]
 
-    sample_labels = sample_labels or { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+    sample_labels = sample_labels or {}
 
     data = {}
     original_labels = {}
@@ -1571,7 +1571,7 @@ def plotSlopeContributionByPressure( predictionResults, samples, pressure, sampl
     if isinstance(samples, str):
         samples = [samples]
 
-    sample_labels = sample_labels or { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+    sample_labels = sample_labels or {}
 
     data = {}
     original_labels = {}
@@ -1606,7 +1606,7 @@ def plotSlopeContributionByPressure( predictionResults, samples, pressure, sampl
     plt.show(block=False)
     return ax
 def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type="merge", fit_label="pred", 
-                                    legendPosition="upper left",savepath=None):
+                                    sample_labels=None, legendPosition="upper left",savepath=None):
     """
     Plot prediction analysis results for specified samples
     on the same figure.
@@ -1651,7 +1651,7 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     # ======================================================
     # 3. Prepare data for all selected samples
     # ======================================================
-    sample_labels = { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
+    sample_labels = sample_labels or {}
 
     original_labels = { sample: f"{sample_labels.get(sample, sample)} Exp" for sample in samples }
 
@@ -1661,10 +1661,8 @@ def plotPredictionAnalysisBySamples( predictionAnalysis, samples, pressure_type=
     fit = {}
     for sample_name in samples:
         df_sample = df_plot[ df_plot["Sample"] == sample_name ]
-        data[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
-                                df_sample["Experimental"].to_numpy() )
-        fit[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(),
-                                df_sample["Predicted"].to_numpy() )
+        data[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Experimental"].to_numpy() )
+        fit[sample_name] = ( df_sample["Pressure (kPa)"].to_numpy(), df_sample["Predicted"].to_numpy() )
     # ======================================================
     # 4. Plot all samples in one figure
     # ======================================================
@@ -1682,7 +1680,7 @@ def plotPoreAnalysisBySamples( predictionAnalysis, simulationDetails, prediction
     # ======================================================
     savepath1=getOutputPath(fileName="compare2samples_uptake", sub_folder="fig")
     plotPredictionAnalysisBySamples( predictionAnalysis, samples=samples, pressure_type=pressure_type, 
-            legendPosition=legendPosition, savepath=savepath1)
+            sample_labels=sample_labels, legendPosition=legendPosition, savepath=savepath1)
 
     # ======================================================
     # 2. PSD comparison
@@ -3162,10 +3160,10 @@ def main(file_path=None):
     # exportPredictionSampleDetail( predictionResults, predictionAnalysis, file_path)
     df_debug = debugPredictionResults( predictionResults, expDataCheck )
     samples=["CC-Hy-800-2-1","CC-Hy-800-0.5-1"]
+    sample_labels = { "CC-Hy-800-2-1": "H800/2/10", "CC-Hy-800-0.5-1": "H800/0.5/10", }
     check_pressure = [10,40,101.325]
     plotPoreAnalysisBySamples( predictionAnalysis=predictionAnalysis, simulationDetails=simulationDetailsCheck, 
-            predictionResults=predictionResults, samples=samples, pressures=check_pressure, pressure_type="sim", )
-    plotPredictionAnalysisBySamples(predictionAnalysis, samples=samples, pressure_type="sim")
+            predictionResults=predictionResults, samples=samples, pressures=check_pressure, pressure_type="sim", sample_labels=sample_labels)
     #############使用新的样品验证模型拟合是否合适###################
     #############应用：修改指定pore的体积###################
     for sample in sampleCheck:
