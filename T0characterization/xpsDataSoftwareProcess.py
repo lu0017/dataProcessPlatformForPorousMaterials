@@ -768,7 +768,7 @@ def debugXPSPeakData(peakinfor, xpsFit):
                         print(" ", repr(data)[:300])
 def main(file_path=None):
     STEP = 1 #1 原始.csv数据读取导出 .txt，， #2 XPS peak完成C 1S的offset确认后设置并重新导出txt，，， #3 读取.par 计算% 画图
-    saveFile = False
+    saveFile = True
     singleFile = False
     highResolutionFlag = False #False时将自动从Suvey中提取对应的区段谱
     charaData = {}
@@ -780,17 +780,29 @@ def main(file_path=None):
     keyName = ["Binding Energy", "Intensity"]
     ncols = 2
     sampleMap = {
-    "S1": ["600-05"],
-    "S2": ["600-1"],
-    "S3": ["700-1"],
-    "S4": ["800-05"],
-    "S5": ["800-1"],
+    "S1": ["1"],
+    "S2": ["2.5"],
+    "S3": ["5"],
+    "S4": ["7.5"],
+    "S5": ["10"],
     "S6": ["600-2"],
     "S7": ["900-1"],
     "S8": ["800-2"],
     "S9": ["600-4"],
     "S10": ["800-4"],
     }
+    # sampleMap = {
+    # "S1": ["600-05"],
+    # "S2": ["600-1"],
+    # "S3": ["700-1"],
+    # "S4": ["800-05"],
+    # "S5": ["800-1"],
+    # "S6": ["600-2"],
+    # "S7": ["900-1"],
+    # "S8": ["800-2"],
+    # "S9": ["600-4"],
+    # "S10": ["800-4"],
+    # }
     # C 1s calibration offsets (eV)
     offsetMap = {
         "S1": {"default": 0.0, "C1s": 0.77, "O1s": 1.4, "N1s": 0.0, "P2p": 0.0},
@@ -857,8 +869,8 @@ def main(file_path=None):
                                         regions=("C1s", "O1s"), x="Binding Energy", ) 
             FIG_out_path2 = fl.check_or_create_folder(folder, sub_folder_name="figSurvey")
             # plotSpectrumXPS( charaData1, folder=FIG_out_path2, regions="Su",xlim=(1000,0),figsize=(7, 1.95),)
-            su_fig_path = fl.get_expanded_name(FIG_out_path2, fileName = "S10 Survey",type="png")
-            plotSingleSpectrumXPS( charaData1["S10"]["Survey"], figsize=(7, 2.2), xlim=(1000,0), savepath=su_fig_path, )
+            su_fig_path = fl.get_expanded_name(FIG_out_path2, fileName = "S1 Survey",type="png")
+            plotSingleSpectrumXPS( charaData1["S1"]["Survey"], figsize=(7, 2.2), xlim=(1000,0), savepath=su_fig_path, )
         if STEP == 2:
             offsetCharaDataRegions = applyXPSCalibration(charaDataRegions, offsetMap)
         elif STEP == 9:

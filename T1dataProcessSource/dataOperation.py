@@ -2365,13 +2365,7 @@ def correlationAnalysis(
     # ======================================================
     # Correlation
     # ======================================================
-    correlation = mf.calculateCorrelation(
-        x=x,
-        y=y,
-        x_name=x_name,
-        y_name=y_name,
-        dropna=dropna
-    )
+    correlation = mf.calculateCorrelation( x=x, y=y, x_name=x_name, y_name=y_name, dropna=dropna )
     # ======================================================
     # Fitting
     # ======================================================
